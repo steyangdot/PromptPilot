@@ -99,9 +99,9 @@ CODEX_TIMEOUT_SEC = 300
 CLAUDE_TIMEOUT_SEC = int(os.environ.get("CLAUDE_TIMEOUT_SEC", "1200"))
 
 
-# Backward-compat re-export. Centralized in promptpilot/_subprocess.py so that
+# Backward-compat re-export. Centralized in prpt/_subprocess.py so that
 # new launchers and scripts that import from either location get the same
-# implementation. See promptpilot/_subprocess.py for details on why this exists
+# implementation. See prpt/_subprocess.py for details on why this exists
 # (Windows process-handle exhaustion when zombies accumulate).
 from prpt._subprocess import reap_claude_orphans  # noqa: E402, F401
 

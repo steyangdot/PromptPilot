@@ -34,7 +34,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Wrap loop so any zombies from a mid-loop crash get reaped on exit.
-    # See promptpilot/_subprocess.py for context.
+    # See prpt/_subprocess.py for context.
     with claude_subprocess_session("extra_with_session_runs"):
         for offset in range(args.count):
             r = args.start + offset

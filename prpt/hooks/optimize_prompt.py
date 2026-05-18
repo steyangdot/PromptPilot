@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-# Resolve project root (two levels up from promptpilot/hooks/)
+# Resolve project root (two levels up from prpt/hooks/)
 _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_HOOK_DIR))
 if _PROJECT_ROOT not in sys.path:

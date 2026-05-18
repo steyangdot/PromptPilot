@@ -141,7 +141,7 @@ def install_promptpilot(cli_state: dict) -> bool:
     section(f"3. Install promptpilot (editable, with {extra} extras)")
     # Probe: is promptpilot already importable AND points at this repo?
     rc, out = run([sys.executable, "-c",
-                   "import promptpilot, os; print(os.path.dirname(promptpilot.__file__))"])
+                   "import prpt, os; print(os.path.dirname(prpt.__file__))"])
     if rc == 0:
         installed_path = Path(out.strip()).resolve()
         expected = (REPO_ROOT / "promptpilot").resolve()

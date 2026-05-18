@@ -21,9 +21,9 @@ Thanks for your interest. PromptPilot is a small project; contributions of all s
 ## What we want
 
 - **Bug fixes**: especially around the SLM normalizers, context loading, or output capture.
-- **New SLM normalizer backends**: see [promptpilot/normalizers/](promptpilot/normalizers/) for the existing implementations.
-- **Compression heuristics**: [promptpilot/compress/tool_output.py](promptpilot/compress/tool_output.py) is command-type-aware; new command families (e.g. `cargo`, `bazel`, custom CI tools) are welcome.
-- **Adapters**: new coding agent CLIs can be supported by adding to [promptpilot/adapters/](promptpilot/adapters/).
+- **New SLM normalizer backends**: see [prpt/normalizers/](prpt/normalizers/) for the existing implementations.
+- **Compression heuristics**: [prpt/compress/tool_output.py](prpt/compress/tool_output.py) is command-type-aware; new command families (e.g. `cargo`, `bazel`, custom CI tools) are welcome.
+- **Adapters**: new coding agent CLIs can be supported by adding to [prpt/adapters/](prpt/adapters/).
 - **Documentation improvements**: especially around real-world auth setups.
 
 ## Code style

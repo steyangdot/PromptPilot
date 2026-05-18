@@ -219,7 +219,7 @@ prpt install-hook   # wire into Claude Code as a UserPromptSubmit hook
 With `--normalizer slm-openai-v2`, the SLM can route prompts to **clarify**
 (ask a question and exit), **passthrough** (run the raw prompt unmodified),
 or **answer** (respond directly without invoking the agent) instead of the
-default **act** path. See `promptpilot/core/spec.py` for the routing schema.
+default **act** path. See `prpt/core/spec.py` for the routing schema.
 
 ## Tool-output compression
 
@@ -227,7 +227,7 @@ PromptPilot ships a `PostToolUse` hook that intercepts `Bash` tool responses
 and shrinks them before the LLM sees them. Targets the dominant token-bleed
 in agent sessions: pytest tracebacks, grep floods, deep `find` results,
 verbose `git diff`, linter spew, installer logs. The compressor is
-command-type-aware ([promptpilot/compress/tool_output.py](promptpilot/compress/tool_output.py)).
+command-type-aware ([prpt/compress/tool_output.py](prpt/compress/tool_output.py)).
 
 **Install for Claude Code:**
 

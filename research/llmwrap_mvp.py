@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Compatibility shim — the monolith has been split into the ``promptpilot`` package.
+Compatibility shim — the monolith has been split into the ``prpt`` package.
 
 This file re-exports the public names that older code (e.g. hooks) may import.
-New code should ``import promptpilot`` or ``from promptpilot.…`` directly.
+New code should ``import prpt`` or ``from prpt.…`` directly.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import sys
 import warnings
 
 warnings.warn(
-    "promptpilot_mvp.py is deprecated. Use 'import promptpilot' or 'from promptpilot.…' instead.",
+    "llmwrap_mvp.py is deprecated. Use 'import prpt' or 'from prpt.…' instead.",
     DeprecationWarning,
     stacklevel=2,
 )
