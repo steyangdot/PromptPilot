@@ -60,8 +60,8 @@ def main() -> None:
 
     # --- 3. Import promptpilot components ---
     try:
-        from promptpilot.normalizers.base import create_normalizer
-        from promptpilot.repo.collector import RepoContextCollector
+        from prpt.normalizers.base import create_normalizer
+        from prpt.repo.collector import RepoContextCollector
     except ImportError:
         _allow()  # promptpilot package not available
 

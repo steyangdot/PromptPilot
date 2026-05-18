@@ -1,7 +1,7 @@
 """
 tests/test_compress.py
 ======================
-Unit tests for promptpilot.compress.tool_output.
+Unit tests for prpt.compress.tool_output.
 
 Each test:
   1. Constructs realistic synthetic output (mirrors actual CLI output)
@@ -14,7 +14,7 @@ Run:  python -m pytest tests/test_compress.py -v
 from __future__ import annotations
 
 import pytest
-from promptpilot.compress.tool_output import (
+from prpt.compress.tool_output import (
     compress,
     detect_command_type,
     compress_pytest,

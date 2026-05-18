@@ -23,8 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from promptpilot.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
-from promptpilot.repo.collector import RepoContextCollector
+from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
+from prpt.repo.collector import RepoContextCollector
 
 HTTPX_DIR = "C:/projects/httpx"
 OUT_DIR = Path(__file__).parent / "agentic_variety"
@@ -103,7 +103,7 @@ CLAUDE_TIMEOUT_SEC = int(os.environ.get("CLAUDE_TIMEOUT_SEC", "1200"))
 # new launchers and scripts that import from either location get the same
 # implementation. See promptpilot/_subprocess.py for details on why this exists
 # (Windows process-handle exhaustion when zombies accumulate).
-from promptpilot._subprocess import reap_claude_orphans  # noqa: E402, F401
+from prpt._subprocess import reap_claude_orphans  # noqa: E402, F401
 
 
 def run_codex(prompt: str, out_jsonl: Path, cwd: str) -> tuple[float, int]:

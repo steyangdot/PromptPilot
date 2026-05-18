@@ -17,7 +17,7 @@ warnings.warn(
 )
 
 # Re-export everything the old monolith exposed
-from promptpilot.core.types import (  # noqa: F401
+from prpt.core.types import (  # noqa: F401
     Confidence,
     NormalizedRequest,
     RepoMetadata,
@@ -26,7 +26,7 @@ from promptpilot.core.types import (  # noqa: F401
     TokenStats,
     ValidationResult,
 )
-from promptpilot.core.constants import (  # noqa: F401
+from prpt.core.constants import (  # noqa: F401
     DEFAULT_LOG_FILE,
     DEFAULT_SLM_ANTHROPIC,
     DEFAULT_TARGET_MODEL,
@@ -36,28 +36,28 @@ from promptpilot.core.constants import (  # noqa: F401
     PROTECTED_PATTERNS,
     REQUESTED_OUTPUT_HINTS,
 )
-from promptpilot.normalizers.base import (  # noqa: F401
+from prpt.normalizers.base import (  # noqa: F401
     Normalizer,
     SemanticValidator,
     build_final_downstream_prompt,
     build_structured_prompt,
     create_normalizer,
 )
-from promptpilot.normalizers.heuristic import HeuristicNormalizer  # noqa: F401
-from promptpilot.repo.collector import RepoContextCollector  # noqa: F401
-from promptpilot.adapters.echo import EchoAdapter, ToolAdapter  # noqa: F401
-from promptpilot.adapters.factory import AdapterFactory  # noqa: F401
-from promptpilot.cli import main, main_cli  # noqa: F401
+from prpt.normalizers.heuristic import HeuristicNormalizer  # noqa: F401
+from prpt.repo.collector import RepoContextCollector  # noqa: F401
+from prpt.adapters.echo import EchoAdapter, ToolAdapter  # noqa: F401
+from prpt.adapters.factory import AdapterFactory  # noqa: F401
+from prpt.cli import main, main_cli  # noqa: F401
 
 # Feature-detection flags that old hook code checked
 try:
-    from promptpilot.normalizers.slm_anthropic import SLMNormalizer  # noqa: F401
+    from prpt.normalizers.slm_anthropic import SLMNormalizer  # noqa: F401
     _ANTHROPIC_AVAILABLE = True
 except ImportError:
     _ANTHROPIC_AVAILABLE = False
 
 try:
-    from promptpilot.normalizers.slm_openai import OpenAISLMNormalizer  # noqa: F401
+    from prpt.normalizers.slm_openai import OpenAISLMNormalizer  # noqa: F401
     _OPENAI_AVAILABLE = True
 except ImportError:
     _OPENAI_AVAILABLE = False

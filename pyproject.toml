@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "promptpilot"
+name = "prpt"
 version = "0.1.0"
-description = "Prompt-optimizing wrapper for AI coding CLIs — uses a cheap SLM to reduce token consumption on expensive models"
+description = "PromptPilot — prompt-optimizing wrapper for AI coding CLIs; uses a cheap SLM to reduce token consumption on expensive models"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [
-    { name = "promptpilot contributors" },
+    { name = "PromptPilot contributors" },
 ]
 keywords = ["llm", "prompt-optimization", "token-savings", "claude", "openai", "codex"]
 classifiers = [
@@ -36,7 +36,7 @@ all = ["anthropic>=0.39.0", "openai>=1.0.0", "tiktoken>=0.7.0"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 
 [project.scripts]
-prpt = "promptpilot.cli:main_cli"
+prpt = "prpt.cli:main_cli"
 
 [project.urls]
 Homepage = "https://github.com/steyangdot/PromptPilot"
@@ -44,7 +44,7 @@ Issues = "https://github.com/steyangdot/PromptPilot/issues"
 Repository = "https://github.com/steyangdot/PromptPilot"
 
 [tool.setuptools.packages.find]
-include = ["promptpilot*"]
+include = ["prpt*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from promptpilot.repo.loader import (
+from prpt.repo.loader import (
     RepoContentLoader,
     _extract_search_terms,
     _find_matching_lines,
@@ -627,7 +627,7 @@ class TestTestFilePairing:
 
 class TestSecretDetection:
     def test_redacts_openai_key(self):
-        from promptpilot.repo.loader import _redact_secrets
+        from prpt.repo.loader import _redact_secrets
         content = 'OPENAI_API_KEY = "sk-proj-abc123XYZabc123XYZabc123XYZ"\n'
         redacted, count = _redact_secrets(content)
         assert "sk-proj-" not in redacted
@@ -635,28 +635,28 @@ class TestSecretDetection:
         assert count > 0
 
     def test_redacts_anthropic_key(self):
-        from promptpilot.repo.loader import _redact_secrets
+        from prpt.repo.loader import _redact_secrets
         content = 'key = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890"\n'
         redacted, count = _redact_secrets(content)
         assert "sk-ant-" not in redacted
         assert "[REDACTED]" in redacted
 
     def test_redacts_github_token(self):
-        from promptpilot.repo.loader import _redact_secrets
+        from prpt.repo.loader import _redact_secrets
         content = "token = ghp_abcdefghijklmnopqrstuvwxyz123456\n"
         redacted, count = _redact_secrets(content)
         assert "ghp_" not in redacted
         assert "[REDACTED]" in redacted
 
     def test_redacts_aws_key(self):
-        from promptpilot.repo.loader import _redact_secrets
+        from prpt.repo.loader import _redact_secrets
         content = "aws_key = AKIAIOSFODNN7EXAMPLE\n"
         redacted, count = _redact_secrets(content)
         assert "AKIAIOSFODNN7EXAMPLE" not in redacted
         assert "[REDACTED]" in redacted
 
     def test_preserves_normal_code(self):
-        from promptpilot.repo.loader import _redact_secrets
+        from prpt.repo.loader import _redact_secrets
         content = "def connect(host, port=8080):\n    return socket.connect(host, port)\n"
         redacted, count = _redact_secrets(content)
         assert redacted == content
@@ -851,7 +851,7 @@ class TestSessionContinuity:
             cwd = str(tmp_path)
             diff = None
 
-        with patch("promptpilot.adapters.shell.load_session_files", return_value=["session_file.py"]):
+        with patch("prpt.adapters.shell.load_session_files", return_value=["session_file.py"]):
             block = loader.build_context_block("fix something", FakeRepo())
 
         assert "<session_files>" in block
@@ -869,7 +869,7 @@ class TestSessionContinuity:
             cwd = str(tmp_path)
             diff = None
 
-        with patch("promptpilot.adapters.shell.load_session_files", return_value=[]):
+        with patch("prpt.adapters.shell.load_session_files", return_value=[]):
             block = loader.build_context_block("fix something", FakeRepo())
 
         assert "<session_files>" not in block
@@ -886,7 +886,7 @@ class TestSessionContinuity:
             cwd = str(tmp_path)
             diff = None
 
-        with patch("promptpilot.adapters.shell.load_session_files", return_value=["overlap.py"]):
+        with patch("prpt.adapters.shell.load_session_files", return_value=["overlap.py"]):
             block = loader.build_context_block("fix overlap", FakeRepo())
 
         # overlap_func should appear exactly once
@@ -904,7 +904,7 @@ class TestSessionContinuity:
             diff = None
 
         # Simulate stale session returning []
-        with patch("promptpilot.adapters.shell.load_session_files", return_value=[]):
+        with patch("prpt.adapters.shell.load_session_files", return_value=[]):
             block = loader.build_context_block("fix something", FakeRepo())
 
         assert "<session_files>" not in block

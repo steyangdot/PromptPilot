@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from promptpilot.cli import parse_args, main
+from prpt.cli import parse_args, main
 
 
 class TestParseArgs:
@@ -99,7 +99,7 @@ class TestResolveRoute:
     """
 
     def test_v1_intent_act_returns_act(self):
-        from promptpilot.cli import _resolve_route
+        from prpt.cli import _resolve_route
 
         class _V1Norm:
             _last_intent = "act"
@@ -109,7 +109,7 @@ class TestResolveRoute:
         assert _resolve_route(_V1Norm()) == "act"
 
     def test_v1_intent_explain_returns_answer(self):
-        from promptpilot.cli import _resolve_route
+        from prpt.cli import _resolve_route
 
         class _V1Norm:
             _last_intent = "explain"
@@ -118,7 +118,7 @@ class TestResolveRoute:
         assert _resolve_route(_V1Norm()) == "answer"
 
     def test_v1_no_intent_defaults_to_act(self):
-        from promptpilot.cli import _resolve_route
+        from prpt.cli import _resolve_route
 
         class _V1Norm:
             pass  # neither intent nor spec set
@@ -126,8 +126,8 @@ class TestResolveRoute:
         assert _resolve_route(_V1Norm()) == "act"
 
     def test_v2_spec_route_passthrough_honored(self):
-        from promptpilot.cli import _resolve_route
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _resolve_route
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_intent = "act"
@@ -138,8 +138,8 @@ class TestResolveRoute:
         assert _resolve_route(_V2Norm()) == "passthrough"
 
     def test_v2_spec_route_clarify_honored(self):
-        from promptpilot.cli import _resolve_route
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _resolve_route
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_intent = "act"
@@ -153,8 +153,8 @@ class TestResolveRoute:
         """If v2 spec says route=act but intent=explain, the spec wins.
         Future case: SLM produced an explanation-style prompt but routed it
         as actionable because the user explicitly asked for code."""
-        from promptpilot.cli import _resolve_route
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _resolve_route
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_intent = "explain"  # would derive "answer" for v1
@@ -165,8 +165,8 @@ class TestResolveRoute:
         assert _resolve_route(_V2Norm()) == "act"
 
     def test_v2_spec_with_invalid_route_falls_back_to_intent(self):
-        from promptpilot.cli import _resolve_route
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _resolve_route
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_intent = "explain"
@@ -189,8 +189,8 @@ class TestRouteDispatch:
         """When the normalizer reports route=passthrough, the dispatch
         substitutes raw_prompt for the SLM rewrite. Verified via --dry-run
         showing the raw prompt as the final prompt."""
-        from promptpilot.core.spec import ExecutionSpec
-        from promptpilot.normalizers.heuristic import HeuristicNormalizer
+        from prpt.core.spec import ExecutionSpec
+        from prpt.normalizers.heuristic import HeuristicNormalizer
 
         # Patch HeuristicNormalizer to fake a v2 spec saying passthrough
         original_normalize = HeuristicNormalizer.normalize
@@ -221,8 +221,8 @@ class TestRouteDispatch:
         """When the normalizer reports route=clarify, the dispatch prints the
         question (downstream_prompt) to stdout, logs the run, and exits 0
         without invoking the adapter."""
-        from promptpilot.core.spec import ExecutionSpec
-        from promptpilot.normalizers.heuristic import HeuristicNormalizer
+        from prpt.core.spec import ExecutionSpec
+        from prpt.normalizers.heuristic import HeuristicNormalizer
 
         clarify_question = "Which payment service did you mean, Stripe or PayPal?"
 
@@ -264,8 +264,8 @@ class TestBuildAssistantRecord:
         return SimpleNamespace(normalized_prompt=rewrite)
 
     def test_v2_memory_record_with_modified_files(self):
-        from promptpilot.cli import _build_assistant_record
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _build_assistant_record
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_spec = ExecutionSpec(
@@ -285,8 +285,8 @@ class TestBuildAssistantRecord:
         assert "much longer SLM rewrite" not in out
 
     def test_v2_memory_record_no_modified_files(self):
-        from promptpilot.cli import _build_assistant_record
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _build_assistant_record
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_spec = ExecutionSpec(
@@ -308,8 +308,8 @@ class TestBuildAssistantRecord:
         the SLM rewrite to avoid storing an empty turn. Important for
         forward-compat: if the SLM produces a valid spec but omits the
         memory_record field, we still get a useful session record."""
-        from promptpilot.cli import _build_assistant_record
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _build_assistant_record
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_spec = ExecutionSpec(
@@ -328,7 +328,7 @@ class TestBuildAssistantRecord:
     def test_v1_no_spec_with_modified_files_preserves_current_behavior(self):
         """v1 normalizers without `_last_spec` must produce the same
         `"Modified: {files}\\n{rewrite[:400]}"` shape as before item #4."""
-        from promptpilot.cli import _build_assistant_record
+        from prpt.cli import _build_assistant_record
 
         class _V1Norm:
             pass  # no _last_spec, no memory_record
@@ -341,7 +341,7 @@ class TestBuildAssistantRecord:
         assert out == "Modified: httpx/_client.py\nFix the timeout in httpx by raising the default."
 
     def test_v1_no_spec_no_modified_files_preserves_current_behavior(self):
-        from promptpilot.cli import _build_assistant_record
+        from prpt.cli import _build_assistant_record
 
         class _V1Norm:
             pass
@@ -352,7 +352,7 @@ class TestBuildAssistantRecord:
         assert out == "Explain what HTTP/2 multiplexing is."
 
     def test_truncates_files_list_to_eight_with_overflow_marker(self):
-        from promptpilot.cli import _build_assistant_record
+        from prpt.cli import _build_assistant_record
 
         class _V1Norm:
             pass
@@ -366,8 +366,8 @@ class TestBuildAssistantRecord:
     def test_total_length_capped_at_600_chars(self):
         """Long memory_record + many modified files must still fit in 600
         chars so MAX_TURNS history doesn't bloat the SLM context window."""
-        from promptpilot.cli import _build_assistant_record
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _build_assistant_record
+        from prpt.core.spec import ExecutionSpec
 
         class _V2Norm:
             _last_spec = ExecutionSpec(
@@ -385,8 +385,8 @@ class TestBuildAssistantRecord:
         """When modified-files prefix is present, the summary tail is capped
         at 400 chars (the prefix needs room). Without modified files, the
         summary gets the full 600. This mirrors the v1 layout."""
-        from promptpilot.cli import _build_assistant_record
-        from promptpilot.core.spec import ExecutionSpec
+        from prpt.cli import _build_assistant_record
+        from prpt.core.spec import ExecutionSpec
 
         long_record = "A" * 500
         class _V2Norm:

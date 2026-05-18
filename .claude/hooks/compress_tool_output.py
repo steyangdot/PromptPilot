@@ -131,7 +131,7 @@ def main() -> None:
 
     # ---- 4. Import compressor (fails open if package unavailable) ----------
     try:
-        from promptpilot.compress.tool_output import compress, detect_command_type
+        from prpt.compress.tool_output import compress, detect_command_type
     except ImportError:
         _passthrough()
 

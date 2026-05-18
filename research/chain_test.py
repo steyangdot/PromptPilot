@@ -34,9 +34,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from promptpilot.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
-from promptpilot.repo.collector import RepoContextCollector
-from promptpilot.session import append_turn, clear_session, load_recent_turns
+from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
+from prpt.repo.collector import RepoContextCollector
+from prpt.session import append_turn, clear_session, load_recent_turns
 
 from agentic_variety_test import (
     _cost, _ext, _parse_one, _run_one,

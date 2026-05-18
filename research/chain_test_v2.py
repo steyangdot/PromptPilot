@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 
 
-from promptpilot.core.dotenv import load_dotenv as _load_dotenv_impl
+from prpt.core.dotenv import load_dotenv as _load_dotenv_impl
 
 
 _REPO_ROOT = Path(__file__).parent.parent  # research/ is one level below repo root
@@ -61,9 +61,9 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from promptpilot.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
-from promptpilot.repo.collector import RepoContextCollector
-from promptpilot.session import append_turn, clear_session, load_recent_turns
+from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
+from prpt.repo.collector import RepoContextCollector
+from prpt.session import append_turn, clear_session, load_recent_turns
 
 from agentic_variety_test import (
     _ext, _parse_one, _run_one,
@@ -675,8 +675,8 @@ def record_to_session(cwd: str, raw: str, prepared: dict) -> None:
     `prepared` must carry `_normalizer` + `_normalized` (added by _optimize);
     when `prepare_raw` is used, the assistant turn is not recorded anyway.
     """
-    from promptpilot.adapters.shell import _git_modified_files
-    from promptpilot.cli import _build_assistant_record
+    from prpt.adapters.shell import _git_modified_files
+    from prpt.cli import _build_assistant_record
     append_turn(cwd, "user", raw)
     modified = _git_modified_files(cwd)
     record = _build_assistant_record(

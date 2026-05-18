@@ -26,9 +26,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from promptpilot.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
-from promptpilot.repo.collector import RepoContextCollector
-from promptpilot.session import append_turn, clear_session, load_recent_turns
+from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
+from prpt.repo.collector import RepoContextCollector
+from prpt.session import append_turn, clear_session, load_recent_turns
 
 # Reuse infrastructure from the existing test runner
 from agentic_variety_test import (

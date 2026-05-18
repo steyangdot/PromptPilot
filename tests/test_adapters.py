@@ -17,7 +17,7 @@ def _make_args(**overrides):
 def _make_anthropic_adapter(model="claude-opus-4-7", max_tokens=4096,
                              system=None, context_block=None):
     """Build an AnthropicDirectAdapter bypassing the real SDK import."""
-    from promptpilot.adapters.anthropic_adapter import AnthropicDirectAdapter
+    from prpt.adapters.anthropic_adapter import AnthropicDirectAdapter
     adapter = AnthropicDirectAdapter.__new__(AnthropicDirectAdapter)
     adapter._client = MagicMock()
     adapter._model = model
@@ -232,7 +232,7 @@ class TestAnthropicAdapterCacheUsage:
 
     def test_cache_read_costs_less(self):
         """Cache read should be cheaper than normal input at 0.10× rate."""
-        from promptpilot.adapters.anthropic_adapter import _cost_usd
+        from prpt.adapters.anthropic_adapter import _cost_usd
 
         # 1M normal input vs 1M cache-read — cache should be 10× cheaper
         normal = _cost_usd(
@@ -249,7 +249,7 @@ class TestAnthropicAdapterCacheUsage:
 
     def test_cache_write_costs_more(self):
         """Cache write is billed at 1.25× normal input."""
-        from promptpilot.adapters.anthropic_adapter import _cost_usd
+        from prpt.adapters.anthropic_adapter import _cost_usd
 
         normal = _cost_usd(
             {"input_tokens": 1_000_000, "output_tokens": 0,
@@ -346,7 +346,7 @@ class TestAnthropicAdapterOpus47:
 
     def test_opus47_pricing_applied(self):
         """Opus 4.7 uses the same $15/$75 pricing as Opus 4.6."""
-        from promptpilot.adapters.anthropic_adapter import _cost_usd
+        from prpt.adapters.anthropic_adapter import _cost_usd
 
         cost = _cost_usd(
             {"input_tokens": 0, "output_tokens": 1_000_000,
@@ -356,7 +356,7 @@ class TestAnthropicAdapterOpus47:
         assert cost == pytest.approx(75.0, rel=1e-6)
 
     def test_sonnet47_pricing_applied(self):
-        from promptpilot.adapters.anthropic_adapter import _cost_usd
+        from prpt.adapters.anthropic_adapter import _cost_usd
 
         cost = _cost_usd(
             {"input_tokens": 1_000_000, "output_tokens": 0,
@@ -367,7 +367,7 @@ class TestAnthropicAdapterOpus47:
 
     def test_unknown_model_falls_back_to_opus_pricing(self):
         """Unknown models default to $15/$75 (Opus pricing)."""
-        from promptpilot.adapters.anthropic_adapter import _cost_usd
+        from prpt.adapters.anthropic_adapter import _cost_usd
 
         cost = _cost_usd(
             {"input_tokens": 1_000_000, "output_tokens": 0,
@@ -391,7 +391,7 @@ class TestAnthropicAdapterOpus47:
 # ---------------------------------------------------------------------------
 
 class TestOpenAIDirectAdapterMocked:
-    @patch("promptpilot.adapters.openai_adapter.openai", create=True)
+    @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_run_returns_text(self, mock_openai_mod, capsys):
         mock_client = MagicMock()
         mock_openai_mod.OpenAI.return_value = mock_client
@@ -403,7 +403,7 @@ class TestOpenAIDirectAdapterMocked:
         mock_client.chat.completions.create.return_value = mock_response
 
         with patch.dict("sys.modules", {"openai": mock_openai_mod}):
-            from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+            from prpt.adapters.openai_adapter import OpenAIDirectAdapter
             adapter = OpenAIDirectAdapter.__new__(OpenAIDirectAdapter)
             adapter._client = mock_client
             adapter._model = "gpt-4o"
@@ -418,7 +418,7 @@ class TestOpenAIDirectAdapterMocked:
         assert "Dark mode implemented" in output
         mock_client.chat.completions.create.assert_called_once()
 
-    @patch("promptpilot.adapters.openai_adapter.openai", create=True)
+    @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_usage_mapping(self, mock_openai_mod):
         """Verify prompt_tokens -> input_tokens and completion_tokens -> output_tokens mapping."""
         mock_client = MagicMock()
@@ -431,7 +431,7 @@ class TestOpenAIDirectAdapterMocked:
         mock_client.chat.completions.create.return_value = mock_response
 
         with patch.dict("sys.modules", {"openai": mock_openai_mod}):
-            from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+            from prpt.adapters.openai_adapter import OpenAIDirectAdapter
             adapter = OpenAIDirectAdapter.__new__(OpenAIDirectAdapter)
             adapter._client = mock_client
             adapter._model = "gpt-4o"
@@ -443,14 +443,14 @@ class TestOpenAIDirectAdapterMocked:
         assert adapter.last_usage["input_tokens"] == 999
         assert adapter.last_usage["output_tokens"] == 333
 
-    @patch("promptpilot.adapters.openai_adapter.openai", create=True)
+    @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_api_error_returns_1(self, mock_openai_mod):
         mock_client = MagicMock()
         mock_openai_mod.OpenAI.return_value = mock_client
         mock_client.chat.completions.create.side_effect = RuntimeError("rate limited")
 
         with patch.dict("sys.modules", {"openai": mock_openai_mod}):
-            from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+            from prpt.adapters.openai_adapter import OpenAIDirectAdapter
             adapter = OpenAIDirectAdapter.__new__(OpenAIDirectAdapter)
             adapter._client = mock_client
             adapter._model = "gpt-4o"
@@ -462,7 +462,7 @@ class TestOpenAIDirectAdapterMocked:
         assert exit_code == 1
         assert adapter.last_usage is None
 
-    @patch("promptpilot.adapters.openai_adapter.openai", create=True)
+    @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_none_content_handled(self, mock_openai_mod, capsys):
         """If the model returns None content, it should not crash."""
         mock_client = MagicMock()
@@ -475,7 +475,7 @@ class TestOpenAIDirectAdapterMocked:
         mock_client.chat.completions.create.return_value = mock_response
 
         with patch.dict("sys.modules", {"openai": mock_openai_mod}):
-            from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+            from prpt.adapters.openai_adapter import OpenAIDirectAdapter
             adapter = OpenAIDirectAdapter.__new__(OpenAIDirectAdapter)
             adapter._client = mock_client
             adapter._model = "gpt-4o"
@@ -496,7 +496,7 @@ class TestOpenAIDirectAdapterMocked:
 class TestShellExecutableResolution:
     def test_windows_prefers_exe_over_cmd(self):
         """Prefer .exe (safe) over .cmd/.bat (CVE-2024-3220 class)."""
-        from promptpilot.adapters import shell
+        from prpt.adapters import shell
 
         with patch.object(shell, "os") as mock_os:
             mock_os.name = "nt"
@@ -523,7 +523,7 @@ class TestShellExecutableResolution:
 
     def test_falls_back_to_cmd_when_no_exe(self):
         """If only .cmd exists, we still resolve it (best effort)."""
-        from promptpilot.adapters import shell
+        from prpt.adapters import shell
 
         with patch.object(shell, "os") as mock_os:
             mock_os.name = "nt"
@@ -555,7 +555,7 @@ class TestOpenAIReasoningModelKwarg:
         ("azure/o1-preview", "max_completion_tokens"),
     ])
     def test_token_kwarg_routing(self, model, expected_kwarg):
-        from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+        from prpt.adapters.openai_adapter import OpenAIDirectAdapter
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = SimpleNamespace(
@@ -580,7 +580,7 @@ class TestOpenAIReasoningModelKwarg:
         assert other not in kwargs
 
     def test_is_reasoning_model_classifier(self):
-        from promptpilot.adapters.openai_adapter import OpenAIDirectAdapter
+        from prpt.adapters.openai_adapter import OpenAIDirectAdapter
 
         assert OpenAIDirectAdapter._is_reasoning_model("o1")
         assert OpenAIDirectAdapter._is_reasoning_model("o3-mini")
@@ -596,7 +596,7 @@ class TestOpenAIReasoningModelKwarg:
 
 class TestShellAdapterStdin:
     def test_build_command_stdin_mode_omits_prompt_from_argv(self):
-        from promptpilot.adapters.shell import ShellToolAdapter
+        from prpt.adapters.shell import ShellToolAdapter
 
         adapter = ShellToolAdapter(
             tool_name="fake-tool",
@@ -604,7 +604,7 @@ class TestShellAdapterStdin:
             use_stdin=True,
             stdin_sentinel="-",
         )
-        with patch("promptpilot.adapters.shell.resolve_executable_name",
+        with patch("prpt.adapters.shell.resolve_executable_name",
                    return_value="/usr/bin/fake-tool"):
             cmd = adapter.build_command("very long multi-line prompt" * 1000)
 
@@ -613,24 +613,24 @@ class TestShellAdapterStdin:
         assert all("multi-line prompt" not in tok for tok in cmd)
 
     def test_build_command_argv_mode_includes_prompt(self):
-        from promptpilot.adapters.shell import ShellToolAdapter
+        from prpt.adapters.shell import ShellToolAdapter
 
         adapter = ShellToolAdapter(tool_name="fake-tool", extra_args=["-x"])
-        with patch("promptpilot.adapters.shell.resolve_executable_name",
+        with patch("prpt.adapters.shell.resolve_executable_name",
                    return_value="/usr/bin/fake-tool"):
             cmd = adapter.build_command("hi")
 
         assert cmd == ["/usr/bin/fake-tool", "-x", "hi"]
 
     def test_run_stdin_pipes_prompt_as_input(self):
-        from promptpilot.adapters.shell import ShellToolAdapter
+        from prpt.adapters.shell import ShellToolAdapter
 
         adapter = ShellToolAdapter(
             tool_name="fake-tool", use_stdin=True, stdin_sentinel="-",
         )
-        with patch("promptpilot.adapters.shell.resolve_executable_name",
+        with patch("prpt.adapters.shell.resolve_executable_name",
                    return_value="/usr/bin/fake-tool"), \
-             patch("promptpilot.adapters.shell.subprocess.run") as mock_run:
+             patch("prpt.adapters.shell.subprocess.run") as mock_run:
             mock_run.return_value = SimpleNamespace(returncode=0)
             exit_code = adapter.run("prompt body", _make_args(cwd=None))
 
@@ -643,13 +643,13 @@ class TestShellAdapterStdin:
         assert "stdin" not in kwargs or kwargs.get("stdin") != -3
 
     def test_run_argv_mode_uses_devnull_stdin(self):
-        from promptpilot.adapters.shell import ShellToolAdapter
+        from prpt.adapters.shell import ShellToolAdapter
         import subprocess as _sub
 
         adapter = ShellToolAdapter(tool_name="fake-tool")
-        with patch("promptpilot.adapters.shell.resolve_executable_name",
+        with patch("prpt.adapters.shell.resolve_executable_name",
                    return_value="/usr/bin/fake-tool"), \
-             patch("promptpilot.adapters.shell.subprocess.run") as mock_run:
+             patch("prpt.adapters.shell.subprocess.run") as mock_run:
             mock_run.return_value = SimpleNamespace(returncode=0)
             adapter.run("hi", _make_args(cwd=None))
 

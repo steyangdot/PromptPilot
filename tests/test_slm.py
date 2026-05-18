@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from promptpilot.core.types import RepoMetadata, RewriteMode
+from prpt.core.types import RepoMetadata, RewriteMode
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def repo():
 # --- Anthropic SLM normalizer ---
 
 class TestSLMNormalizerAnthropic:
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_rewrite_called(self, mock_anthropic_mod, repo):
         mock_client = MagicMock()
         mock_anthropic_mod.Anthropic.return_value = mock_client
@@ -35,11 +35,11 @@ class TestSLMNormalizerAnthropic:
         mock_client.messages.create.return_value = mock_response
 
         with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
-            from promptpilot.normalizers.slm_anthropic import SLMNormalizer
+            from prpt.normalizers.slm_anthropic import SLMNormalizer
             normalizer = SLMNormalizer.__new__(SLMNormalizer)
             normalizer._client = mock_client
             normalizer._heuristic = __import__(
-                "promptpilot.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
+                "prpt.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
             ).HeuristicNormalizer()
             normalizer._content_loader = None
             normalizer._last_usage = None
@@ -55,18 +55,18 @@ class TestSLMNormalizerAnthropic:
         # Two calls expected: pass-1 classify + pass-2 rewrite
         assert mock_client.messages.create.call_count == 2
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_fallback_on_api_error(self, mock_anthropic_mod, repo):
         mock_client = MagicMock()
         mock_anthropic_mod.Anthropic.return_value = mock_client
         mock_client.messages.create.side_effect = RuntimeError("API down")
 
         with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
-            from promptpilot.normalizers.slm_anthropic import SLMNormalizer
+            from prpt.normalizers.slm_anthropic import SLMNormalizer
             normalizer = SLMNormalizer.__new__(SLMNormalizer)
             normalizer._client = mock_client
             normalizer._heuristic = __import__(
-                "promptpilot.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
+                "prpt.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
             ).HeuristicNormalizer()
             normalizer._content_loader = None
             normalizer._last_usage = None
@@ -78,7 +78,7 @@ class TestSLMNormalizerAnthropic:
         # Falls back to original prompt
         assert result.original_prompt == "fix timeout"
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_token_stats(self, mock_anthropic_mod, repo):
         mock_client = MagicMock()
         mock_anthropic_mod.Anthropic.return_value = mock_client
@@ -91,11 +91,11 @@ class TestSLMNormalizerAnthropic:
         mock_client.messages.count_tokens.return_value = SimpleNamespace(input_tokens=50)
 
         with patch.dict("sys.modules", {"anthropic": mock_anthropic_mod}):
-            from promptpilot.normalizers.slm_anthropic import SLMNormalizer
+            from prpt.normalizers.slm_anthropic import SLMNormalizer
             normalizer = SLMNormalizer.__new__(SLMNormalizer)
             normalizer._client = mock_client
             normalizer._heuristic = __import__(
-                "promptpilot.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
+                "prpt.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
             ).HeuristicNormalizer()
             normalizer._content_loader = None
             normalizer._last_usage = None
@@ -116,8 +116,8 @@ class TestSLMNormalizerAnthropic:
 # --- OpenAI SLM normalizer ---
 
 class TestSLMNormalizerOpenAI:
-    @patch("promptpilot.normalizers.slm_openai.openai", create=True)
-    @patch("promptpilot.normalizers.slm_openai.tiktoken", create=True)
+    @patch("prpt.normalizers.slm_openai.openai", create=True)
+    @patch("prpt.normalizers.slm_openai.tiktoken", create=True)
     def test_rewrite_called(self, mock_tiktoken, mock_openai_mod, repo):
         mock_client = MagicMock()
         mock_openai_mod.OpenAI.return_value = mock_client
@@ -129,11 +129,11 @@ class TestSLMNormalizerOpenAI:
         mock_client.chat.completions.create.return_value = mock_response
 
         with patch.dict("sys.modules", {"openai": mock_openai_mod, "tiktoken": mock_tiktoken}):
-            from promptpilot.normalizers.slm_openai import OpenAISLMNormalizer
+            from prpt.normalizers.slm_openai import OpenAISLMNormalizer
             normalizer = OpenAISLMNormalizer.__new__(OpenAISLMNormalizer)
             normalizer._client = mock_client
             normalizer._heuristic = __import__(
-                "promptpilot.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
+                "prpt.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
             ).HeuristicNormalizer()
             normalizer._content_loader = None
             normalizer._last_usage = None
@@ -157,7 +157,7 @@ class TestSLMNormalizerOpenAI:
 
 class TestParseIntentResponse:
     def _parse(self, text):
-        from promptpilot.normalizers.slm_anthropic import SLMNormalizer
+        from prpt.normalizers.slm_anthropic import SLMNormalizer
         return SLMNormalizer._parse_intent_response(text)
 
     def test_full_header_act_pinpoint(self):
@@ -221,7 +221,7 @@ class TestParseIntentResponse:
 
 class TestBuildOutputSuffix:
     def _suffix(self, scope, tool):
-        from promptpilot.normalizers.base import build_output_suffix
+        from prpt.normalizers.base import build_output_suffix
         return build_output_suffix(scope, tool)
 
     def test_pinpoint_claude_code(self):
@@ -272,11 +272,11 @@ class TestBuildOutputSuffix:
 
 def _make_normalizer_with_mock(mock_client, context_block: str | None = None):
     """Build an SLMNormalizer with injected mock client + optional cached context."""
-    from promptpilot.normalizers.slm_anthropic import SLMNormalizer
+    from prpt.normalizers.slm_anthropic import SLMNormalizer
     normalizer = SLMNormalizer.__new__(SLMNormalizer)
     normalizer._client = mock_client
     normalizer._heuristic = __import__(
-        "promptpilot.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
+        "prpt.normalizers.heuristic", fromlist=["HeuristicNormalizer"]
     ).HeuristicNormalizer()
     normalizer._content_loader = None
     normalizer._last_usage = None
@@ -290,7 +290,7 @@ def _make_normalizer_with_mock(mock_client, context_block: str | None = None):
 class TestAnthropicPromptCaching:
     """Verify cache_control markers are emitted and usage metrics tracked."""
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_cache_control_present_on_large_context(self, mock_anthropic_mod, repo):
         """A ≥8KB context block should get cache_control: ephemeral."""
         mock_client = MagicMock()
@@ -327,7 +327,7 @@ class TestAnthropicPromptCaching:
         # Second block is the dynamic user prompt → must NOT be cached
         assert "cache_control" not in content_blocks[1]
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_cache_control_absent_on_small_context(self, mock_anthropic_mod, repo):
         """Short context (< 8KB) should not trigger cache_control markers."""
         mock_client = MagicMock()
@@ -354,7 +354,7 @@ class TestAnthropicPromptCaching:
         # First block is repo context, no cache_control since it's tiny
         assert "cache_control" not in content_blocks[0]
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_cache_read_tokens_tracked(self, mock_anthropic_mod, repo):
         """Response with cache_read_input_tokens must flow into _last_usage."""
         mock_client = MagicMock()
@@ -376,7 +376,7 @@ class TestAnthropicPromptCaching:
         assert normalizer._last_usage["cache_read_input_tokens"] == 3000
         assert normalizer._last_usage["cache_creation_input_tokens"] == 0
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_cache_write_tokens_tracked(self, mock_anthropic_mod, repo):
         mock_client = MagicMock()
         mock_anthropic_mod.Anthropic.return_value = mock_client
@@ -396,7 +396,7 @@ class TestAnthropicPromptCaching:
 
         assert normalizer._last_usage["cache_creation_input_tokens"] == 2500
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_cache_savings_computed(self, mock_anthropic_mod, repo):
         """Cache hit should yield positive cache_savings_usd."""
         mock_client = MagicMock()
@@ -424,7 +424,7 @@ class TestAnthropicPromptCaching:
         assert stats.cache_creation_input_tokens == 0
         assert stats.cache_savings_usd > 0  # saved ~0.9x * input price on 10K tokens
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_backward_compat_no_cache_fields(self, mock_anthropic_mod, repo):
         """A response without cache_* fields must still work (cache counts = 0)."""
         mock_client = MagicMock()
@@ -445,7 +445,7 @@ class TestAnthropicPromptCaching:
         assert stats.cache_creation_input_tokens == 0
         assert stats.cache_savings_usd == 0.0
 
-    @patch("promptpilot.normalizers.slm_anthropic.anthropic", create=True)
+    @patch("prpt.normalizers.slm_anthropic.anthropic", create=True)
     def test_no_context_no_cache_markers(self, mock_anthropic_mod, repo):
         """When there's no context block at all, no cache markers anywhere."""
         mock_client = MagicMock()
@@ -473,7 +473,7 @@ class TestAnthropicPromptCaching:
                 assert "cache_control" not in block
 
     def test_system_blocks_helper(self):
-        from promptpilot.normalizers.slm_anthropic import _system_blocks
+        from prpt.normalizers.slm_anthropic import _system_blocks
         blocks = _system_blocks("hello", enable_cache=True)
         assert blocks == [{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}]
 
@@ -481,7 +481,7 @@ class TestAnthropicPromptCaching:
         assert blocks2 == [{"type": "text", "text": "hello"}]
 
     def test_user_blocks_helper(self):
-        from promptpilot.normalizers.slm_anthropic import _user_blocks_with_context
+        from prpt.normalizers.slm_anthropic import _user_blocks_with_context
         blocks = _user_blocks_with_context("BIG" * 5000, "prompt", enable_cache=True)
         assert len(blocks) == 2
         assert blocks[0]["cache_control"] == {"type": "ephemeral"}
@@ -499,7 +499,7 @@ class TestAnthropicPromptCaching:
 
 class TestExecutionSpecParser:
     def test_valid_json_spec_parses_with_all_fields(self):
-        from promptpilot.core.spec import parse_spec_json
+        from prpt.core.spec import parse_spec_json
         raw = (
             '{"route": "act", "intent": "act", "scope": "pinpoint", '
             '"needs_history": false, "context_policy": "targeted", '
@@ -520,7 +520,7 @@ class TestExecutionSpecParser:
         assert "timeout passthrough" in spec.memory_record
 
     def test_valid_json_with_fenced_block_parses(self):
-        from promptpilot.core.spec import parse_spec_json
+        from prpt.core.spec import parse_spec_json
         raw = (
             "```json\n"
             '{"intent": "act", "scope": "localized", '
@@ -536,7 +536,7 @@ class TestExecutionSpecParser:
         assert spec.risk == "low"
 
     def test_malformed_json_returns_none(self):
-        from promptpilot.core.spec import parse_spec_json
+        from prpt.core.spec import parse_spec_json
         # Caller falls back to prose parser on None
         assert parse_spec_json("INTENT: act\nSCOPE: localized\n---\nrewrite") is None
         assert parse_spec_json("not json at all") is None
@@ -545,7 +545,7 @@ class TestExecutionSpecParser:
         assert parse_spec_json('{"downstream_prompt": 42}') is None  # wrong type
 
     def test_invalid_enum_values_clamped_to_defaults(self):
-        from promptpilot.core.spec import parse_spec_json
+        from prpt.core.spec import parse_spec_json
         raw = (
             '{"route": "INVALID", "intent": "WRONG", "scope": "??", '
             '"context_policy": "??", "risk": "??", '
@@ -566,8 +566,8 @@ class TestSLMOpenAIV2Normalizer:
 
     def _make_normalizer(self, mock_client):
         """Build an OpenAISLMNormalizerV2 with a mock OpenAI client."""
-        from promptpilot.normalizers.heuristic import HeuristicNormalizer
-        from promptpilot.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
+        from prpt.normalizers.heuristic import HeuristicNormalizer
+        from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
         n = OpenAISLMNormalizerV2.__new__(OpenAISLMNormalizerV2)
         n._client = mock_client
         n._heuristic = HeuristicNormalizer()
@@ -663,7 +663,7 @@ class TestTargetFilesHint:
 
     @staticmethod
     def _make_normalized(rewrite: str):
-        from promptpilot.core.types import NormalizedRequest, RewriteMode
+        from prpt.core.types import NormalizedRequest, RewriteMode
         return NormalizedRequest(
             original_prompt=rewrite, task_type="bugfix", objective=rewrite,
             explicit_context=[], hard_constraints=[], soft_preferences=[],
@@ -675,34 +675,34 @@ class TestTargetFilesHint:
 
     @staticmethod
     def _repo():
-        from promptpilot.core.types import RepoMetadata
+        from prpt.core.types import RepoMetadata
         return RepoMetadata(cwd="C:/projects/httpx", branch="master",
                             dominant_language="python", test_framework="pytest")
 
     def test_helper_empty_when_env_var_unset(self, monkeypatch):
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         monkeypatch.delenv("PROMPTPILOT_USE_TARGET_HINT", raising=False)
         assert _format_target_files_hint(["a.py", "b.py"]) == ""
 
     def test_helper_empty_when_env_var_set_but_files_empty(self, monkeypatch):
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         assert _format_target_files_hint([]) == ""
         assert _format_target_files_hint(None) == ""
 
     def test_helper_emits_hint_when_enabled(self, monkeypatch):
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         assert _format_target_files_hint(["a.py", "b.py"]) == "\n[likely files: a.py, b.py]"
 
     def test_helper_skips_blank_entries(self, monkeypatch):
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         out = _format_target_files_hint(["a.py", "", "  ", "b.py", None])
         assert out == "\n[likely files: a.py, b.py]"
 
     def test_helper_caps_at_eight_with_overflow_marker(self, monkeypatch):
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         files = ["f{0}.py".format(i) for i in range(10)]
         out = _format_target_files_hint(files)
@@ -713,7 +713,7 @@ class TestTargetFilesHint:
     def test_helper_only_triggers_on_literal_1(self, monkeypatch):
         """Defensive: only "1" enables; "true"/"yes"/etc. do not, mirroring
         the existing kill-switch convention (PROMPTPILOT_COMPRESS_DISABLE=1)."""
-        from promptpilot.normalizers.base import _format_target_files_hint
+        from prpt.normalizers.base import _format_target_files_hint
         for v in ("true", "yes", "True", "0", ""):
             monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", v)
             assert _format_target_files_hint(["a.py"]) == "", "expected off for env={0!r}".format(v)
@@ -721,14 +721,14 @@ class TestTargetFilesHint:
     def test_build_final_with_target_files_off_matches_prior_behavior(self, monkeypatch):
         """Backward compat: default-off + no target_files arg = byte-identical
         to the pre-#5 output. This is the v1 callers' guarantee."""
-        from promptpilot.normalizers.base import build_final_downstream_prompt
+        from prpt.normalizers.base import build_final_downstream_prompt
         monkeypatch.delenv("PROMPTPILOT_USE_TARGET_HINT", raising=False)
         out = build_final_downstream_prompt(self._make_normalized("Fix the timeout."), self._repo())
         assert out.endswith("[cwd=C:/projects/httpx; python; branch=master; tests=pytest]")
         assert "[likely files:" not in out
 
     def test_build_final_with_target_files_on_appends_hint(self, monkeypatch):
-        from promptpilot.normalizers.base import build_final_downstream_prompt
+        from prpt.normalizers.base import build_final_downstream_prompt
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         out = build_final_downstream_prompt(
             self._make_normalized("Fix the timeout."),
@@ -742,7 +742,7 @@ class TestTargetFilesHint:
     def test_build_final_with_env_on_but_empty_target_files_omits_hint(self, monkeypatch):
         """Env on, but the SLM didn't predict any files — don't emit an empty
         hint that would look like the SLM said 'no files needed.'"""
-        from promptpilot.normalizers.base import build_final_downstream_prompt
+        from prpt.normalizers.base import build_final_downstream_prompt
         monkeypatch.setenv("PROMPTPILOT_USE_TARGET_HINT", "1")
         out = build_final_downstream_prompt(
             self._make_normalized("Explain X."), self._repo(), target_files=[],

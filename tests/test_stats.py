@@ -7,8 +7,8 @@ import tempfile
 
 import pytest
 
-from promptpilot.stats import load_runs, print_stats
-from promptpilot.cli import main
+from prpt.stats import load_runs, print_stats
+from prpt.cli import main
 
 
 @pytest.fixture

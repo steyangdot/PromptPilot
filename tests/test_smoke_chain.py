@@ -58,7 +58,7 @@ def _have_prereqs() -> tuple[bool, str]:
         return False, "SMOKE_TEST=skip"
     # Try to load .env
     try:
-        from promptpilot.core.dotenv import load_dotenv
+        from prpt.core.dotenv import load_dotenv
         load_dotenv(_REPO_ROOT / ".env")
     except Exception as e:
         return False, f"could not load .env: {e}"

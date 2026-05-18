@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from promptpilot.core.types import RepoMetadata, RewriteMode, TaskType, Confidence
-from promptpilot.normalizers.heuristic import HeuristicNormalizer
+from prpt.core.types import RepoMetadata, RewriteMode, TaskType, Confidence
+from prpt.normalizers.heuristic import HeuristicNormalizer
 
 
 @pytest.fixture

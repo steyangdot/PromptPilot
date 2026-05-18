@@ -9,9 +9,9 @@ Prompt-optimizing wrapper for AI coding CLIs. Uses a cheap SLM (Claude Haiku or 
 Pick the extra that matches your coding agent:
 
 ```bash
-pip install promptpilot[claude]      # for use with claude-code (Claude Haiku SLM)
-pip install promptpilot[codex]       # for use with codex (GPT-4o-mini SLM)
-pip install promptpilot[all]         # both
+pip install prpt[claude]      # for use with claude-code (Claude Haiku SLM)
+pip install prpt[codex]       # for use with codex (GPT-4o-mini SLM)
+pip install prpt[all]         # both
 ```
 
 `[anthropic]` / `[openai]` are kept as aliases for backward compatibility.

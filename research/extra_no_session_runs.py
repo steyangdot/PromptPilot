@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import chain_test_v2 as h  # noqa: E402
-from promptpilot._subprocess import claude_subprocess_session  # noqa: E402
+from prpt._subprocess import claude_subprocess_session  # noqa: E402
 
 
 def main() -> None:

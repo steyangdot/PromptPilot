@@ -210,7 +210,7 @@ def check_auth(cli_state: dict) -> dict:
     # Load .env (quote pairs, smart quotes, comments, shell-shadow detection)
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from promptpilot.core.dotenv import load_dotenv
+        from prpt.core.dotenv import load_dotenv
         load_dotenv(REPO_ROOT / ".env")
     except Exception as e:
         warn(f"could not load .env: {e}")
@@ -252,10 +252,10 @@ def smoke_test_judge(auth_state: dict) -> bool:
         return False
     code = (
         "import sys; sys.path.insert(0, r'" + str(REPO_ROOT) + "');"
-        "from promptpilot.core.dotenv import load_dotenv; "
+        "from prpt.core.dotenv import load_dotenv; "
         "from pathlib import Path; "
         "load_dotenv(Path(r'" + str(REPO_ROOT) + "') / '.env');"
-        "from promptpilot.judges import get_default_judge;"
+        "from prpt.judges import get_default_judge;"
         "j = get_default_judge();"
         "text, cost, walltime = j('Reply with the single word OK and nothing else.', timeout=30);"
         "print(f'judge={j.name} text={text.strip()!r} cost=${cost:.5f} walltime={walltime:.2f}s')"
