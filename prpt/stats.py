@@ -92,7 +92,7 @@ def print_compress_stats(
     print("  Original bytes:       {0:>12,}".format(total_orig))
     print("  Compressed bytes:     {0:>12,}".format(total_compressed))
     print("  Bytes saved:          {0:>12,}  ({1:+.1f}%)".format(
-        bytes_saved, -overall_pct))
+        bytes_saved, overall_pct))
     print()
     print("  By command type:")
     print("    {0:<14}{1:>8}{2:>10}{3:>14}{4:>10}".format(

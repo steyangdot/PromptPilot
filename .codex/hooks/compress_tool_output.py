@@ -50,7 +50,7 @@ import time
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Resolve promptpilot on sys.path  (two dirs up from .claude/hooks/)
+# Resolve promptpilot on sys.path  (two dirs up from .codex/hooks/)
 # ---------------------------------------------------------------------------
 _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_HOOK_DIR))

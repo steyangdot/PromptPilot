@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 
 import pytest
 
-from prpt.stats import load_runs, print_stats
+from prpt.stats import load_runs, print_compress_stats, print_stats
 from prpt.cli import main
 
 
@@ -120,6 +118,40 @@ class TestPrintStats:
         print_stats(log_file, theme="dark")
         output = capsys.readouterr().out
         assert "\x1b[" in output
+
+    def test_print_compress_stats_reports_positive_savings(self, capsys):
+        records = [
+            {
+                "cmd_kind": "pytest",
+                "applied": True,
+                "original_len": 400,
+                "compressed_len": 100,
+            },
+        ]
+
+        print_compress_stats(records)
+
+        output = capsys.readouterr().out
+        assert "Bytes saved:" in output
+        assert "300" in output
+        assert "(+75.0%)" in output
+
+    def test_print_compress_stats_reports_negative_expansion(self, capsys):
+        records = [
+            {
+                "cmd_kind": "unknown",
+                "applied": False,
+                "original_len": 100,
+                "compressed_len": 125,
+            },
+        ]
+
+        print_compress_stats(records)
+
+        output = capsys.readouterr().out
+        assert "Bytes saved:" in output
+        assert "-25" in output
+        assert "(-25.0%)" in output
 
 
 class TestCompareMode:
