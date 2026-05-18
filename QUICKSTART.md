@@ -61,9 +61,9 @@ prpt restart --to docs/sess.md     # custom path
 To curate the summary by hand:
 
 ```bash
-promptpilot checkpoint   # writes ./handoff.md, session preserved
+prpt checkpoint      # writes ./handoff.md, session preserved
 $EDITOR handoff.md   # tweak anything Haiku missed
-promptpilot bootstrap    # clears session, re-populates from handoff.md
+prpt bootstrap       # clears session, re-populates from handoff.md
 ```
 
 `handoff.md` has five required headers — `Goal`, `Decisions made`, `Files

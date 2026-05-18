@@ -10,7 +10,9 @@ class TestParseArgs:
     def test_minimal_prompt(self):
         args = parse_args(["fix", "the", "bug"])
         assert args.prompt == ["fix", "the", "bug"]
-        assert args.normalizer == "heuristic"
+        # Default normalizer is "slm" (auto-detects backend; falls back to
+        # heuristic if no backend available — see cli.py main()).
+        assert args.normalizer == "slm"
         assert args.tool == "echo"
         assert args.dry_run is False
 
@@ -245,8 +247,10 @@ class TestRouteDispatch:
         monkeypatch.setattr(HeuristicNormalizer, "_last_scope", "localized", raising=False)
         monkeypatch.setattr(HeuristicNormalizer, "_last_spec", None, raising=False)
 
-        # Not --dry-run, not --auto, not --compare -> clarify branch fires
-        exit_code = main(["fix the bug in payments"])
+        # Not --dry-run, not --auto, not --compare -> clarify branch fires.
+        # Force --normalizer heuristic so the patched HeuristicNormalizer.normalize
+        # actually runs (default is now "slm" which would bypass the patch).
+        exit_code = main(["--normalizer", "heuristic", "fix the bug in payments"])
         out = capsys.readouterr().out
         assert exit_code == 0
         assert clarify_question in out

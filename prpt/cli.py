@@ -113,10 +113,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     parser.add_argument("prompt", nargs="*", help="Raw developer prompt")
     parser.add_argument(
-        "--normalizer", default="heuristic",
+        "--normalizer", default="slm",
         choices=["heuristic", "slm", "slm-anthropic", "slm-openai", "slm-openai-v2", "slm-subscription"],
-        help="heuristic (default), slm (auto-detect), slm-anthropic, slm-openai, "
-             "slm-openai-v2 (JSON execution spec, experimental), "
+        help="slm (default; auto-detects ANTHROPIC_API_KEY > OPENAI_API_KEY > "
+             "Max OAuth; falls back to heuristic if none available), "
+             "heuristic (rule-based, no API/auth needed), slm-anthropic, "
+             "slm-openai, slm-openai-v2 (JSON execution spec, experimental), "
              "or slm-subscription (Max OAuth / no API key required)",
     )
     parser.add_argument("--api-key", default=None, help="API key for the SLM / tool adapter")
@@ -364,15 +366,35 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                       **_log_kwargs(args, repo, raw_prompt, final_prompt, exit_code, "pass_through"))
         return exit_code
 
-    # Normalizer
+    # Normalizer.
+    #
+    # Default is "slm" (auto-detect Anthropic/OpenAI/subscription) — the
+    # product's core path. If no SLM backend is available (no API keys, no
+    # Max OAuth, no codex login), `create_normalizer("slm")` raises
+    # RuntimeError; we fall back to heuristic with a clear note rather than
+    # erroring out. Users who pass --normalizer heuristic explicitly skip
+    # the fallback path.
     try:
         normalizer = create_normalizer(
             args.normalizer, api_key=args.api_key,
             load_repo_content=not args.no_repo_context,
         )
     except (ImportError, RuntimeError) as exc:
-        write_stderr("Error: {0}".format(exc))
-        return 1
+        if args.normalizer == "slm":
+            write_stderr(
+                "[promptpilot] No SLM backend available ({0}); "
+                "falling back to --normalizer heuristic. Set up an API key "
+                "(ANTHROPIC_API_KEY / OPENAI_API_KEY) or run `claude auth "
+                "login --claudeai` for full SLM functionality.\n".format(exc)
+            )
+            args.normalizer = "heuristic"
+            normalizer = create_normalizer(
+                "heuristic", api_key=args.api_key,
+                load_repo_content=not args.no_repo_context,
+            )
+        else:
+            write_stderr("Error: {0}".format(exc))
+            return 1
 
     # Session: prepend recent turns so SLM can resolve references across invocations.
     #

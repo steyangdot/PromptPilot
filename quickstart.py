@@ -138,17 +138,17 @@ def _pick_extras(cli_state: dict) -> str:
 
 def install_promptpilot(cli_state: dict) -> bool:
     extra = _pick_extras(cli_state)
-    section(f"3. Install promptpilot (editable, with {extra} extras)")
-    # Probe: is promptpilot already importable AND points at this repo?
+    section(f"3. Install prpt (editable, with {extra} extras)")
+    # Probe: is prpt already importable AND points at this repo?
     rc, out = run([sys.executable, "-c",
                    "import prpt, os; print(os.path.dirname(prpt.__file__))"])
     if rc == 0:
         installed_path = Path(out.strip()).resolve()
-        expected = (REPO_ROOT / "promptpilot").resolve()
+        expected = (REPO_ROOT / "prpt").resolve()
         if installed_path == expected:
             ok(f"already installed (editable, pointing at {expected})")
             return True
-        warn(f"promptpilot importable but points at {installed_path}, not this repo")
+        warn(f"prpt importable but points at {installed_path}, not this repo")
         info("Will reinstall in editable mode from this repo.")
 
     spec = f".[{extra}]"
@@ -166,12 +166,12 @@ def install_promptpilot(cli_state: dict) -> bool:
 
 
 def check_promptpilot_cli() -> bool:
-    section("4. Verify promptpilot CLI")
-    if not shutil.which("promptpilot"):
-        fail("`promptpilot` not found in PATH after install")
+    section("4. Verify prpt CLI")
+    if not shutil.which("prpt"):
+        fail("`prpt` not found in PATH after install")
         info("Try: hash -r  (bash) or restart shell, then re-run")
         return False
-    rc, out = run(["promptpilot", "--help"])
+    rc, out = run(["prpt", "--help"])
     if rc != 0:
         fail("`prpt --help` failed")
         return False

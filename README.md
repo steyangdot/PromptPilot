@@ -24,8 +24,8 @@ equivalent options:
 
 ```bash
 # 1. One-liner straight from GitHub (no clone, pins easy):
-pip install "git+https://github.com/steyangdot/PromptPilot.git[all]"
-pip install "git+https://github.com/steyangdot/PromptPilot.git@v0.1.0[all]"   # pin to a tag
+pip install "prpt[all] @ git+https://github.com/steyangdot/PromptPilot.git"
+pip install "prpt[all] @ git+https://github.com/steyangdot/PromptPilot.git@v0.1.0"   # pin to a tag
 
 # 2. Clone + editable install (best for development; source edits live):
 git clone https://github.com/steyangdot/PromptPilot.git
