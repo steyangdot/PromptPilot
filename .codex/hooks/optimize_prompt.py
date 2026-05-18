@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Claude Code UserPromptSubmit hook.
+Codex UserPromptSubmit hook.
 
-Intercepts every user prompt, rewrites it with Claude Haiku (grounded in repo
-file contents), then injects the optimized version as additionalContext so the
-expensive downstream model gets a precise, unambiguous task description.
+Intercepts every user prompt, rewrites it with a cheap SLM (Haiku or GPT-5.4-nano),
+then injects the optimized version as additionalContext so the expensive downstream
+model gets a precise, unambiguous task description.
 
-Fails open on every error — a broken hook must never block Claude Code.
+Fails open on every error — a broken hook must never block Codex.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import json
 import os
 import sys
 
-# Resolve project root (two levels up from .claude/hooks/)
+# Resolve project root (two levels up from .codex/hooks/)
 _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(_HOOK_DIR))
 if _PROJECT_ROOT not in sys.path:
@@ -30,6 +30,7 @@ _SKIP_PREFIXES = ("/", "#", "!")
 def _allow(additional_context: str | None = None) -> None:
     """Exit 0 with optional additionalContext."""
     if additional_context:
+        # Codex consumes the same UserPromptSubmit response envelope as Claude Code.
         print(json.dumps({
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",

@@ -331,6 +331,8 @@ The full test suite (`.github/workflows/test.yml`) runs on every push to
 
 PromptPilot is licensed under the [Apache License 2.0](LICENSE).
 
+Contributors are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
 PromptPilot wraps multiple LLM vendors' tools (Claude, Codex, OpenAI) in an
 area where patent claims are unsettled, and the explicit patent grant in
 Apache §3 protects both users and contributors. It keeps every permissive
