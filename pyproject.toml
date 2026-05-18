@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prpt"
-version = "0.1.1"
-description = "PromptPilot — prompt-optimizing wrapper for AI coding CLIs; uses a cheap SLM to reduce token consumption on expensive models"
+version = "0.1.2"
+description = "PromptPilot - prompt-optimizing wrapper for AI coding CLIs; uses a cheap SLM to reduce token consumption on expensive models"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
@@ -29,7 +29,7 @@ classifiers = [
 # Tool-named extras (preferred): pick the one that matches your coding agent.
 claude = ["anthropic>=0.39.0"]
 codex  = ["openai>=1.0.0", "tiktoken>=0.7.0"]
-# SDK-named aliases (kept for backward compatibility — same as claude/codex).
+# SDK-named aliases (kept for backward compatibility - same as claude/codex).
 anthropic = ["anthropic>=0.39.0"]
 openai = ["openai>=1.0.0", "tiktoken>=0.7.0"]
 all = ["anthropic>=0.39.0", "openai>=1.0.0", "tiktoken>=0.7.0"]

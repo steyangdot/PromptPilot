@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import pytest
 
+from prpt.adapters.echo import EchoAdapter
 from prpt.cli import parse_args, main
+from prpt.core.types import NormalizedRequest, RepoMetadata, RewriteMode
 
 
 class TestParseArgs:
@@ -81,6 +83,96 @@ class TestMainFlow:
         assert exit_code == 0
         output = capsys.readouterr().out
         assert len(output) > 0
+
+    def test_answer_route_non_tty_defaults_to_proceed(self, monkeypatch, tmp_path, capsys):
+        class FakeNormalizer:
+            _last_intent = "explain"
+            _last_scope = "localized"
+
+            def normalize(self, prompt, repo, high_stakes=False):
+                return NormalizedRequest(
+                    original_prompt=prompt,
+                    task_type="code_explanation",
+                    objective="Explain auth behavior",
+                    explicit_context=[],
+                    hard_constraints=[],
+                    soft_preferences=[],
+                    requested_output=[],
+                    protected_spans=[],
+                    ambiguities=[],
+                    assumptions=[],
+                    omissions=[],
+                    confidence="high",
+                    needs_review=False,
+                    rewrite_mode=RewriteMode.EXTRACT_PLUS_LIGHT_REWRITE.value,
+                    normalized_prompt="Explain auth behavior.",
+                )
+
+            def answer_directly(self, prompt, repo):
+                return "direct answer"
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: FakeNormalizer())
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+        monkeypatch.setattr("prpt.cli.AdapterFactory.create", lambda args: EchoAdapter())
+
+        exit_code = main([
+            "--cwd", str(tmp_path),
+            "--normalizer", "slm",
+            "--tool", "echo",
+            "why does auth behave this way?",
+        ])
+
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert "Explain auth behavior." in output
+        assert "direct answer" not in output
+
+    def test_review_prompt_non_tty_defaults_to_proceed(self, monkeypatch, tmp_path, capsys):
+        class FakeNormalizer:
+            _last_intent = "act"
+            _last_scope = "localized"
+
+            def normalize(self, prompt, repo, high_stakes=False):
+                return NormalizedRequest(
+                    original_prompt=prompt,
+                    task_type="bug_fix",
+                    objective="Fix auth behavior",
+                    explicit_context=[],
+                    hard_constraints=[],
+                    soft_preferences=[],
+                    requested_output=[],
+                    protected_spans=[],
+                    ambiguities=[],
+                    assumptions=[],
+                    omissions=[],
+                    confidence="high",
+                    needs_review=True,
+                    rewrite_mode=RewriteMode.EXTRACT_PLUS_LIGHT_REWRITE.value,
+                    normalized_prompt="Fix auth behavior.",
+                )
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: FakeNormalizer())
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+        monkeypatch.setattr("prpt.cli.AdapterFactory.create", lambda args: EchoAdapter())
+
+        exit_code = main([
+            "--cwd", str(tmp_path),
+            "--normalizer", "slm",
+            "--tool", "echo",
+            "fix auth",
+        ])
+
+        assert exit_code == 0
+        output = capsys.readouterr().out
+        assert "Fix auth behavior." in output
 
     def test_show_json(self, capsys):
         exit_code = main(["--dry-run", "--show-json", "fix the timeout bug in payments"])

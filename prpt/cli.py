@@ -99,7 +99,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(
         prog="prpt",
-        description="PromptPilot — prompt-optimizing wrapper for AI coding CLIs",
+        description="PromptPilot - prompt-optimizing wrapper for AI coding CLIs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -246,6 +246,14 @@ def _append_output_constraints(prompt: str, normalizer, tool: str) -> str:
     return prompt + "\n\n" + suffix if suffix else prompt
 
 
+def _input_or_default(prompt: str, default: str, reason: str) -> str:
+    """Read an interactive choice, or return the default in non-TTY runs."""
+    if sys.stdin.isatty():
+        return input(prompt).strip() or default
+    write_stderr("[promptpilot] non-interactive stdin; defaulting to {0}.".format(reason))
+    return default
+
+
 def _build_assistant_record(normalizer, normalized, modified_files) -> str:
     """Build the assistant session-turn record from spec.memory_record (v2)
     or the SLM rewrite (v1), prefixed with the adapter's modified files.
@@ -368,7 +376,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # Normalizer.
     #
-    # Default is "slm" (auto-detect Anthropic/OpenAI/subscription) — the
+    # Default is "slm" (auto-detect Anthropic/OpenAI/subscription) - the
     # product's core path. If no SLM backend is available (no API keys, no
     # Max OAuth, no codex login), `create_normalizer("slm")` raises
     # RuntimeError; we fall back to heuristic with a clear note rather than
@@ -403,7 +411,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # validation (pre-v2-#4): chain4 N=10 + chain5 N=15, ~26% input-token savings
     # at zero quality cost. Re-validated 2026-05-17 under v2's clean memory_record
     # (`_gate_chain4_n10/`): savings shrank to ~5% input tokens at ~5% cps penalty
-    # because the v2 record made session itself short — the gate has less to skip.
+    # because the v2 record made session itself short - the gate has less to skip.
     # Still useful for long-session / burst-of-independent-prompts workloads.
     # Gate is fail-safe: classifier errors default to loading history rather
     # than silently dropping memory.
@@ -512,7 +520,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("  [1] Proceed - forward grounded prompt to {0}".format(args.tool))
         print("  [2] SLM answers directly - fast, cheap, no downstream call")
         print("  [3] Abort")
-        explain_choice = input("Choice [1/2/3, default=1]: ").strip() or "1"
+        explain_choice = _input_or_default(
+            "Choice [1/2/3, default=1]: ", "1", "choice 1"
+        )
         if explain_choice == "2":
             answer = normalizer.answer_directly(raw_prompt, repo)
             print(answer)
@@ -637,7 +647,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print_review(normalized, validation, theme=args.theme)
         if token_stats is not None:
             print_token_stats(token_stats, theme=args.theme)
-        choice = input("Proceed with this normalized request? [Y/n] ").strip().lower()
+        choice = _input_or_default(
+            "Proceed with this normalized request? [Y/n] ", "y", "yes"
+        ).lower()
         if choice in {"n", "no"}:
             print("Aborted.")
             maybe_log_run(args.log_file, args.log_runs,
