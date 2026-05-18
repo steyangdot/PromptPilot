@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+# Claude Code project-local config — may contain personal allow-rules / keys
+.claude/settings.local.json
+# Codex local auth
+.codex/auth.json
+
+# Project state / generated artifacts
+.promptpilot_runs.jsonl
+*.jsonl
+*.log
+# Internal project scratch — contain personal email + session-specific
+# context; not OSS-appropriate. Stay in the working tree for developer
+# reference but don't get tracked. (Match is case-sensitive; .gitignore is
+# case-sensitive on Linux/macOS even if Windows filesystem isn't.)
+handoff.md
+HANDOFF.md
+fix_plan.md
+FIX_PLAN.md
+codexHandoff.txt
+SESSION_STATUS.md
+# Mypy / ruff caches
+.mypy_cache/
+.ruff_cache/
+# Stuck Windows-locked artifact (HANDOFF flagged needs reboot to delete)
+chain_results_v2_codex/
+
+# Per-user Claude Code state (default IDE launch config + scheduled-task
+# session lock). The hook scripts under .claude/hooks/ DO ship — those
+# are project hooks meant for install.
+.claude/launch.json
+.claude/scheduled_tasks.lock
+
+# Internal dev diaries / raw chain run logs — useful while iterating,
+# not useful to OSS users; ~60KB of developer scratch.
+Improvements.txt
+research/notes/
+
+# Research data (not part of the OSS package)
+research/data/
+chain_results*/
+agentic_test/
+agentic_variety/
+multirun_results/
+
+# Local-only workspace (notes, defense docs, drafts — never committed)
+_workspace/

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptpilot"
+version = "0.1.0"
+description = "Prompt-optimizing wrapper for AI coding CLIs — uses a cheap SLM to reduce token consumption on expensive models"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [
+    { name = "promptpilot contributors" },
+]
+keywords = ["llm", "prompt-optimization", "token-savings", "claude", "openai", "codex"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.optional-dependencies]
+# Tool-named extras (preferred): pick the one that matches your coding agent.
+claude = ["anthropic>=0.39.0"]
+codex  = ["openai>=1.0.0", "tiktoken>=0.7.0"]
+# SDK-named aliases (kept for backward compatibility — same as claude/codex).
+anthropic = ["anthropic>=0.39.0"]
+openai = ["openai>=1.0.0", "tiktoken>=0.7.0"]
+all = ["anthropic>=0.39.0", "openai>=1.0.0", "tiktoken>=0.7.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+
+[project.scripts]
+prpt = "promptpilot.cli:main_cli"
+
+[project.urls]
+Homepage = "https://github.com/steyangdot/PromptPilot"
+Issues = "https://github.com/steyangdot/PromptPilot/issues"
+Repository = "https://github.com/steyangdot/PromptPilot"
+
+[tool.setuptools.packages.find]
+include = ["promptpilot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
