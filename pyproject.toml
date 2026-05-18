@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prpt"
-version = "0.1.0"
+version = "0.1.1"
 description = "PromptPilot — prompt-optimizing wrapper for AI coding CLIs; uses a cheap SLM to reduce token consumption on expensive models"
 readme = "README.md"
 license = "Apache-2.0"
