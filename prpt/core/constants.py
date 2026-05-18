@@ -46,21 +46,21 @@ TEST_FRAMEWORK_HINTS: dict = {
 # --- Pricing: USD per million tokens (input, output) ---
 
 MODEL_PRICING: dict = {
-    # Anthropic — Haiku
+    # Anthropic - Haiku
     "claude-haiku-4-5-20251001": {"input": 0.80,  "output": 4.00},
-    # Anthropic — Sonnet
+    # Anthropic - Sonnet
     "claude-sonnet-4-6":         {"input": 3.00,  "output": 15.00},
     "claude-sonnet-4-7":         {"input": 3.00,  "output": 15.00},
-    # Anthropic — Opus
+    # Anthropic - Opus
     "claude-opus-4-6":           {"input": 15.00, "output": 75.00},
     "claude-opus-4-7":           {"input": 15.00, "output": 75.00},
-    # OpenAI — GPT-5.4 family (current gen, 2026). Public API list rates;
+    # OpenAI - GPT-5.4 family (current gen, 2026). Public API list rates;
     # verify before invoicing.
     "gpt-5.4-nano":              {"input": 0.20,  "output": 1.25},
     "gpt-5.4-mini":              {"input": 0.75,  "output": 4.50},
     "gpt-5.4":                   {"input": 2.50,  "output": 10.00},
     "gpt-5.5":                   {"input": 5.00,  "output": 20.00},
-    # OpenAI — legacy
+    # OpenAI - legacy
     "gpt-4o-mini":               {"input": 0.15,  "output": 0.60},
     "gpt-4o-mini-2024-07-18":    {"input": 0.15,  "output": 0.60},
     "gpt-4o":                    {"input": 2.50,  "output": 10.00},
@@ -70,8 +70,8 @@ MODEL_PRICING: dict = {
 }
 
 # Prompt-cache multipliers (Anthropic ephemeral cache)
-CACHE_WRITE_MULTIPLIER = 1.25   # cache creation billed at 1.25× input
-CACHE_READ_MULTIPLIER  = 0.10   # cache reads billed at 0.10× input
+CACHE_WRITE_MULTIPLIER = 1.25   # cache creation billed at 1.25x input
+CACHE_READ_MULTIPLIER  = 0.10   # cache reads billed at 0.10x input
 
 DEFAULT_TARGET_MODEL = "claude-opus-4-7"
 DEFAULT_SLM_ANTHROPIC = "claude-haiku-4-5-20251001"
