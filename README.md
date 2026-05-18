@@ -16,6 +16,34 @@ pip install prpt[all]         # both
 
 `[anthropic]` / `[openai]` are kept as aliases for backward compatibility.
 
+### Install from source
+
+If you'd rather skip PyPI — to inspect the code, pick up unreleased fixes
+on `main`, pin to a specific commit, or hack on it — you have three
+equivalent options:
+
+```bash
+# 1. One-liner straight from GitHub (no clone, pins easy):
+pip install "git+https://github.com/steyangdot/PromptPilot.git[all]"
+pip install "git+https://github.com/steyangdot/PromptPilot.git@v0.1.0[all]"   # pin to a tag
+
+# 2. Clone + editable install (best for development; source edits live):
+git clone https://github.com/steyangdot/PromptPilot.git
+cd PromptPilot
+pip install -e ".[all]"
+
+# 3. Clone + regular install:
+git clone https://github.com/steyangdot/PromptPilot.git
+cd PromptPilot
+pip install ".[all]"
+```
+
+All three produce the same `prpt` command on PATH and the same `prpt`
+import. Feature parity is exact — `pyproject.toml` is the only source of
+truth for both PyPI and source builds. The from-source path is the only
+way to access fixes that have landed on `main` but haven't been published
+to PyPI in a tagged release yet.
+
 ## Auth: which path to pick
 
 **Recommended for Max/Pro users:** `claude auth login --claudeai`. PromptPilot
