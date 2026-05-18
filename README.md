@@ -1,6 +1,6 @@
 # PromptPilot
 
-Prompt-optimizing wrapper for AI coding CLIs. Uses a cheap SLM (Claude Haiku or GPT-4o-mini) to rewrite developer prompts before they hit expensive models, reducing token consumption.
+Prompt-optimizing wrapper for AI coding CLIs. Uses a cheap SLM (Claude Haiku or GPT-5.4-nano) to rewrite developer prompts before they hit expensive models, reducing token consumption.
 
 > **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)** — five-minute onboarding covering install, auth, and the `handoff.md` workflow.
 
@@ -10,7 +10,7 @@ Pick the extra that matches your coding agent:
 
 ```bash
 pip install prpt[claude]      # for use with claude-code (Claude Haiku SLM)
-pip install prpt[codex]       # for use with codex (GPT-4o-mini SLM)
+pip install prpt[codex]       # for use with codex (GPT-5.4-nano SLM)
 pip install prpt[all]         # both
 ```
 

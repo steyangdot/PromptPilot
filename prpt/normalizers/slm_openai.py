@@ -1,4 +1,4 @@
-"""SLM normalizer backed by GPT-4o-mini (OpenAI).
+"""SLM normalizer backed by GPT-5.4-nano (OpenAI).
 
 Auth: ``OPENAI_API_KEY`` only -- this normalizer uses the openai SDK,
 which doesn't accept ChatGPT subscription credentials. There is intentionally
@@ -28,7 +28,7 @@ from prpt.normalizers.slm_anthropic import (
 
 class OpenAISLMNormalizer(Normalizer):
     """
-    Rewrites the prompt via GPT-4o-mini, then extracts metadata heuristically.
+    Rewrites the prompt via GPT-5.4-nano (default; configurable), then extracts metadata heuristically.
 
     Requires: pip install prpt[codex]
     Requires: OPENAI_API_KEY env var (or api_key kwarg)
@@ -170,7 +170,7 @@ class OpenAISLMNormalizer(Normalizer):
         Fail-safe: on any classifier error, returns True so we DO load history
         rather than silently dropping memory on a turn that needed it.
 
-        Costs ~$0.00003 (200 input + 5 output gpt-4o-mini tokens).
+        Costs ~$0.00004 (200 input + 5 output gpt-5.4-nano tokens at $0.20/M in, $1.25/M out).
         """
         from prpt.normalizers.slm_anthropic import _SYSTEM_CLASSIFY_REFERENTIAL
         try:
@@ -242,7 +242,7 @@ class OpenAISLMNormalizer(Normalizer):
             self._last_scope = scope
             return rewritten
         except Exception as exc:
-            write_stderr("[slm-openai] GPT-4o-mini rewrite failed ({0}), using original.".format(exc))
+            write_stderr("[slm-openai] GPT-5.4-nano rewrite failed ({0}), using original.".format(exc))
             return prompt
 
     def compute_token_stats(

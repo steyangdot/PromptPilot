@@ -65,7 +65,7 @@ def main() -> None:
     except ImportError:
         _allow()  # promptpilot package not available
 
-    # --- 4. Rewrite with SLM (auto-detects Haiku or GPT-4o-mini) ---
+    # --- 4. Rewrite with SLM (auto-detects Haiku or GPT-5.4-nano) ---
     try:
         normalizer = create_normalizer("slm", load_repo_content=True)
     except (ImportError, RuntimeError):

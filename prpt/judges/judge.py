@@ -12,7 +12,7 @@ Four implementations:
   MaxHaikuJudge because codex spins up its agent loop even for one-shot
   prompts, but bills shadow $ against the subscription quota.
 - ``AnthropicApiJudge`` — anthropic SDK + ``ANTHROPIC_API_KEY``, Haiku model.
-- ``OpenAiJudge`` — openai SDK + ``OPENAI_API_KEY``, gpt-4o-mini.
+- ``OpenAiJudge`` — openai SDK + ``OPENAI_API_KEY``, gpt-5.4-nano (current default).
 
 Selection:
 - ``PROMPTPILOT_JUDGE=max|codex|anthropic|openai`` env var if you want to force one.

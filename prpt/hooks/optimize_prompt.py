@@ -2,7 +2,7 @@
 """
 Claude Code UserPromptSubmit hook.
 
-Intercepts every user prompt, rewrites it with a cheap SLM (Haiku or GPT-4o-mini),
+Intercepts every user prompt, rewrites it with a cheap SLM (Haiku or GPT-5.4-nano),
 then injects the optimized version as additionalContext so the expensive downstream
 model gets a precise, unambiguous task description.
 
@@ -91,7 +91,7 @@ def main() -> None:
     except ImportError:
         _allow()  # promptpilot package not available
 
-    # --- 4. Rewrite with SLM (auto-detects Haiku or GPT-4o-mini) ---
+    # --- 4. Rewrite with SLM (auto-detects Haiku or GPT-5.4-nano) ---
     try:
         normalizer = create_normalizer("slm", load_repo_content=True)
     except (ImportError, RuntimeError):
