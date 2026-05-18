@@ -1,0 +1,46 @@
+# Run the test suite on every push and pull request.
+#
+# Tests the package across supported Python versions so regressions
+# don't sneak into main. The slow `tests/test_smoke_chain.py` test is
+# excluded (it hits a real API and costs ~$0.15/run).
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual runs from the Actions UI
+  workflow_dispatch:
+
+# Cancel in-progress runs on the same branch when a new push lands
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package + test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[all,dev]"
+
+      - name: Run unit tests
+        run: python -m pytest tests/ --ignore=tests/test_smoke_chain.py -v

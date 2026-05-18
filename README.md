@@ -298,6 +298,35 @@ prpt stats        # includes "--- Tool-output compression ---" section
 PROMPTPILOT_COMPRESS_DISABLE=1 claude   # bypass compression for this session
 ```
 
+## Releasing (for maintainers)
+
+PyPI publishes are automated via GitHub Actions Trusted Publishing — no
+API token in the repo. To cut a release:
+
+```bash
+# 1. Bump version in pyproject.toml (semantic versioning: patch/minor/major)
+# 2. Commit + push to main
+git add pyproject.toml
+git commit -m "Bump to 0.1.1"
+git push origin main
+
+# 3. Create a release (the publish.yml workflow fires automatically)
+gh release create v0.1.1 --title "v0.1.1 — short title" --notes "release notes..."
+```
+
+The workflow at `.github/workflows/publish.yml` builds, validates, and
+uploads the sdist + wheel. PyPI's Trusted Publishing exchanges the
+workflow's OIDC identity for a short-lived upload token at job time —
+no long-lived secrets are stored anywhere.
+
+GitHub commits don't auto-publish — only released tags do. README polish,
+typo fixes, internal refactors land on `main` without touching PyPI. The
+PyPI page is refreshed only when a release ships, which keeps the
+package's `pip install` story stable.
+
+The full test suite (`.github/workflows/test.yml`) runs on every push to
+`main` and on pull requests across Python 3.9/3.11/3.13.
+
 ## License
 
 PromptPilot is licensed under the [Apache License 2.0](LICENSE).

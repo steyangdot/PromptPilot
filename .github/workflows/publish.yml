@@ -1,0 +1,80 @@
+# Publish prpt to PyPI on GitHub release.
+#
+# Uses Trusted Publishing (OIDC) — no API token stored in the repo.
+# PyPI exchanges the GitHub Actions OIDC identity for a short-lived
+# upload token at publish time. One-time setup on PyPI required: see
+# README "Publishing" section or:
+#   https://pypi.org/manage/project/prpt/settings/publishing/
+#
+# Trigger: when a GitHub Release is published (Release UI "Publish" button,
+# or `gh release create`). The release's tag should match the version in
+# pyproject.toml — e.g. `v0.1.1` for `version = "0.1.1"`.
+#
+# Failure modes:
+#   - "Trusted publisher not configured" → finish the PyPI setup at the
+#     URL above. The publisher must match: owner=steyangdot,
+#     repo=PromptPilot, workflow=publish.yml, environment=pypi.
+#   - "File already exists" → you're re-publishing a version. Bump the
+#     version in pyproject.toml and create a new release.
+#   - Build fails → check pyproject.toml + test the build locally with
+#     `python -m build && python -m twine check dist/*`.
+
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+# Prevent two concurrent publishes from racing
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    # The "pypi" environment is required for Trusted Publishing setup
+    # at https://pypi.org/manage/project/prpt/settings/publishing/.
+    # Add required reviewers to this env in repo settings if you want
+    # a manual approval gate before any publish runs.
+    environment:
+      name: pypi
+      url: https://pypi.org/project/prpt/
+
+    permissions:
+      # OIDC token for Trusted Publishing — short-lived, exchanged for
+      # a PyPI upload token at job time. Replaces long-lived API tokens.
+      id-token: write
+      # Read access to repo contents for the checkout step
+      contents: read
+
+    steps:
+      - name: Checkout source at the release tag
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build twine
+
+      - name: Run unit tests (smoke-only — full suite is in test workflow)
+        run: |
+          python -m pip install -e ".[all,dev]"
+          python -m pytest tests/ --ignore=tests/test_smoke_chain.py -q
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Validate build metadata
+        run: python -m twine check dist/*
+
+      - name: Publish to PyPI via Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No `with:` block needed — OIDC exchange happens automatically.
+        # Defaults to https://upload.pypi.org/legacy/ (production PyPI).
