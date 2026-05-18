@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prpt"
 version = "0.1.2"
-description = "PromptPilot - prompt-optimizing wrapper for AI coding CLIs; uses a cheap SLM to reduce token consumption on expensive models"
+description = "PromptPilot - SLM-powered control plane for AI coding agents; routes, clarifies, compresses, and preserves context before invoking Codex/Claude-style agents"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [
     { name = "PromptPilot contributors" },
 ]
-keywords = ["llm", "prompt-optimization", "token-savings", "claude", "openai", "codex"]
+keywords = ["llm", "slm", "coding-agents", "control-plane", "semantic-preservation", "claude", "openai", "codex"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
