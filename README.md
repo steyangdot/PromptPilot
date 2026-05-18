@@ -1,8 +1,51 @@
 # PromptPilot
 
-Prompt-optimizing wrapper for AI coding CLIs. Uses a cheap SLM (Claude Haiku or GPT-5.4-nano) to rewrite developer prompts before they hit expensive models, reducing token consumption.
+> An SLM-powered control plane for AI coding agents.
+
+PromptPilot sits between developers and Codex/Claude-style coding agents. It uses a small language model as the harness layer to decide what should happen before the expensive agent runs: clarify, answer directly, compress noisy context, rewrite safely, pass through unchanged, or invoke the full coding agent.
+
+The goal is not to replace frontier coding models. The goal is to make them cheaper, safer, and easier to debug by controlling the context and workflow around them.
+
+PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction.
+
+**The SLM manages the workflow; the frontier model writes the code.**
 
 > **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)** — five-minute onboarding covering install, auth, and the `handoff.md` workflow.
+
+## What the SLM does — and does not do
+
+PromptPilot uses a small language model as the harness around the coding agent.
+
+The SLM does:
+
+- Classify user intent
+- Detect ambiguity
+- Decide whether to clarify, answer, pass through, or invoke the coding agent
+- Rewrite prompts when safe
+- Compress noisy tool output
+- Preserve explicit constraints, file paths, failing tests, and stack traces
+- Recommend passthrough when transformation risk is high
+
+The SLM does not:
+
+- Replace the coding model
+- Make deep implementation decisions
+- Debug complex code by itself
+- Modify files directly
+- Hide or discard high-risk context to save tokens
+
+The frontier coding agent still performs the hard reasoning, debugging, implementation, and test-fixing work.
+
+## Project docs
+
+- [Architecture](docs/ARCHITECTURE.md) — how the SLM harness, routes, coding agent, and telemetry fit together.
+- [SLM Harness](docs/SLM_HARNESS.md) — what the small model is trusted to do and where it must fall back.
+- [Semantic Preservation](docs/SEMANTIC_PRESERVATION.md) — why shorter output is not success unless critical facts survive.
+- [Safety Model](docs/SAFETY_MODEL.md) — bounded trust and passthrough rules.
+- [Benchmarks](docs/BENCHMARKS.md) — efficiency plus preservation framing.
+- [Comparison](docs/COMPARISON.md) — how PromptPilot differs from token reducers, routers, orchestrators, and coding agents.
+- [Roadmap](docs/ROADMAP.md) — planned work for bounded SLM control-layer improvements.
+- [FAQ](docs/FAQ.md) — answers to common positioning questions.
 
 ## Install
 
@@ -248,6 +291,22 @@ With `--normalizer slm-openai-v2`, the SLM can route prompts to **clarify**
 (ask a question and exit), **passthrough** (run the raw prompt unmodified),
 or **answer** (respond directly without invoking the agent) instead of the
 default **act** path. See `prpt/core/spec.py` for the routing schema.
+
+## Not blind compression
+
+PromptPilot does not assume that a smaller model is better at coding than a frontier model.
+
+The SLM is used for bounded harness decisions, not deep coding decisions.
+
+Raw token savings are not enough. If the SLM drops an important constraint, file path, failing test, stack trace, or API boundary, the savings are fake — the user may pay the cost back through bugs and debugging.
+
+PromptPilot treats semantic preservation as the safety condition:
+
+- Compress low-risk noise.
+- Preserve critical facts.
+- Ask for clarification when intent is ambiguous.
+- Pass through unchanged when rewrite risk is high.
+- Let the frontier coding agent handle the hard implementation.
 
 ## Tool-output compression
 

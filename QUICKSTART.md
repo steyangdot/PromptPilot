@@ -1,6 +1,6 @@
 # PromptPilot quickstart
 
-Five-minute onboarding. For all flags and env vars, see `prpt --help` and [README.md](README.md).
+Five-minute onboarding for PromptPilot, an SLM-powered control plane for AI coding agents. The SLM manages workflow decisions around Codex/Claude-style agents; the frontier model still writes and debugs the code. For all flags and env vars, see `prpt --help` and [README.md](README.md).
 
 ## 1. Run the setup script
 
