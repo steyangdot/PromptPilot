@@ -37,8 +37,9 @@ Add a `PostToolUse` hook for Bash output in your project-level `.claude/settings
         "hooks": [
           {
             "type": "command",
-            "command": "python /path/to/PromptPilot/.codex/hooks/compress_tool_output.py",
-            "timeout": 10
+            "command": "python <path-to-PromptPilot>/.codex/hooks/compress_tool_output.py",
+            "timeout": 10,
+            "statusMessage": "Compressing tool output..."
           }
         ]
       }
@@ -47,7 +48,7 @@ Add a `PostToolUse` hook for Bash output in your project-level `.claude/settings
 }
 ```
 
-Use the absolute path to this checkout's `.codex/hooks/compress_tool_output.py` if the target project is not the PromptPilot repository.
+Replace `<path-to-PromptPilot>` with the absolute path to this checkout if the target project is not the PromptPilot repository.
 
 ## Codex setup
 
