@@ -60,3 +60,9 @@ PromptPilot separates workflow control from coding execution:
 5. **Telemetry and replay** record routing, token impact, compression events, and session handoff data.
 
 This keeps the SLM central but bounded: it controls the workflow around the coding agent without replacing the model that reasons about and edits code.
+
+## Related pages
+
+- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
+- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
+- [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)

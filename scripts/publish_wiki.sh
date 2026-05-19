@@ -95,29 +95,46 @@ copy_page() {
 
 # Map in-repo docs to wiki pages.
 copy_page "docs/README.md" "Home.md"
-copy_page "README.md" "Project-Overview.md"
+copy_page "docs/PROJECT_OVERVIEW.md" "Project-Overview.md"
 copy_page "QUICKSTART.md" "Quickstart.md"
+copy_page "docs/AUTHENTICATION_AND_PROVIDERS.md" "Authentication-and-Providers.md"
+copy_page "docs/TOOL_OUTPUT_COMPRESSION.md" "Tool-Output-Compression.md"
+copy_page "docs/TROUBLESHOOTING.md" "Troubleshooting.md"
 copy_page "docs/ARCHITECTURE.md" "Architecture.md"
 copy_page "docs/SLM_HARNESS.md" "SLM-Harness.md"
+copy_page "docs/ROUTES_AND_DECISIONS.md" "Routes-and-Decisions.md"
 copy_page "docs/SEMANTIC_PRESERVATION.md" "Semantic-Preservation.md"
 copy_page "docs/SAFETY_MODEL.md" "Safety-Model.md"
+copy_page "docs/TELEMETRY_AND_REPLAY.md" "Telemetry-and-Replay.md"
 copy_page "docs/BENCHMARKS.md" "Benchmarks.md"
 copy_page "docs/COMPARISON.md" "Comparison.md"
 copy_page "docs/FAQ.md" "FAQ.md"
 copy_page "docs/ROADMAP.md" "Roadmap.md"
+copy_page "docs/WIKI_WORKFLOW.md" "Wiki-Publishing.md"
 
 cat > "$workdir/_Sidebar.md" <<'SIDEBAR'
 - [Home](Home)
-- [Project Overview](Project-Overview)
-- [Quickstart](Quickstart)
-- [Architecture](Architecture)
-- [SLM Harness](SLM-Harness)
-- [Semantic Preservation](Semantic-Preservation)
-- [Safety Model](Safety-Model)
-- [Benchmarks](Benchmarks)
-- [Comparison](Comparison)
-- [FAQ](FAQ)
-- [Roadmap](Roadmap)
+- Getting Started
+  - [Project Overview](Project-Overview)
+  - [Quickstart](Quickstart)
+  - [Authentication and Providers](Authentication-and-Providers)
+  - [Troubleshooting](Troubleshooting)
+  - [FAQ](FAQ)
+- Concepts
+  - [Architecture](Architecture)
+  - [SLM Harness](SLM-Harness)
+  - [Routes and Decisions](Routes-and-Decisions)
+  - [Semantic Preservation](Semantic-Preservation)
+  - [Safety Model](Safety-Model)
+- Operations
+  - [Tool Output Compression](Tool-Output-Compression)
+  - [Telemetry and Replay](Telemetry-and-Replay)
+- Evaluation
+  - [Benchmarks](Benchmarks)
+  - [Comparison](Comparison)
+- Project
+  - [Roadmap](Roadmap)
+  - [Wiki Publishing](Wiki-Publishing)
 SIDEBAR
 
 cd "$workdir"

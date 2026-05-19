@@ -13,3 +13,22 @@ PromptPilot is closest to an SLM-powered harness, not a pure token reducer or co
 ## Positioning
 
 PromptPilot's core claim is bounded: a small model can manage the workflow around a large coding model. The small model should not be judged as a replacement coder; it should be judged as a harness for routing, clarification, semantic preservation, and safe context control.
+
+## When PromptPilot fits
+
+- You already use Codex or Claude-style coding agents.
+- You want fewer wasted frontier-model calls on ambiguous or simple requests.
+- You want noisy tool output compressed without losing debugging facts.
+- You care about preserving explicit constraints more than maximizing token reduction.
+
+## When it may not fit
+
+- You want a standalone coding agent.
+- You want the small model to make implementation decisions.
+- You need fully automatic context deletion with no passthrough fallback.
+
+## Related pages
+
+- [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview)
+- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
+- [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)
