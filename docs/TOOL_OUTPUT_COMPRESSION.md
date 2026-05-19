@@ -26,11 +26,38 @@ Compressed output should keep:
 
 ## Claude Code setup
 
-Add a `PostToolUse` hook for Bash output in Claude Code settings. The hook should call PromptPilot's compression script and preserve a reasonable timeout.
+Add a `PostToolUse` hook for Bash output in your project-level `.claude/settings.json` or global `~/.claude/settings.json`.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /path/to/PromptPilot/.codex/hooks/compress_tool_output.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Use the absolute path to this checkout's `.codex/hooks/compress_tool_output.py` if the target project is not the PromptPilot repository.
 
 ## Codex setup
 
-Codex picks up the repo's `.codex/hooks.json` when run inside a PromptPilot checkout.
+When running Codex inside the PromptPilot checkout, Codex picks up `.codex/hooks.json` automatically. The relevant entry calls:
+
+```text
+python .codex/hooks/compress_tool_output.py
+```
+
+For another repository, copy or adapt the `PostToolUse` block from PromptPilot's `.codex/hooks.json`, and make the command point to the compression script location that exists in that project.
 
 ## Review compression results
 

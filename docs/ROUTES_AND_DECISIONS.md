@@ -25,6 +25,8 @@ The harness should consider:
 
 ## Examples
 
+These examples are schematic and show the decision shape, not a literal CLI or API output format.
+
 Clarify:
 
 ```text

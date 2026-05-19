@@ -13,6 +13,7 @@ PromptPilot optimizes for **semantic-preserving context control**, not blind tok
 To keep this repository lightweight, long-form product/positioning documentation now lives in the **GitHub Wiki**.
 
 - **Wiki home:** <https://github.com/steyangdot/PromptPilot/wiki>
+- **Conceptual overview:** <https://github.com/steyangdot/PromptPilot/wiki/Project-Overview>
 - In-repo docs are kept minimal and operational (quickstart, security, contributing).
 - Publish wiki pages from repo docs: `scripts/publish_wiki.sh` (details in `docs/WIKI_WORKFLOW.md`).
 

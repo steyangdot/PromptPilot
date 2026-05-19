@@ -32,6 +32,8 @@ The correct route is passthrough when the SLM cannot confidently preserve intent
 
 ## Example
 
+This is a schematic example, not a literal wire format.
+
 Risky input:
 
 ```text

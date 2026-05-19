@@ -40,5 +40,4 @@ for long-form product, workflow, and evaluation material.
 - [QUICKSTART.md](https://github.com/steyangdot/PromptPilot/blob/main/QUICKSTART.md) for five-minute onboarding
 - [SECURITY.md](https://github.com/steyangdot/PromptPilot/blob/main/SECURITY.md) for key-handling and security policy
 - [CONTRIBUTING.md](https://github.com/steyangdot/PromptPilot/blob/main/CONTRIBUTING.md) for contribution workflow
-
 - [WIKI_WORKFLOW.md](https://github.com/steyangdot/PromptPilot/blob/main/docs/WIKI_WORKFLOW.md) for the wiki sync script and usage

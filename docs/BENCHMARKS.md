@@ -7,14 +7,14 @@ PromptPilot measures the SLM harness on two dimensions:
 
 A harness output is not successful just because it is shorter.
 
-| Case | Raw tokens | Harness tokens | Reduction | Preservation target |
+| Case | Raw tokens | Target harness tokens | Target reduction | Preservation target |
 |---|---:|---:|---:|---|
 | pytest trace | 12,400 | 2,100 | 83.1% | test name, exception, file path, stack frame |
 | grep flood | 9,800 | 1,400 | 85.7% | relevant files, symbols, matched lines |
 | git diff | 18,200 | 4,900 | 73.1% | changed files, behavior, risky edits |
 | install log | 7,600 | 900 | 88.2% | failing package, error code, command |
 
-These figures are illustrative targets for the kinds of cases PromptPilot should measure. If preservation fails, the correct route is passthrough.
+These figures are illustrative targets for the kinds of cases PromptPilot should measure, not published benchmark results. If preservation fails, the correct route is passthrough.
 
 ## Interpreting results
 

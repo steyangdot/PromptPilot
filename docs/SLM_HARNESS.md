@@ -52,6 +52,8 @@ A successful harness result should make the downstream agent's job clearer while
 
 ## Example
 
+This is a schematic example, not a literal wire format.
+
 Raw prompt:
 
 ```text

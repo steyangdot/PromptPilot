@@ -6,6 +6,8 @@ It sits before Codex/Claude-style tools and uses a small model to make bounded w
 
 The goal is not to replace the coding model. The goal is to make expensive agent runs clearer, safer, and less wasteful.
 
+This page is the conceptual overview. The repository [README](https://github.com/steyangdot/PromptPilot/blob/main/README.md) stays intentionally shorter and focuses on install, package metadata, and the first link into the docs.
+
 ## What problem it solves
 
 AI coding sessions often waste frontier-model context on work that does not require frontier reasoning:
