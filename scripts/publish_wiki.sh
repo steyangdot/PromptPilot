@@ -97,11 +97,27 @@ copy_page() {
 copy_page "docs/README.md" "Home.md"
 copy_page "README.md" "Project-Overview.md"
 copy_page "QUICKSTART.md" "Quickstart.md"
+copy_page "docs/ARCHITECTURE.md" "Architecture.md"
+copy_page "docs/SLM_HARNESS.md" "SLM-Harness.md"
+copy_page "docs/SEMANTIC_PRESERVATION.md" "Semantic-Preservation.md"
+copy_page "docs/SAFETY_MODEL.md" "Safety-Model.md"
+copy_page "docs/BENCHMARKS.md" "Benchmarks.md"
+copy_page "docs/COMPARISON.md" "Comparison.md"
+copy_page "docs/FAQ.md" "FAQ.md"
+copy_page "docs/ROADMAP.md" "Roadmap.md"
 
 cat > "$workdir/_Sidebar.md" <<'SIDEBAR'
 - [Home](Home)
 - [Project Overview](Project-Overview)
 - [Quickstart](Quickstart)
+- [Architecture](Architecture)
+- [SLM Harness](SLM-Harness)
+- [Semantic Preservation](Semantic-Preservation)
+- [Safety Model](Safety-Model)
+- [Benchmarks](Benchmarks)
+- [Comparison](Comparison)
+- [FAQ](FAQ)
+- [Roadmap](Roadmap)
 SIDEBAR
 
 cd "$workdir"

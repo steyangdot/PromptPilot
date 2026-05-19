@@ -19,6 +19,14 @@ scripts/publish_wiki.sh
 - `docs/README.md` → `Home.md`
 - `README.md` → `Project-Overview.md`
 - `QUICKSTART.md` → `Quickstart.md`
+- `docs/ARCHITECTURE.md` → `Architecture.md`
+- `docs/SLM_HARNESS.md` → `SLM-Harness.md`
+- `docs/SEMANTIC_PRESERVATION.md` → `Semantic-Preservation.md`
+- `docs/SAFETY_MODEL.md` → `Safety-Model.md`
+- `docs/BENCHMARKS.md` → `Benchmarks.md`
+- `docs/COMPARISON.md` → `Comparison.md`
+- `docs/FAQ.md` → `FAQ.md`
+- `docs/ROADMAP.md` → `Roadmap.md`
 
 ## Usage
 
