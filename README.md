@@ -1,6 +1,6 @@
 # PromptPilot
 
-PromptPilot uses a small-model harness around Codex/Claude-style agents to route prompts, clarify ambiguity, compress noisy context, preserve constraints, and decide when to pass through unchanged. The SLM manages the workflow; the frontier model writes and debugs the code.
+PromptPilot uses a small language model harness around Codex/Claude-style agents to route prompts, clarify ambiguity, compress noisy context, preserve constraints, and decide when to pass through unchanged. The SLM manages the workflow; the frontier model writes and debugs the code.
 
 PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction.
 
