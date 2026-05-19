@@ -6,11 +6,16 @@ The SLM is trusted to make harness decisions that are reversible, inspectable, a
 
 ## Safe actions
 
-- Ask a clarification question before acting.
-- Answer directly when no coding-agent run is needed.
-- Preserve constraints while lightly rewriting a prompt.
-- Compress repetitive output when important facts remain.
-- Recommend passthrough when transformation risk is high.
+SLM normalizer (per-prompt):
+
+- Ask a clarification question before acting (`route=clarify`).
+- Answer directly when no coding-agent run is needed (`route=answer`).
+- Preserve constraints while lightly rewriting a prompt (`route=act`, with the rewrite carried in `downstream_prompt`).
+- Recommend passthrough when transformation risk is high (`route=passthrough`).
+
+Post-tool hook (per tool invocation, separate from the SLM normalizer):
+
+- Compress repetitive bash tool output (pytest / grep / git diff / installer logs) using regex/heuristic rules that preserve failures, paths, stack frames, commands, and explicit constraints.
 
 ## Unsafe actions
 

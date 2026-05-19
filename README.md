@@ -19,7 +19,12 @@ To keep this repository lightweight, long-form product/positioning documentation
 
 ## Install
 
-Pick the extra that matches your coding agent:
+PromptPilot wraps an existing coding agent CLI — install one first:
+
+- **Claude Code:** `npm install -g @anthropic-ai/claude-code`, then `claude auth login --claudeai`
+- **Codex:** `npm install -g @openai/codex`, then `codex login`
+
+Then install PromptPilot with the matching extra:
 
 ```bash
 pip install prpt[claude]      # for use with claude-code (Claude Haiku SLM)
@@ -28,3 +33,22 @@ pip install prpt[all]         # both
 ```
 
 `[anthropic]` / `[openai]` are kept as aliases for backward compatibility.
+
+## First run
+
+```bash
+prpt setup                                # one-time onboarding (checks + smoke test)
+prpt "fix the flaky test in payments"     # auto-detects claude or codex from PATH
+prpt --dry-run "refactor auth, no API changes"  # preview the optimized prompt
+prpt --tool codex "add dark mode"         # force a specific agent
+prpt doctor                               # re-run setup checks if something breaks
+```
+
+After many turns the session grows heavy:
+
+```bash
+prpt restart                              # checkpoint -> handoff.md -> bootstrap fresh
+```
+
+For the full guide see **[QUICKSTART.md](QUICKSTART.md)** and `prpt --help`
+(or `prpt --advanced-help` for internal/researcher flags).

@@ -15,7 +15,9 @@ class TestParseArgs:
         # Default normalizer is "slm" (auto-detects backend; falls back to
         # heuristic if no backend available — see cli.py main()).
         assert args.normalizer == "slm"
-        assert args.tool == "echo"
+        # Default tool is "auto" (resolved to claude-code/codex at adapter
+        # creation; falls back to echo if neither is in PATH).
+        assert args.tool == "auto"
         assert args.dry_run is False
 
     def test_dry_run_flag(self):
