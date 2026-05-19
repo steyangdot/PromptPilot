@@ -1,6 +1,6 @@
 # PromptPilot quickstart
 
-Five-minute onboarding for PromptPilot, an SLM-powered control plane for AI coding agents. The SLM manages workflow decisions around Codex/Claude-style agents; the frontier model still writes and debugs the code. For all flags and env vars, see `prpt --help` and [README.md](README.md).
+Five-minute onboarding for PromptPilot, an SLM-powered control plane for AI coding agents. The SLM manages workflow decisions around Codex/Claude-style agents; the frontier model still writes and debugs the code. For all flags and env vars, see `prpt --help` and the [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview).
 
 ## 1. Run the setup script
 
@@ -24,7 +24,7 @@ Any one of these works on its own:
 | OpenAI API key | `echo 'OPENAI_API_KEY=sk-proj-...' > .env` | Fast SDK path with per-call billing |
 | Hybrid (optional) | API key + matching subscription | High-volume usage (cheap SLM + subscription LLM) |
 
-For detailed tradeoffs, quota notes, and compliance context, see **README → Auth: which path to pick**.
+For detailed tradeoffs, quota notes, and provider-specific setup guidance, see [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers).
 
 ## 3. First run
 
@@ -76,9 +76,10 @@ Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-
 ## Where to look next
 
 - `prpt --help` — every flag (`--tool`, `--normalizer`, `--dry-run`, `--high-stakes`, ...)
-- Env knobs: `CLAUDE_MODEL` (opus/sonnet/haiku), `PROMPTPILOT_JUDGE` (max/anthropic/openai), `USE_MAX_AUTH=1` (chain harness — uses Max OAuth instead of `--bare`). See [README.md](README.md) for compliance posture on subscription-routed paths.
-- [README.md](README.md) — install + usage examples
-- [SECURITY.md](SECURITY.md) — API key handling
+- Env knobs: `CLAUDE_MODEL` (opus/sonnet/haiku), `PROMPTPILOT_JUDGE` (max/anthropic/openai), `USE_MAX_AUTH=1` (chain harness uses Max OAuth instead of `--bare`). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes.
+- [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) — what PromptPilot is for
+- [SECURITY.md](https://github.com/steyangdot/PromptPilot/blob/main/SECURITY.md) — API key handling
 - `prpt install-hook` — wire into Claude Code as a UserPromptSubmit hook
-- `prpt stats --last 10` — review recent runs and savings (includes tool-output compression telemetry from `~/.promptpilot/compress_stats.jsonl`)
-- **Tool-output compression** — the PostToolUse hook auto-shrinks noisy pytest/grep/git output. Wired in `.codex/hooks.json` for codex; add a `PostToolUse` hooks block to `.claude/settings.json` to enable for Claude Code (see README "Tool-output compression" section).
+- `prpt stats --last 10` — review recent runs and savings; see [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
+- [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression) — how noisy pytest/grep/git output is compressed before the coding agent sees it
+- [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting) — common setup and runtime fixes

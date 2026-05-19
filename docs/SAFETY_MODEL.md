@@ -23,3 +23,19 @@ The SLM is trusted to make harness decisions that are reversible, inspectable, a
 ## Rule of thumb
 
 If preserving meaning is uncertain, do not transform the input. Pass it through unchanged and let the coding agent handle the full context.
+
+## High-risk cases
+
+Prefer passthrough when the input includes:
+
+- Security-sensitive behavior
+- Public API or migration constraints
+- Legal, billing, or compliance language
+- Failing tests where stack frames or environment details matter
+- User instructions that conflict with the SLM's proposed simplification
+
+## Related pages
+
+- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
+- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
+- [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)

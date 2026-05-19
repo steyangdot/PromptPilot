@@ -24,3 +24,9 @@ PromptPilot's roadmap emphasizes two principles:
 - Replacing frontier coding models.
 - Hiding critical context to maximize token savings.
 - Letting the SLM make irreversible code changes.
+
+## Related pages
+
+- [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)
+- [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
+- [Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing)

@@ -49,3 +49,27 @@ A successful harness result should make the downstream agent's job clearer while
 - A passthrough recommendation when rewrite risk is high.
 - A safe rewrite that preserves constraints and file references.
 - A compressed tool-output summary that keeps failures, paths, stack frames, commands, and API boundaries.
+
+## Example
+
+Raw prompt:
+
+```text
+Fix the failing auth test. Keep the public API stable and do not touch migrations.
+```
+
+Safe harness output:
+
+```text
+Route: invoke agent
+Preserve: failing auth test, public API stability, no migration edits
+Prompt: Fix the failing auth test without changing public API behavior or migration files.
+```
+
+The SLM clarifies the work envelope, but the coding agent still performs the implementation.
+
+## Related pages
+
+- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
+- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
+- [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)
