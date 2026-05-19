@@ -40,10 +40,37 @@ from prpt.session import load_all_turns, append_synth_turn, clear_session
 
 SECTION_HEADERS = ("Goal", "Decisions made", "Files touched", "Open items", "Constraints")
 
-_SECTION_RE = re.compile(
-    r"^##\s+(Goal|Decisions made|Files touched|Open items|Constraints)\s*$",
-    re.MULTILINE,
-)
+# Accepted variants per canonical header. Matched case-insensitively, with
+# trailing colons/asterisks stripped. Lets users hand-edit handoff.md without
+# tripping the strict template (e.g. "Files modified" instead of "Files
+# touched", "Decisions" instead of "Decisions made"). The canonical names are
+# what gets stored in the parsed section dict.
+_HEADER_VARIANTS = {
+    "Goal":           ("goal", "goals", "objective", "summary"),
+    "Decisions made": ("decisions made", "decisions", "decisions taken"),
+    "Files touched":  ("files touched", "files modified", "files changed",
+                       "files", "modified files"),
+    "Open items":     ("open items", "open", "next steps", "todo", "remaining"),
+    "Constraints":    ("constraints", "guardrails", "non-goals", "do not",
+                       "do not change"),
+}
+
+# Match any `## <header>` line; canonicalize the captured text downstream.
+_SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _canonicalize_header(text: str) -> Optional[str]:
+    """Return canonical header name for a raw header text, or None if no match.
+
+    Strips trailing punctuation (`:`, `*`, whitespace) and lowercases before
+    matching against the variant list. Returns the canonical name from
+    SECTION_HEADERS, preserving the exact casing the rest of the code expects.
+    """
+    cleaned = text.strip().rstrip(":*").strip().lower()
+    for canonical, variants in _HEADER_VARIANTS.items():
+        if cleaned in variants:
+            return canonical
+    return None
 
 
 _CHECKPOINT_PROMPT = """You are summarizing a coding-agent conversation into a structured handoff document.
@@ -118,13 +145,15 @@ def write_handoff(cwd: str, out_path: Path, clear_after: bool = False) -> dict:
             "OPENAI_API_KEY is set for SDK-based judges."
         )
 
-    # Validate the five required sections are present (strict template).
-    found = set(_SECTION_RE.findall(text))
+    # Validate that all five canonical sections are present (variants OK).
+    found = {_canonicalize_header(m) for m in _SECTION_RE.findall(text)}
+    found.discard(None)
     missing = [h for h in SECTION_HEADERS if h not in found]
     if missing:
         raise RuntimeError(
-            f"Haiku output missing required sections: {missing}. "
-            f"Got headers: {sorted(found)}. Re-run, or inspect output:\n{text[:500]}"
+            f"Handoff output missing required sections: {missing}. "
+            f"Got canonical headers: {sorted(h for h in found if h)}. "
+            f"Re-run, or inspect output:\n{text[:500]}"
         )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -144,27 +173,37 @@ def write_handoff(cwd: str, out_path: Path, clear_after: bool = False) -> dict:
     }
 
 
-def _parse_handoff(text: str) -> dict[str, str]:
-    """Parse a handoff.md into a dict of section name → body text.
+def _parse_handoff(text: str) -> dict:
+    """Parse a handoff.md into a dict of canonical section name → body text.
 
-    Strict: requires all five SECTION_HEADERS to be present (else raises).
-    Bodies are returned with leading/trailing whitespace stripped. Sections
-    declaring "(none)" are returned as empty strings.
+    Accepts header variants (case-insensitive, common synonyms — see
+    _HEADER_VARIANTS) so hand-edited handoffs survive minor renaming. All
+    five canonical SECTION_HEADERS must still be present (else raises). Body
+    text "(none)" is stored as an empty string.
     """
     matches = list(_SECTION_RE.finditer(text))
-    found = {m.group(1) for m in matches}
+    canonical_pairs = []  # list of (canonical_name, match) preserving order
+    for m in matches:
+        canonical = _canonicalize_header(m.group(1))
+        if canonical is not None:
+            canonical_pairs.append((canonical, m))
+
+    found = {name for name, _ in canonical_pairs}
     missing = [h for h in SECTION_HEADERS if h not in found]
     if missing:
+        # Show the raw headers we found alongside what's missing so users can
+        # see whether their rename simply doesn't match any variant.
+        raw = [m.group(1).strip() for m in matches]
         raise RuntimeError(
             f"handoff.md missing required sections: {missing}. "
-            f"Expected all of: {list(SECTION_HEADERS)}"
+            f"Found these headers (canonicalized variants OK): {raw}. "
+            f"Expected canonical: {list(SECTION_HEADERS)}"
         )
 
-    sections: dict[str, str] = {}
-    for i, m in enumerate(matches):
-        name = m.group(1)
+    sections: dict = {}
+    for i, (name, m) in enumerate(canonical_pairs):
         body_start = m.end()
-        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body_end = canonical_pairs[i + 1][1].start() if i + 1 < len(canonical_pairs) else len(text)
         body = text[body_start:body_end].strip()
         if body == "(none)":
             body = ""

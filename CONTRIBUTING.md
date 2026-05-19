@@ -6,9 +6,9 @@ Thanks for your interest. PromptPilot is a small project; contributions of all s
 
 1. Clone and install in editable mode:
    ```
-   python quickstart.py
+   python quickstart.py     # full bootstrap: editable install + checks
    ```
-   This auto-detects which coding CLI (`claude` / `codex`) you have and installs the matching extras.
+   This auto-detects which coding CLI (`claude` / `codex`) you have and installs the matching extras. Once `prpt` is on your PATH you can re-run the same checks with `prpt doctor` or repair a broken install with `prpt setup`.
 
 2. Run the tests:
    ```

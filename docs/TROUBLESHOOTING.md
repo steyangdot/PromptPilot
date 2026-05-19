@@ -4,10 +4,12 @@ This page collects common setup and runtime issues.
 
 ## CLI is not installed
 
-Run the quickstart script first:
+Run the bootstrap once, then `doctor` for re-checks:
 
 ```bash
-python quickstart.py
+python quickstart.py     # if you cloned the repo
+prpt setup               # if you `pip install`ed PromptPilot
+prpt doctor              # re-run checks any time, no install side effects
 ```
 
 If it reports a missing dependency, follow the exact command printed by the failing step.
@@ -36,7 +38,7 @@ Unset the shell variable or intentionally keep the shell value.
 
 ## Handoff validation fails
 
-`handoff.md` must keep the canonical sections:
+`handoff.md` must contain all five canonical sections:
 
 - Goal
 - Decisions made
@@ -44,7 +46,10 @@ Unset the shell variable or intentionally keep the shell value.
 - Open items
 - Constraints
 
-Do not rename those headers when curating the file by hand.
+Header matching is case-insensitive and accepts common variants (e.g. `Files
+modified`, `Decisions`, `Next steps`, `Guardrails`), so light hand-editing is
+fine. Removing or omitting a section will still fail; restore the missing one
+and retry.
 
 ## Wiki pages did not update
 

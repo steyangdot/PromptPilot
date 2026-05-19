@@ -98,6 +98,7 @@ copy_page "docs/README.md" "Home.md"
 copy_page "docs/PROJECT_OVERVIEW.md" "Project-Overview.md"
 copy_page "QUICKSTART.md" "Quickstart.md"
 copy_page "docs/AUTHENTICATION_AND_PROVIDERS.md" "Authentication-and-Providers.md"
+copy_page "docs/HYBRID_MODE.md" "Hybrid-Mode.md"
 copy_page "docs/TOOL_OUTPUT_COMPRESSION.md" "Tool-Output-Compression.md"
 copy_page "docs/TROUBLESHOOTING.md" "Troubleshooting.md"
 copy_page "docs/ARCHITECTURE.md" "Architecture.md"
@@ -118,6 +119,7 @@ cat > "$workdir/_Sidebar.md" <<'SIDEBAR'
   - [Project Overview](Project-Overview)
   - [Quickstart](Quickstart)
   - [Authentication and Providers](Authentication-and-Providers)
+  - [Hybrid Mode](Hybrid-Mode)
   - [Troubleshooting](Troubleshooting)
   - [FAQ](FAQ)
 - Concepts

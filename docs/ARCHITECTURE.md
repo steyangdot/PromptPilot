@@ -10,12 +10,13 @@ It decides:
 
 - What is the user asking?
 - Is the prompt clear enough?
-- Is this safe to rewrite?
+- Is this safe to rewrite, or should we pass it through unchanged?
 - Should the request be answered directly?
-- Should it be passed through unchanged?
-- Should noisy tool output be compressed?
-- What facts must be preserved?
-- Should the expensive coding agent be invoked?
+- What facts must be preserved when the coding agent is invoked?
+
+A separate post-tool subsystem decides:
+
+- Should noisy bash tool output be compressed before it re-enters the agent's context?
 
 The large coding agent remains responsible for:
 
@@ -26,7 +27,7 @@ The large coding agent remains responsible for:
 - Architectural reasoning
 
 ```text
-Developer prompt / tool output
+Developer prompt
         ↓
 PromptPilot
         ↓
@@ -35,16 +36,16 @@ SLM harness
   - ambiguity
   - risk
   - preservation
-  - routing
         ↓
-Route
+Route (one of four)
   - clarify
   - answer
   - passthrough
-  - compress
-  - invoke agent
+  - act    (with constraint-preserving rewrite -> downstream_prompt)
         ↓
 Codex / Claude-style coding agent
+        ↓
+Tool output (bash) ── PostToolUse hook ──> regex compressor ──> back to agent
         ↓
 Telemetry / replay / audit
 ```
@@ -53,11 +54,12 @@ Telemetry / replay / audit
 
 PromptPilot separates workflow control from coding execution:
 
-1. **Input capture** receives the developer prompt, session memory, and optional tool output.
+1. **Input capture** receives the developer prompt and session memory.
 2. **SLM harness** classifies intent, extracts constraints, evaluates ambiguity, and estimates transformation risk.
-3. **Route selection** chooses clarify, answer, passthrough, compress, rewrite, or invoke-agent behavior.
-4. **Frontier coding agent** receives either the original prompt or a semantic-preserving harness output.
-5. **Telemetry and replay** record routing, token impact, compression events, and session handoff data.
+3. **Route selection** chooses one of four routes: `clarify`, `answer`, `passthrough`, or `act` (which carries a constraint-preserving rewrite in `downstream_prompt`).
+4. **Frontier coding agent** receives either the raw prompt (`passthrough`) or the SLM's `downstream_prompt` (`act`).
+5. **Tool-output compression** (separate subsystem) runs as a `PostToolUse` hook on the agent's bash output, shrinking pytest/grep/git/installer noise before it re-enters the agent's context. Regex/heuristic-based, not SLM-driven.
+6. **Telemetry and replay** record routing, token impact, compression events, and session handoff data.
 
 This keeps the SLM central but bounded: it controls the workflow around the coding agent without replacing the model that reasons about and edits code.
 

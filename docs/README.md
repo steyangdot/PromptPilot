@@ -12,7 +12,7 @@ for long-form product, workflow, and evaluation material.
 - New user: [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) -> [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting) -> [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)
 - Evaluating the idea: [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) -> [Architecture](https://github.com/steyangdot/PromptPilot/wiki/Architecture) -> [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison)
 - Understanding the harness: [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) -> [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) -> [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
-- Operating PromptPilot: [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) -> [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression) -> [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
+- Operating PromptPilot: [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) -> [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode) -> [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression) -> [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
 - Contributing docs: [Roadmap](https://github.com/steyangdot/PromptPilot/wiki/Roadmap) -> [Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing)
 
 ## Wiki pages
@@ -20,6 +20,7 @@ for long-form product, workflow, and evaluation material.
 - [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview)
 - [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart)
 - [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers)
+- [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode)
 - [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression)
 - [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting)
 - [Architecture](https://github.com/steyangdot/PromptPilot/wiki/Architecture)

@@ -2,15 +2,24 @@
 
 Five-minute onboarding for PromptPilot, an SLM-powered control plane for AI coding agents. The SLM manages workflow decisions around Codex/Claude-style agents; the frontier model still writes and debugs the code. For all flags and env vars, see `prpt --help` and the [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview).
 
-## 1. Run the setup script
+## 1. Run setup
+
+Pick whichever fits how you installed PromptPilot:
 
 ```bash
-python quickstart.py
+python quickstart.py     # if you cloned the repo
+prpt setup               # if you ran `pip install prpt[claude]` / `[codex]` / `[all]`
 ```
 
-Six checks (Python ≥3.9, agent CLI, install, PromptPilot CLI, auth, smoke test).
-Idempotent. On failure each step prints the exact fix command. When you see
-green `Setup complete`, skip to **§3 First run**.
+Both run the same six checks (Python ≥3.9, agent CLI, install, PromptPilot CLI,
+auth, smoke test). Idempotent. On failure each step prints the exact fix
+command. When you see green `Setup complete`, skip to **§3 First run**.
+
+To re-check later without reinstalling:
+
+```bash
+prpt doctor              # checks only, no install side effects
+```
 
 ## 2. Authentication — pick ONE path
 
@@ -30,14 +39,21 @@ For detailed tradeoffs, quota notes, and provider-specific setup guidance, see [
 
 ```bash
 cd /path/to/your/repo
-prpt --dry-run "fix the flaky test in payments"            # preview only
-prpt --tool claude-code "fix the flaky test in payments"   # or --tool codex
+prpt --dry-run "fix the flaky test in payments"   # preview only
+prpt "fix the flaky test in payments"             # auto-detects claude or codex from PATH
 ```
 
 Each call records a turn, so follow-ups pick up context automatically:
 
 ```bash
-prpt --tool claude-code "now add a unit test for that fix"
+prpt "now add a unit test for that fix"
+```
+
+Override the auto-detection when you have both installed:
+
+```bash
+prpt --tool codex "add dark mode"        # canonical names: claude-code, codex
+prpt --tool claude "fix auth"            # `claude` is an alias for claude-code
 ```
 
 ## 4. Handoff / restart workflow
@@ -57,9 +73,11 @@ $EDITOR handoff.md   # tweak anything Haiku missed
 prpt bootstrap       # clears session, re-populates from handoff.md
 ```
 
-`handoff.md` has five required headers — `Goal`, `Decisions made`, `Files
-touched`, `Open items`, `Constraints`. `bootstrap` validates them, so don't
-rename or remove headers when editing.
+`handoff.md` has five required sections — `Goal`, `Decisions made`, `Files
+touched`, `Open items`, `Constraints`. `bootstrap` matches them
+case-insensitively and accepts common variants (e.g. `Files modified`,
+`Decisions`, `Next steps`), so light hand-editing is fine. Don't drop a
+section entirely.
 
 Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-only (~$0).
 
@@ -69,17 +87,18 @@ Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-
 |---|---|
 | `Not logged in · Please run /login` | `claude auth login --claudeai` |
 | `checkpoint failed: No session found for <path>` | Run a regular `prpt "..."` first |
-| `handoff.md missing required sections` | Restore the five canonical headers exactly |
+| `handoff.md missing required sections` | Restore the five canonical sections; variants of each name are accepted (case-insensitive) |
 | `[dotenv] WARNING: shell environment shadows .env value` | `unset ANTHROPIC_API_KEY` (or accept that the shell value wins) |
 | `PROMPTPILOT_JUDGE=openai but OPENAI_API_KEY is not set` | Set the key in `.env`, or pick a different judge |
 
 ## Where to look next
 
-- `prpt --help` — every flag (`--tool`, `--normalizer`, `--dry-run`, `--high-stakes`, ...)
-- Env knobs: `CLAUDE_MODEL` (opus/sonnet/haiku), `PROMPTPILOT_JUDGE` (max/anthropic/openai), `USE_MAX_AUTH=1` (chain harness uses Max OAuth instead of `--bare`). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes.
+- `prpt --help` — the curated flag set (`--tool`, `--normalizer`, `--dry-run`, `--high-stakes`, ...)
+- `prpt --advanced-help` (or `-H`) — researcher/internal flags hidden from the main help
+- Env knobs: `CLAUDE_MODEL` (opus/sonnet/haiku), `PROMPTPILOT_JUDGE` (max/anthropic/openai), `PROMPTPILOT_LET_SLM_ANSWER=1` (opt into the SLM-answer dialog on explain prompts), `USE_MAX_AUTH=1` (chain harness uses Max OAuth instead of `--bare`). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes.
 - [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) — what PromptPilot is for
 - [SECURITY.md](https://github.com/steyangdot/PromptPilot/blob/main/SECURITY.md) — API key handling
-- `prpt install-hook` — wire into Claude Code as a UserPromptSubmit hook
+- `prpt install-hook` — wire into Claude Code (or `prpt install-hook --tool codex` for Codex)
 - `prpt stats --last 10` — review recent runs and savings; see [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
 - [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression) — how noisy pytest/grep/git output is compressed before the coding agent sees it
 - [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting) — common setup and runtime fixes

@@ -20,6 +20,7 @@ scripts/publish_wiki.sh
 - `docs/PROJECT_OVERVIEW.md` → `Project-Overview.md`
 - `QUICKSTART.md` → `Quickstart.md`
 - `docs/AUTHENTICATION_AND_PROVIDERS.md` → `Authentication-and-Providers.md`
+- `docs/HYBRID_MODE.md` → `Hybrid-Mode.md`
 - `docs/TOOL_OUTPUT_COMPRESSION.md` → `Tool-Output-Compression.md`
 - `docs/TROUBLESHOOTING.md` → `Troubleshooting.md`
 - `docs/ARCHITECTURE.md` → `Architecture.md`

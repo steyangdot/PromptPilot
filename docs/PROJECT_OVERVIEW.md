@@ -24,9 +24,10 @@ PromptPilot treats these as harness decisions. The small model manages the workf
 ```text
 Developer request
   -> PromptPilot harness
-  -> route decision
-  -> passthrough, clarification, answer, compression, or agent invocation
-  -> Codex/Claude-style coding agent when needed
+  -> route decision (one of: clarify, answer, passthrough, act)
+  -> Codex/Claude-style coding agent (for passthrough or act)
+  -> bash tool output passes through the PostToolUse compression hook
+     (regex-based; not part of the route decision)
   -> telemetry for review and replay
 ```
 

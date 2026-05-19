@@ -37,10 +37,27 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ns.subcommand = "new-session"
         return ns
 
+    if raw and raw[0] in ("setup", "doctor"):
+        sd_parser = argparse.ArgumentParser(
+            prog="prpt " + raw[0],
+            description=(
+                "One-time onboarding: probe Python / coding-agent CLI / auth, "
+                "install deps if needed, run a smoke test."
+                if raw[0] == "setup"
+                else "Re-run setup checks (no install). Reports what's set up and what's missing."
+            ),
+        )
+        ns = sd_parser.parse_args(raw[1:])
+        ns.subcommand = raw[0]
+        return ns
+
     if raw and raw[0] == "install-hook":
         hook_parser = argparse.ArgumentParser(prog="prpt install-hook")
         hook_parser.add_argument("--global", dest="global_hook", action="store_true",
                                  help="Install into ~/.claude/settings.json instead of project-level")
+        hook_parser.add_argument("--tool", default="claude-code",
+                                 choices=["claude-code", "codex"],
+                                 help="Coding agent to wire the hook for (default: claude-code)")
         hook_parser.add_argument("--cwd", default=os.getcwd())
         ns = hook_parser.parse_args(raw[1:])
         ns.subcommand = "install-hook"
@@ -97,17 +114,28 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ns.subcommand = "restart"
         return ns
 
+    # Short-circuit: --advanced-help prints help text including the flags
+    # hidden from the normal --help. Implemented before argparse so we can
+    # show every flag (argparse SUPPRESS makes them un-printable otherwise).
+    if raw and raw[0] in ("--advanced-help", "-H"):
+        print(_ADVANCED_HELP)
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(
         prog="prpt",
-        description="PromptPilot - prompt-optimizing wrapper for AI coding CLIs",
+        description="PromptPilot - SLM-powered control plane for AI coding CLIs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Examples:\n"
-            "  prpt --dry-run \"fix flaky test in payments\"\n"
-            "  prpt --normalizer slm --dry-run \"refactor auth, no API changes\"\n"
-            "  prpt --normalizer slm --tool anthropic \"add dark mode\"\n"
-            "  prpt --normalizer slm-openai --tool openai --model gpt-4o \"add dark mode\"\n"
-            "  prpt install-hook\n"
+            "Common commands:\n"
+            "  prpt \"fix the flaky payment test\"          # auto-detects claude/codex\n"
+            "  prpt --dry-run \"refactor auth, no API changes\"\n"
+            "  prpt --tool codex \"add dark mode\"\n"
+            "  prpt setup                                 # one-time onboarding (post-install)\n"
+            "  prpt doctor                                # re-check setup\n"
+            "  prpt install-hook                          # wire into Claude Code\n"
+            "  prpt install-hook --tool codex             # wire into Codex\n"
+            "\n"
+            "Run `prpt --advanced-help` to see researcher/internal flags."
         ),
     )
 
@@ -115,47 +143,86 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--normalizer", default="slm",
         choices=["heuristic", "slm", "slm-anthropic", "slm-openai", "slm-openai-v2", "slm-subscription"],
-        help="slm (default; auto-detects ANTHROPIC_API_KEY > OPENAI_API_KEY > "
-             "Max OAuth; falls back to heuristic if none available), "
-             "heuristic (rule-based, no API/auth needed), slm-anthropic, "
-             "slm-openai, slm-openai-v2 (JSON execution spec, experimental), "
-             "or slm-subscription (Max OAuth / no API key required)",
+        metavar="{slm,heuristic}",
+        help="slm (default; auto-detects an available SLM backend), "
+             "heuristic (rule-based, no API/auth needed). "
+             "Other backends accepted but hidden from help; see --advanced-help.",
     )
     parser.add_argument("--api-key", default=None, help="API key for the SLM / tool adapter")
-    parser.add_argument("--no-repo-context", action="store_true",
-                        help="Skip loading repo file contents for SLM (faster, less grounded)")
-    parser.add_argument("--tool", default="echo",
-                        help="Downstream tool: echo, codex, anthropic, openai, or any CLI")
+    parser.add_argument("--tool", default="auto",
+                        help="Downstream tool: auto (default; picks claude-code or codex from PATH), "
+                             "claude-code (alias: claude), codex, anthropic, openai, echo, or any CLI")
     parser.add_argument("--model", default=None, help="Model for --tool anthropic/openai")
     parser.add_argument("--max-tokens", type=int, default=4096, help="Max output tokens for API adapters")
     parser.add_argument("--tool-arg", action="append", help="Extra arg for downstream tool (repeatable)")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for repo context")
     parser.add_argument("--dry-run", action="store_true", help="Print final prompt without executing")
     parser.add_argument("--auto", action="store_true", help="Skip review prompt when safe")
-    parser.add_argument("--strict", action="store_true", help="Always review when ambiguity exists")
     parser.add_argument("--pass-through", action="store_true", help="Forward raw prompt unchanged")
-    parser.add_argument("--show-json", action="store_true", help="Print normalization JSON")
-    parser.add_argument("--compare", action="store_true",
-                        help="Show side-by-side token comparison: raw vs optimized (no execution)")
     parser.add_argument("--high-stakes", action="store_true", help="Conservative mode")
-    parser.add_argument(
-        "--gate-session", action="store_true",
-        help="Load prior session turns only when the current prompt back-references them "
-             "(~5%% input-token saving at ~5%% cost-per-success penalty on chain4 N=10 with v2 "
-             "memory_record; larger savings on long-session workloads where memory accumulates). "
-             "Adds one ~$0.0002 Haiku classifier call. Requires an SLM normalizer; ignored for "
-             "heuristic.",
-    )
+    parser.add_argument("--let-slm-answer", action="store_true",
+                        help="On explain-style prompts, offer to let the SLM answer directly instead "
+                             "of forwarding to the coding agent (interactive). Also enabled via "
+                             "PROMPTPILOT_LET_SLM_ANSWER=1.")
     parser.add_argument("--verbose", action="store_true", help="Verbose stderr logging")
-    parser.add_argument("--log-runs", action="store_true", help="Append runs to JSONL log")
-    parser.add_argument("--log-file", default=DEFAULT_LOG_FILE, help="JSONL log path")
-    parser.add_argument("--target-model", default=DEFAULT_TARGET_MODEL,
-                        help="Model to compute savings against (default: {0})".format(DEFAULT_TARGET_MODEL))
-    parser.add_argument("--theme", default="plain", choices=["plain", "dark"],
-                        help="Terminal output theme")
+
+    # Hidden / advanced flags (kept working, suppressed in --help).
+    parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--show-json", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--compare", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-repo-context", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--gate-session", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--log-runs", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--log-file", default=DEFAULT_LOG_FILE, help=argparse.SUPPRESS)
+    parser.add_argument("--target-model", default=DEFAULT_TARGET_MODEL, help=argparse.SUPPRESS)
+    parser.add_argument("--theme", default="plain", choices=["plain", "dark"], help=argparse.SUPPRESS)
+
     ns = parser.parse_args(raw)
     ns.subcommand = None
     return ns
+
+
+# Help text shown by `prpt --advanced-help` (or `-H`). Documents the hidden
+# flags so they remain discoverable for researchers / power users.
+_ADVANCED_HELP = """\
+prpt --advanced-help - all flags including hidden ones
+
+The flags below are accepted but suppressed from the main --help to keep
+onboarding focused. They are stable and supported, just researcher/internal.
+
+  --strict              Always review when ambiguity exists.
+  --show-json           Print the normalization JSON before the final prompt.
+  --compare             Side-by-side token comparison: raw vs optimized; no exec.
+  --no-repo-context     Skip loading repo file contents for the SLM.
+  --gate-session        Skip loading prior session turns when the current prompt
+                        doesn't back-reference them. Saves ~5% input tokens at
+                        ~5% cost-per-success penalty (chain4 N=10 with v2
+                        memory_record). Heavier savings on long-session
+                        workloads. Adds one ~$0.0002 Haiku classifier call.
+  --log-runs            Append runs to a JSONL log.
+  --log-file PATH       JSONL log path (default: .promptpilot_runs.jsonl).
+  --target-model NAME   Model to compute savings against.
+  --theme {plain,dark}  Terminal output theme.
+
+Normalizer aliases (--normalizer):
+  slm                   Default. Auto-detects ANTHROPIC_API_KEY, OPENAI_API_KEY,
+                        Max OAuth, codex login - whichever is set.
+  heuristic             Rule-based, no API/auth needed.
+  slm-anthropic         Force Anthropic SDK normalizer.
+  slm-openai            Force OpenAI SDK normalizer.
+  slm-openai-v2         JSON execution-spec normalizer (experimental).
+  slm-subscription      Max OAuth normalizer (no API key required).
+
+Hidden subcommands and env vars:
+  PROMPTPILOT_JUDGE=max|codex|anthropic|openai
+                        Force the judge backend (handoff/restart path).
+  PROMPTPILOT_LET_SLM_ANSWER=1
+                        Same as --let-slm-answer.
+  CLAUDE_MODEL=opus|sonnet|haiku
+                        Override the Claude model in the chain harness.
+  USE_MAX_AUTH=1        Chain harness uses Max OAuth instead of --bare.
+
+See QUICKSTART.md and the GitHub wiki for the long-form docs."""
 
 
 # ---------------------------------------------------------------------------
@@ -163,16 +230,30 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def _install_hook(args: argparse.Namespace) -> int:
-    """Write hook config into Claude Code settings.json."""
+    """Write hook config into the right settings file for the target tool.
+
+    - --tool claude-code (default): writes a UserPromptSubmit hook to
+      .claude/settings.local.json (or ~/.claude/settings.json with --global).
+    - --tool codex: writes a UserPromptSubmit hook to .codex/hooks.json in
+      the project (codex reads project-local config by convention).
+    """
     hook_script = os.path.join(os.path.dirname(__file__), "hooks", "optimize_prompt.py")
     hook_script = os.path.abspath(hook_script).replace("\\", "/")
+    tool = getattr(args, "tool", "claude-code") or "claude-code"
 
-    if args.global_hook:
-        settings_path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+    if tool == "codex":
+        # Codex uses project-local .codex/hooks.json. --global is meaningless
+        # there; mention it and proceed with project-local.
+        if getattr(args, "global_hook", False):
+            print("Note: --global has no effect for codex; writing project-local "
+                  ".codex/hooks.json instead.")
+        settings_path = os.path.join(args.cwd, ".codex", "hooks.json")
     else:
-        settings_path = os.path.join(args.cwd, ".claude", "settings.local.json")
+        if args.global_hook:
+            settings_path = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+        else:
+            settings_path = os.path.join(args.cwd, ".claude", "settings.local.json")
 
-    # Read existing or start fresh
     if os.path.exists(settings_path):
         with open(settings_path, "r", encoding="utf-8") as f:
             settings = json.load(f)
@@ -192,7 +273,6 @@ def _install_hook(args: argparse.Namespace) -> int:
     hooks = settings.setdefault("hooks", {})
     existing = hooks.get("UserPromptSubmit", [])
 
-    # Don't duplicate if already installed
     for entry in existing:
         for h in entry.get("hooks", []):
             if "optimize_prompt" in h.get("command", ""):
@@ -206,7 +286,7 @@ def _install_hook(args: argparse.Namespace) -> int:
         json.dump(settings, f, indent=2)
         f.write("\n")
 
-    print("Installed hook into {0}".format(settings_path))
+    print("Installed {tool} hook into {p}".format(tool=tool, p=settings_path))
     print("Command: python {0}".format(hook_script))
     return 0
 
@@ -306,6 +386,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         clear_session(args.cwd)
         print("Session cleared: {0}".format(session_path_for(args.cwd)))
         return 0
+    if args.subcommand in ("setup", "doctor"):
+        from prpt.setup import run_setup
+        return run_setup(mode=args.subcommand)
     if args.subcommand == "install-hook":
         return _install_hook(args)
     if args.subcommand == "stats":
@@ -504,10 +587,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # route=answer: warn + offer SLM direct answer (skip the agent call).
     # The route is resolved from the v2 spec when available, falling back to
-    # intent="explain" for v1 normalizers. Keeps interactive UX so the user
-    # can override; --auto and --dry-run skip the offer and proceed to act.
+    # intent="explain" for v1 normalizers. Opt-in only -- previous default
+    # showed a 1/2/3 dialog on every explain prompt, which was disruptive in
+    # an interactive CLI. Enable via --let-slm-answer or
+    # PROMPTPILOT_LET_SLM_ANSWER=1.
     can_answer_directly = hasattr(normalizer, "answer_directly")
-    if (route == "answer" and can_answer_directly
+    let_slm_answer = (
+        getattr(args, "let_slm_answer", False)
+        or os.environ.get("PROMPTPILOT_LET_SLM_ANSWER", "").strip() in {"1", "true", "TRUE", "yes"}
+    )
+    if (route == "answer" and can_answer_directly and let_slm_answer
             and not args.auto and not args.dry_run
             and not getattr(args, "compare", False)):
         write_stderr(
