@@ -1,6 +1,6 @@
 # PromptPilot quickstart
 
-Five-minute onboarding. For all flags and env vars, see `prpt --help` and [README.md](README.md).
+Five-minute onboarding for PromptPilot, an SLM-powered control plane for AI coding agents. The SLM manages workflow decisions around Codex/Claude-style agents; the frontier model still writes and debugs the code. For all flags and env vars, see `prpt --help` and [README.md](README.md).
 
 ## 1. Run the setup script
 
@@ -14,26 +14,17 @@ green `Setup complete`, skip to **§3 First run**.
 
 ## 2. Authentication — pick ONE path
 
-Any one of the four standalone paths below works on its own. You do **not**
-need to set up multiple. Hybrid setups (last row) are an optional advanced
-optimization for users who happen to have both auths.
+Any one of these works on its own:
 
-| Path | Setup | Powers SLM + LLM | When to pick |
-|---|---|---|---|
-| **Max subscription only** | `claude auth login --claudeai` | Both via Max OAuth subprocess | You have a Max/Pro subscription, don't want to manage API keys |
-| **ChatGPT subscription only** | `codex login` | Both via `codex exec` subprocess | You have a ChatGPT subscription, don't want to manage API keys |
-| **Anthropic API key only** | `echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env` | Both via SDK, per-call billing | You want fastest path, no subscription, predictable per-call $ |
-| **OpenAI API key only** | `echo 'OPENAI_API_KEY=sk-proj-...' > .env` | Both via SDK, per-call billing | Same, OpenAI ecosystem |
-| **Advanced — hybrid** (optional) | Either API key + matching subscription | SLM via API, LLM via subscription | High-volume work; want SLM speed/cost + LLM free incremental |
+| Path | Setup | Best for |
+|---|---|---|
+| Max subscription | `claude auth login --claudeai` | Claude users who want zero API-key setup |
+| ChatGPT subscription | `codex login` | Codex users who want zero API-key setup |
+| Anthropic API key | `echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env` | Fast SDK path with per-call billing |
+| OpenAI API key | `echo 'OPENAI_API_KEY=sk-proj-...' > .env` | Fast SDK path with per-call billing |
+| Hybrid (optional) | API key + matching subscription | High-volume usage (cheap SLM + subscription LLM) |
 
-Quick picks:
-- **Max subscription only:** `claude auth login --claudeai`. Done. Calls bill against subscription quota (doubled by Anthropic for Pro/Max in 2026). One-time informational note prints when subscription routing fires (we don't touch the OAuth token; see README "Compliance posture").
-- **ChatGPT subscription only:** `codex login`. Then `prpt --tool codex "..."`. `CodexCliJudge` powers the SLM via `codex exec -m gpt-5.4-mini`. Caveat: each SLM call burns ~19k tokens of subscription quota due to codex's agent-loop overhead — fine for interactive use, heavy for chain experiments. Upgrade to the hybrid setup below if quota becomes a concern.
-- **API-billed:** drop a key in `.env`. Faster (prompt caching), predictable per-call cost.
-- **Advanced — hybrid for codex users:** `OPENAI_API_KEY` + `codex login`, then `prpt --normalizer slm-openai --tool codex "..."`. SLM on cheap API path (gpt-5.4-nano, ~$0.0001/call); LLM free incremental on ChatGPT subscription. ~100× cheaper per SLM call than codex-only.
-- **Advanced — hybrid for claude users:** `ANTHROPIC_API_KEY` + `claude auth login --claudeai`, then `prpt --normalizer slm-anthropic --tool claude-code "..."`. SLM on cheap SDK Haiku (~$0.001/call, prompt-cached); LLM free incremental on Max. Smaller speedup than codex case but reduces subscription-routing surface area to one layer.
-
-Full breakdown in **README → Pick a setup**.
+For detailed tradeoffs, quota notes, and compliance context, see **README → Auth: which path to pick**.
 
 ## 3. First run
 
