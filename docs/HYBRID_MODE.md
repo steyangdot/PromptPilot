@@ -32,9 +32,9 @@ Skip hybrid (use single-auth) when:
 
 | Layer | What it does | Selected by | Auto-detect order |
 |---|---|---|---|
-| **Normalizer** | Classifies intent, decides route, rewrites prompt | `--normalizer` (default `slm`) | `ANTHROPIC_API_KEY > OPENAI_API_KEY > Max OAuth` ([prpt/normalizers/base.py:277](prpt/normalizers/base.py:277)) |
-| **Judge** | Writes/reads `handoff.md` for checkpoint and restart | `PROMPTPILOT_JUDGE` env | `max > codex > anthropic > openai` ([prpt/judges/judge.py:372](prpt/judges/judge.py:372)) |
-| **Downstream agent** | Invokes the coding agent | `--tool` (default `auto`) | `claude > codex` ([prpt/adapters/factory.py:42](prpt/adapters/factory.py:42)) |
+| **Normalizer** | Classifies intent, decides route, rewrites prompt | `--normalizer` (default `slm`) | `ANTHROPIC_API_KEY > OPENAI_API_KEY > Max OAuth` ([prpt/normalizers/base.py#L277](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/base.py#L277)) |
+| **Judge** | Writes/reads `handoff.md` for checkpoint and restart | `PROMPTPILOT_JUDGE` env | `max > codex > anthropic > openai` ([prpt/judges/judge.py#L372](https://github.com/steyangdot/PromptPilot/blob/main/prpt/judges/judge.py#L372)) |
+| **Downstream agent** | Invokes the coding agent | `--tool` (default `auto`) | `claude > codex` ([prpt/adapters/factory.py#L42](https://github.com/steyangdot/PromptPilot/blob/main/prpt/adapters/factory.py#L42)) |
 
 The two auto-detect orders are intentionally **opposite** on subscription
 preference. The normalizer prefers API keys (SDK is faster and prompt-cached);
@@ -155,7 +155,7 @@ judge = get_default_judge()
 
 ### Codex judge has ~19k token shadow overhead per call
 
-`CodexCliJudge` ([prpt/judges/judge.py:10-13](prpt/judges/judge.py:10)) spins up
+`CodexCliJudge` ([prpt/judges/judge.py#L10-L13](https://github.com/steyangdot/PromptPilot/blob/main/prpt/judges/judge.py#L10-L13)) spins up
 codex's full agent loop for every judge call, which costs ~19,000 input tokens
 of shadow quota per invocation regardless of how short your prompt is. The
 `MaxHaikuJudge` strips this overhead with `--tools ""` and is much lighter.
@@ -167,7 +167,7 @@ codex-centric hybrid setup.
 
 If you've configured both API key and subscription, the default `slm`
 normalizer picks the **API key** path
-([prpt/normalizers/base.py:282-289](prpt/normalizers/base.py:282)). This is
+([prpt/normalizers/base.py#L282-L289](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/base.py#L282-L289)). This is
 intentional: SDK is faster and prompt-cached. If you want the normalizer to
 route through your subscription instead, pass `--normalizer slm-subscription`
 explicitly, or unset the API key in `.env`.
@@ -177,7 +177,7 @@ explicitly, or unset the API key in `.env`.
 You don't have to configure all four auths to use hybrid. Pick any two: one
 API key + one subscription. The auto-detect picks among what's there. The
 `get_default_judge` docstring spells this out
-([prpt/judges/judge.py:374-378](prpt/judges/judge.py:374)).
+([prpt/judges/judge.py#L374-L378](https://github.com/steyangdot/PromptPilot/blob/main/prpt/judges/judge.py#L374-L378)).
 
 ### Fallback when subscription auth fails
 
