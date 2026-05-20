@@ -76,8 +76,6 @@ downstream_prompt: Fix the failing auth test without changing public API behavio
 Preserve: failing auth test, public API stability, no migration edits.
 ```
 
-## Related pages
+---
 
-- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
-- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
-- [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression)
+**See also:** [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation) · [Tool Output Compression](https://github.com/steyangdot/PromptPilot/wiki/Tool-Output-Compression)

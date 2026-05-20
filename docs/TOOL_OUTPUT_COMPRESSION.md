@@ -70,8 +70,6 @@ prpt stats --last 10
 
 Compression telemetry is recorded so you can audit what changed and whether the savings are worth it.
 
-## Related pages
+---
 
-- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
-- [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
-- [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)
+**See also:** [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation) · [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay) · [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)

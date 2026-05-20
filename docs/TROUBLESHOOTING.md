@@ -63,8 +63,6 @@ scripts/publish_wiki.sh
 
 Use `--dry-run` first if you want to preview the wiki diff.
 
-## Related pages
+---
 
-- [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart)
-- [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers)
-- [Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing)
+**See also:** [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) · [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) · [Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing)

@@ -95,7 +95,7 @@ Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-
 
 - `prpt --help` — the curated flag set (`--tool`, `--normalizer`, `--dry-run`, `--high-stakes`, ...)
 - `prpt --advanced-help` (or `-H`) — researcher/internal flags hidden from the main help
-- Env knobs: `CLAUDE_MODEL` (opus/sonnet/haiku), `PROMPTPILOT_JUDGE` (max/anthropic/openai), `PROMPTPILOT_LET_SLM_ANSWER=1` (opt into the SLM-answer dialog on explain prompts), `USE_MAX_AUTH=1` (chain harness uses Max OAuth instead of `--bare`). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes.
+- Env knobs (used by the `prpt` CLI): `PROMPTPILOT_JUDGE` (max/codex/anthropic/openai — forces a judge backend), `PROMPTPILOT_LET_SLM_ANSWER=1` (opt into the SLM-answer dialog on explain prompts). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes. Note: `CLAUDE_MODEL` and `USE_MAX_AUTH` appear in the chain-harness scripts under `research/` only — they have no effect on a regular `prpt` invocation.
 - [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) — what PromptPilot is for
 - [SECURITY.md](https://github.com/steyangdot/PromptPilot/blob/main/SECURITY.md) — API key handling
 - `prpt install-hook` — wire into Claude Code (or `prpt install-hook --tool codex` for Codex)

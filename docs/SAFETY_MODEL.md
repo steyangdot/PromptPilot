@@ -39,8 +39,6 @@ Prefer passthrough when the input includes:
 - Failing tests where stack frames or environment details matter
 - User instructions that conflict with the SLM's proposed simplification
 
-## Related pages
+---
 
-- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
-- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
-- [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)
+**See also:** [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)

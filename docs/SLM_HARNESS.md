@@ -157,8 +157,6 @@ v2 (JSON spec):
 Either way, the coding agent receives only the `downstream_prompt` text. The
 SLM clarifies the work envelope; the coding agent performs the implementation.
 
-## Related pages
+---
 
-- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
-- [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation)
-- [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)
+**See also:** [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [Semantic Preservation](https://github.com/steyangdot/PromptPilot/wiki/Semantic-Preservation) · [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)

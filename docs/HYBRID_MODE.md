@@ -197,9 +197,6 @@ interpretive for high-volume programmatic CLI use — light interactive hybrid
 is clearly fine; running 60 SLM calls per minute in a loop is not. See
 [Comparison &rarr; Compliance posture](https://github.com/steyangdot/PromptPilot/wiki/Comparison#compliance-posture-vs-openclaw--opencode).
 
-## Related pages
+---
 
-- [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) — overview of each auth path
-- [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison) — compliance posture vs OpenClaw/OpenCode
-- [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) — cost/preservation targets
-- [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) — five-minute onboarding
+**See also:** [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) · [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison) · [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) · [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart)
