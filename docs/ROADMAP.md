@@ -9,15 +9,15 @@ PromptPilot's roadmap holds two principles:
 
 The pieces below are in `main` and covered by the test suite.
 
-- **v2 control plane** — JSON `ExecutionSpec` with `route ∈ {clarify, answer, passthrough, act}` plus `intent`, `scope`, `target_files`, `risk`, `memory_record`. v1 prose envelope kept as fallback parser. ([prpt/core/spec.py](../prpt/core/spec.py), [prpt/normalizers/slm_openai_v2.py](../prpt/normalizers/slm_openai_v2.py))
-- **Four interchangeable judges** — `MaxHaikuJudge`, `CodexCliJudge`, `AnthropicApiJudge`, `OpenAiJudge`, auto-detected in priority order. ([prpt/judges/judge.py](../prpt/judges/judge.py))
-- **Hybrid auth pattern** — API-key SLM + subscription LLM, ~4,500× subsidy ratio measured on chain5. ([HYBRID_MODE.md](HYBRID_MODE.md), [BENCHMARKS.md](BENCHMARKS.md))
-- **Handoff / restart workflow** — `prpt checkpoint`, `prpt bootstrap`, `prpt restart` for collapsing heavy sessions to `handoff.md` and resuming fresh. ([prpt/handoff.py](../prpt/handoff.py))
+- **v2 control plane** — JSON `ExecutionSpec` with `route ∈ {clarify, answer, passthrough, act}` plus `intent`, `scope`, `target_files`, `risk`, `memory_record`. v1 prose envelope kept as fallback parser. ([prpt/core/spec.py](https://github.com/steyangdot/PromptPilot/blob/main/prpt/core/spec.py), [prpt/normalizers/slm_openai_v2.py](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/slm_openai_v2.py))
+- **Four interchangeable judges** — `MaxHaikuJudge`, `CodexCliJudge`, `AnthropicApiJudge`, `OpenAiJudge`, auto-detected in priority order. ([prpt/judges/judge.py](https://github.com/steyangdot/PromptPilot/blob/main/prpt/judges/judge.py))
+- **Hybrid auth pattern** — API-key SLM + subscription LLM, ~4,500× subsidy ratio measured on chain5. ([Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode), [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks))
+- **Handoff / restart workflow** — `prpt checkpoint`, `prpt bootstrap`, `prpt restart` for collapsing heavy sessions to `handoff.md` and resuming fresh. ([prpt/handoff.py](https://github.com/steyangdot/PromptPilot/blob/main/prpt/handoff.py))
 - **Session memory with referential gate** — recent turns prepended; `--gate-session` classifier skips history when prompt is self-contained. Default-on after N=5 chain1 retest showed +60% success / −28.7% cps for WITH-session.
 - **Onboarding subcommands** — `prpt setup` (one-time, with smoke test), `prpt doctor` (re-check, no install), `prpt install-hook` for both Claude Code and Codex.
-- **Tool-output compression hook** — regex-based `PostToolUse` compressor for pytest / grep / git diff / installer logs. ([.codex/hooks/compress_tool_output.py](../.codex/hooks/compress_tool_output.py))
-- **Compliance posture documentation** — side-by-side breakdown vs the OpenClaw / OpenCode pattern enforced April 2026. ([COMPARISON.md](COMPARISON.md))
-- **Wiki publishing automation** — `scripts/publish_wiki.sh` keeps the wiki mirrored from `docs/`. ([WIKI_WORKFLOW.md](WIKI_WORKFLOW.md))
+- **Tool-output compression hook** — regex-based `PostToolUse` compressor for pytest / grep / git diff / installer logs. ([.codex/hooks/compress_tool_output.py](https://github.com/steyangdot/PromptPilot/blob/main/.codex/hooks/compress_tool_output.py))
+- **Compliance posture documentation** — side-by-side breakdown vs the OpenClaw / OpenCode pattern enforced April 2026. ([Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison))
+- **Wiki publishing automation** — `scripts/publish_wiki.sh` keeps the wiki mirrored from `docs/`. ([Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing))
 
 ## In progress
 
@@ -41,4 +41,4 @@ The pieces below are in `main` and covered by the test suite.
 
 ---
 
-**See also:** [Benchmarks](BENCHMARKS.md) · [Telemetry and Replay](TELEMETRY_AND_REPLAY.md) · [Wiki Publishing](WIKI_WORKFLOW.md)
+**See also:** [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) · [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay) · [Wiki Publishing](https://github.com/steyangdot/PromptPilot/wiki/Wiki-Publishing)

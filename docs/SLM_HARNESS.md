@@ -82,7 +82,7 @@ dependencies.
 ### Experimental: JSON ExecutionSpec (v2)
 
 `--normalizer slm-openai-v2` makes the SLM emit a single JSON object carrying
-the full execution spec ([prpt/core/spec.py:27](prpt/core/spec.py:27)):
+the full execution spec ([prpt/core/spec.py#L27](https://github.com/steyangdot/PromptPilot/blob/main/prpt/core/spec.py#L27)):
 
 ```json
 {
@@ -116,7 +116,7 @@ slightly heavier system prompt.
 
 **Fail-open by design.** If the v2 normalizer's JSON parse fails, the code
 falls back to the v1 prose parser
-([prpt/normalizers/slm_openai_v2.py:144-165](prpt/normalizers/slm_openai_v2.py:144)).
+([prpt/normalizers/slm_openai_v2.py#L144-L165](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/slm_openai_v2.py#L144-L165)).
 If both fail, heuristic defaults (`intent=act`, `scope=localized`) keep the
 pipeline running. The downstream coding agent never sees broken JSON.
 
