@@ -75,8 +75,6 @@ subscription use under a sanctioned billing model.
 - You want the small model to make implementation decisions.
 - You need fully automatic context deletion with no passthrough fallback.
 
-## Related pages
+---
 
-- [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview)
-- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
-- [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)
+**See also:** [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) · [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)

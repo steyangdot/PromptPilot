@@ -27,9 +27,10 @@ Common settings include:
 
 - `ANTHROPIC_API_KEY` for Anthropic SDK calls.
 - `OPENAI_API_KEY` for OpenAI SDK calls.
-- `PROMPTPILOT_JUDGE` to choose the small-model judge path.
-- `CLAUDE_MODEL` to choose Claude CLI model behavior.
-- `USE_MAX_AUTH=1` for Max OAuth-backed harness paths where supported.
+- `PROMPTPILOT_JUDGE` to choose the small-model judge path (`max | codex | anthropic | openai`).
+- `PROMPTPILOT_LET_SLM_ANSWER=1` to opt into the interactive SLM-direct-answer dialog on explain prompts.
+
+> **Note:** `CLAUDE_MODEL` and `USE_MAX_AUTH` appear in some chain-harness scripts under `research/` but are **not consumed by the `prpt` CLI itself.** Setting them on a normal `prpt` invocation has no effect.
 
 ## Security notes
 
@@ -51,9 +52,6 @@ For sustained or high-volume automation, the conservative path is the
 `ANTHROPIC_API_KEY` SDK normalizer, which sidesteps the interpretive
 "ordinary use" framing in Anthropic's Feb 2026 statement.
 
-## Related pages
+---
 
-- [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart)
-- [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode) — API-key SLM + subscription LLM setup, gotchas, and Python examples
-- [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting)
-- [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)
+**See also:** [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) · [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode) · [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting) · [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)

@@ -52,8 +52,6 @@ This drops the timing condition and the explicit non-goal. A safe harness output
 Fix the flaky retry test. Preserve the existing timeout constant and investigate the failure after the retry window expires.
 ```
 
-## Related pages
+---
 
-- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
-- [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model)
-- [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)
+**See also:** [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Safety Model](https://github.com/steyangdot/PromptPilot/wiki/Safety-Model) · [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)

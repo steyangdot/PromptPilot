@@ -6,16 +6,16 @@ PromptPilot uses a small-model harness around Codex/Claude-style agents to route
 
 PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction.
 
+**Headline cost pattern (hybrid mode):** pay API cents for the frequent small harness calls, burn subscription credits on the expensive coding-agent calls. In one measured chain5 run, ~$0.0085 of real API spend drove ~$38 of equivalent agent work — see [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
+
 > **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)**.
 
-## Docs strategy (lean repo + GitHub Wiki)
+## Docs
 
-To keep this repository lightweight, long-form product/positioning documentation now lives in the **GitHub Wiki**.
+Long-form documentation lives in [docs/](docs/) (source of truth) and is mirrored to the [GitHub Wiki](https://github.com/steyangdot/PromptPilot/wiki) by [scripts/publish_wiki.sh](scripts/publish_wiki.sh). Either is fine to read.
 
-- **Wiki home:** <https://github.com/steyangdot/PromptPilot/wiki>
-- Read the conceptual overview in the wiki: <https://github.com/steyangdot/PromptPilot/wiki/Project-Overview>
-- In-repo docs are kept minimal and operational (quickstart, security, contributing).
-- Publish wiki pages from repo docs: `scripts/publish_wiki.sh` (details in `docs/WIKI_WORKFLOW.md`).
+- Start at the [docs index](docs/README.md) or the [Project Overview](docs/PROJECT_OVERVIEW.md).
+- Operational pages stay at the repo root: this README, [QUICKSTART.md](QUICKSTART.md), [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
 
@@ -49,6 +49,21 @@ After many turns the session grows heavy:
 ```bash
 prpt restart                              # checkpoint -> handoff.md -> bootstrap fresh
 ```
+
+## What a run looks like
+
+```text
+$ prpt "the test in tests/test_auth.py::test_token_refresh is flaky on CI
+        but passes locally. keep the public API of TokenStore intact."
+[promptpilot] session: carrying 0 prior turns
+[promptpilot] route=act
+[token stats] raw 248 → optimized 332 tokens (SLM call: $0.0021)
+=== forwarding to claude-code ===
+... agent works ...
+✓ tests/test_auth.py::test_token_refresh now stable (3/3 CI retries)
+```
+
+The SLM expanded the raw 248-token prompt into a 332-token optimized version that pinned the failing test name and made the `TokenStore` API-stability constraint explicit before the coding agent saw it. Walkthrough in [docs/TELEMETRY_AND_REPLAY.md](docs/TELEMETRY_AND_REPLAY.md).
 
 For the full guide see **[QUICKSTART.md](QUICKSTART.md)** and `prpt --help`
 (or `prpt --advanced-help` for internal/researcher flags).

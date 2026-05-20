@@ -63,8 +63,6 @@ PromptPilot separates workflow control from coding execution:
 
 This keeps the SLM central but bounded: it controls the workflow around the coding agent without replacing the model that reasons about and edits code.
 
-## Related pages
+---
 
-- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
-- [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)
-- [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
+**See also:** [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)

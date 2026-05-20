@@ -1,5 +1,7 @@
 # Project Overview
 
+**PromptPilot pays API cents for the cheap harness calls and burns subscription credit on the expensive coding-agent calls.** Same prompt, fewer wasted agent turns, and explicit constraints preserved on the way through. One measured chain run drove ~$38 of equivalent agent work for ~$0.0085 of real spend — single workload, but the pattern is the point.
+
 PromptPilot is an SLM-powered control plane for AI coding agents.
 
 It sits before Codex/Claude-style tools and uses a small model to make bounded workflow decisions: clarify ambiguous prompts, answer simple non-coding requests, pass through high-risk context unchanged, compress noisy tool output, and preserve constraints before invoking the frontier coding agent.
@@ -49,9 +51,6 @@ PromptPilot is not a good fit when:
 - You want maximum token reduction even when context may be lost.
 - You do not want a passthrough fallback for high-risk requests.
 
-## Related pages
+---
 
-- [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart)
-- [Architecture](https://github.com/steyangdot/PromptPilot/wiki/Architecture)
-- [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness)
-- [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison)
+**See also:** [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) · [Architecture](https://github.com/steyangdot/PromptPilot/wiki/Architecture) · [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison)
