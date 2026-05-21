@@ -40,9 +40,18 @@ class OpenAISLMNormalizer(Normalizer):
     def __init__(self, api_key: Optional[str] = None, load_repo_content: bool = True) -> None:
         try:
             import openai as _openai
-            self._client = _openai.OpenAI(
-                api_key=api_key or os.environ.get("OPENAI_API_KEY")
-            )
+            resolved_key = api_key or os.environ.get("OPENAI_API_KEY")
+            if not resolved_key:
+                raise RuntimeError(
+                    "slm-openai normalizer requires OPENAI_API_KEY "
+                    "(SDK auth, bills against OpenAI API credits).\n"
+                    "If you're on a ChatGPT subscription, use one of:\n"
+                    "  - --normalizer slm               (auto-detect: routes via "
+                    "CodexCliJudge against subscription)\n"
+                    "  - --normalizer slm-subscription  (explicit subscription routing)\n"
+                    "Or set OPENAI_API_KEY in .env to use the SDK path."
+                )
+            self._client = _openai.OpenAI(api_key=resolved_key)
         except ImportError:
             raise ImportError(
                 "slm-openai normalizer requires the openai SDK.\n"

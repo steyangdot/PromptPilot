@@ -1117,6 +1117,35 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Loud-fail guard for the missing-.env trap. We load .env from THIS file's
+    # repo root (_REPO_ROOT/.env). Run from a git worktree with no .env, the
+    # load silently no-ops; if a forced SDK normalizer (slm-anthropic /
+    # slm-openai*) then finds no API key, every SLM call hits an auth error and
+    # the harness silently falls back to the raw prompt -- invalidating the run
+    # (observed 2026-05-20: 100 auth failures, 0 rewrites, an entire N=5 run
+    # wasted). Only the forced SDK paths need a key here; 'slm' auto-detect and
+    # 'slm-subscription' can use Max/ChatGPT OAuth, and create_normalizer()
+    # already raises loudly if nothing resolves for those.
+    _sdk_key_required = {
+        "slm-anthropic": "ANTHROPIC_API_KEY",
+        "slm-openai": "OPENAI_API_KEY",
+        "slm-openai-v2": "OPENAI_API_KEY",
+    }
+    _need_key = _sdk_key_required.get(args.normalizer)
+    if _need_key and not os.environ.get(_need_key):
+        _env_path = _REPO_ROOT / ".env"
+        raise SystemExit(
+            "[chain_test_v2] --normalizer {0} requires {1}, but it is not set.\n"
+            "  .env checked at: {2} (exists: {3})\n"
+            "  Fix one of:\n"
+            "    - copy .env.example to {2} and add {1}\n"
+            "    - export {1} in your shell\n"
+            "    - use --normalizer slm (auto-detect) or slm-subscription (OAuth, no key)\n"
+            "  NOTE: running from a git worktree? .env is NOT copied into worktrees --\n"
+            "  that is the trap that silently disables the SLM and sends raw prompts "
+            "downstream.".format(args.normalizer, _need_key, _env_path, _env_path.exists())
+        )
+
     # Thread the chosen normalizer through to _make_normalizer() and
     # _is_referential() via module-level state.
     global _NORMALIZER_NAME

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import subprocess
 import sys
 import time
@@ -37,6 +38,30 @@ sys.path.insert(0, str(Path(__file__).parent))
 from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
 from prpt.repo.collector import RepoContextCollector
 from prpt.session import append_turn, clear_session, load_recent_turns
+
+# Load .env from this file's repo root so API keys reach create_normalizer("slm")
+# below. chain_test.py historically did NOT load .env at all (unlike
+# chain_test_v2.py) -- meaning .env-based keys were silently ignored and the
+# SLM relied on shell env / Max-OAuth auto-detect. Mirror v2 here, then warn
+# loudly if neither a .env nor an API key is present. This auto-detect harness
+# can legitimately use subscription OAuth, so this is a WARNING, not a hard
+# exit (create_normalizer() itself raises clearly if nothing resolves).
+from prpt.core.dotenv import load_dotenv as _load_dotenv_impl
+
+_REPO_ROOT = Path(__file__).parent.parent
+_load_dotenv_impl(_REPO_ROOT / ".env")
+if not (_REPO_ROOT / ".env").exists() and not (
+    os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY")
+):
+    sys.stderr.write(
+        "\n[chain_test] WARNING: no .env at {0} and no ANTHROPIC_API_KEY / "
+        "OPENAI_API_KEY in the environment.\n"
+        "  The SLM will fall back to Max/ChatGPT OAuth auto-detect; if you are "
+        "not logged in, create_normalizer() will fail.\n"
+        "  Copy .env.example to {0} and add a key to use the SDK path.\n"
+        "  (Running from a git worktree? .env is NOT copied into worktrees.)\n\n"
+        .format(_REPO_ROOT / ".env")
+    )
 
 from agentic_variety_test import (
     _cost, _ext, _parse_one, _run_one,
