@@ -106,10 +106,34 @@ CLAUDE_TIMEOUT_SEC = int(os.environ.get("CLAUDE_TIMEOUT_SEC", "1200"))
 from prpt._subprocess import reap_claude_orphans  # noqa: E402, F401
 
 
-def run_codex(prompt: str, out_jsonl: Path, cwd: str) -> tuple[float, int]:
+def run_codex(prompt: str, out_jsonl: Path, cwd: str,
+              session_id: str | None = None) -> tuple[float, int]:
+    """Run `codex exec --json` with the prompt on stdin.
+
+    When USE_BUILTIN_SESSION=1 and a `session_id` (codex thread_id UUID) is
+    provided, resume that native codex session via `codex exec resume <id>`
+    instead of starting a fresh one. This is the codex analogue of
+    claude-code's `--resume` path — lets the chain harness measure
+    PromptPilot's session against codex's native conversation persistence.
+
+    The thread_id for turn 1 is captured by the caller from the
+    `{"type":"thread.started","thread_id":...}` event in this JSONL output
+    (see `_extract_codex_thread_id` in chain_test_v2).
+    """
     codex = shutil.which("codex") or shutil.which("codex.cmd") or "codex"
-    cmd = [codex, "exec", "--dangerously-bypass-approvals-and-sandbox",
-           "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
+    use_builtin = os.environ.get("USE_BUILTIN_SESSION") == "1"
+    if use_builtin and session_id:
+        # Resume the prior native codex session by thread_id; prompt on stdin.
+        # NOTE: `codex exec resume` accepts a SMALLER flag set than `codex exec`
+        # — it rejects --cd and --skip-git-repo-check. The working directory is
+        # set via subprocess.run(cwd=...) below instead of --cd. (Validated
+        # 2026-05-18 with codex-cli 0.130.0: minimal flags + stdin prompt
+        # correctly recalls prior-turn context.)
+        cmd = [codex, "exec", "resume", session_id,
+               "--dangerously-bypass-approvals-and-sandbox", "--json", "-"]
+    else:
+        cmd = [codex, "exec", "--dangerously-bypass-approvals-and-sandbox",
+               "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
     t0 = time.time()
     with open(out_jsonl, "w", encoding="utf-8") as fout:
         try:
@@ -439,7 +463,7 @@ def _run_one(prompt: str, out_path: Path, cwd: str, tool: str,
              session_id: str | None = None) -> tuple[float, int]:
     if tool == "claude-code":
         return run_claude_code(prompt, out_path, cwd, session_id=session_id)
-    return run_codex(prompt, out_path, cwd)
+    return run_codex(prompt, out_path, cwd, session_id=session_id)
 
 
 def _parse_one(out_path: Path, tool: str) -> dict:

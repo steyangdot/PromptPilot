@@ -751,11 +751,31 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                              session_id=builtin_session_id if uses_builtin else None)
         usage = _parse_one(out_path, tool)
 
-        # For variants using built-in session, capture session_id for next turn
-        if uses_builtin:
+        # For variants using built-in session, capture session_id for next turn.
+        # claude-code emits a single JSON object with a "session_id" field;
+        # codex emits JSONL where the first event is
+        # {"type":"thread.started","thread_id":"<uuid>"}. Only capture the
+        # session id from turn 1 (the session-creating turn) — resuming turns
+        # reuse the same id, so don't overwrite it with a later turn's id.
+        if uses_builtin and builtin_session_id is None:
             try:
-                with open(out_path, "r", encoding="utf-8", errors="replace") as f:
-                    sid = json.load(f).get("session_id")
+                if tool == "claude-code":
+                    with open(out_path, "r", encoding="utf-8", errors="replace") as f:
+                        sid = json.load(f).get("session_id")
+                else:  # codex JSONL
+                    sid = None
+                    with open(out_path, "r", encoding="utf-8", errors="replace") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                ev = json.loads(line)
+                            except Exception:
+                                continue
+                            if ev.get("type") == "thread.started" and ev.get("thread_id"):
+                                sid = ev["thread_id"]
+                                break
                 if sid:
                     builtin_session_id = sid
             except Exception:
@@ -983,7 +1003,8 @@ def save_run(out_dir: Path, variant: str, run_idx: int, results: list[dict]) -> 
 
 def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  chain_id: str, tool: str, n_runs: int,
-                 gated_agg: list[dict] | None = None) -> None:
+                 gated_agg: list[dict] | None = None,
+                 builtin_agg: list[dict] | None = None) -> None:
     summary = {
         "chain": chain_id,
         "tool": tool,
@@ -993,6 +1014,8 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
     }
     if gated_agg is not None:
         summary["gated_session_agg"] = gated_agg
+    if builtin_agg is not None:
+        summary["builtin_session_agg"] = builtin_agg
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
@@ -1043,11 +1066,14 @@ def dry_run_chain(chain: dict, tool: str) -> None:
 def run_chain_full(chain: dict, tool: str, n_runs: int,
                    include_gated: bool = False,
                    skip_no_session: bool = False,
+                   include_builtin: bool = False,
                    ) -> tuple[list[dict] | None, list[dict], list[dict] | None]:
     """Run N passes of NO_SESSION (unless `skip_no_session`) + N of WITH_SESSION
-    (+ optionally GATED_SESSION when `include_gated=True`). Returns aggregated
-    per-turn results per arm; `no_agg` is None when skipped, `gated_agg` is None
-    when the gated arm was skipped.
+    (+ optionally GATED_SESSION when `include_gated=True`, + optionally the
+    native BUILTIN session arm when `include_builtin=True`). Returns aggregated
+    per-turn results for (no, with, gated); `builtin` is persisted to per-run
+    files + summary.json but not in the return tuple (kept 3-wide for
+    backward-compat). `no_agg` is None when skipped, `gated_agg` None when not run.
     """
     out_dir = OUT_DIR / tool / chain["id"]
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1080,10 +1106,33 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
             gated_runs.append(results)
         gated_agg = aggregate_runs(gated_runs)
 
+    builtin_agg: list[dict] | None = None
+    if include_builtin:
+        # BUILTIN = the downstream tool's NATIVE session (claude --resume /
+        # codex exec resume), with RAW prompts (no SLM rewrite, no PromptPilot
+        # session). This is the "just use the tool's own conversation memory"
+        # baseline. The runners gate native resume on USE_BUILTIN_SESSION=1, so
+        # set it for the duration of this arm and restore afterward.
+        print("\n--- BUILTIN (native {0} session) ({1} runs) ---".format(tool, n_runs))
+        prev = os.environ.get("USE_BUILTIN_SESSION")
+        os.environ["USE_BUILTIN_SESSION"] = "1"
+        try:
+            builtin_runs = []
+            for r in range(1, n_runs + 1):
+                results = run_chain_once(chain, tool, "builtin", r, out_dir)
+                save_run(out_dir, "builtin", r, results)
+                builtin_runs.append(results)
+            builtin_agg = aggregate_runs(builtin_runs)
+        finally:
+            if prev is None:
+                os.environ.pop("USE_BUILTIN_SESSION", None)
+            else:
+                os.environ["USE_BUILTIN_SESSION"] = prev
+
     no_agg = aggregate_runs(no_runs) if no_runs is not None else None
     with_agg = aggregate_runs(with_runs)
     save_summary(out_dir, no_agg, with_agg, chain["id"], tool, n_runs,
-                 gated_agg=gated_agg)
+                 gated_agg=gated_agg, builtin_agg=builtin_agg)
     return no_agg, with_agg, gated_agg
 
 
@@ -1114,6 +1163,13 @@ def main() -> None:
         help="Skip the NO_SESSION arm. Use when running a focused WITH-vs-GATED "
              "head-to-head; the existing NO_SESSION baseline at another out-dir "
              "is reused for comparison.",
+    )
+    parser.add_argument(
+        "--include-builtin", action="store_true",
+        help="Also run the BUILTIN arm — the downstream tool's NATIVE session "
+             "(claude --resume / codex exec resume) with raw prompts. Measures "
+             "PromptPilot's session against the tool's own conversation memory. "
+             "Sets USE_BUILTIN_SESSION=1 for that arm automatically.",
     )
     args = parser.parse_args()
 
@@ -1184,14 +1240,16 @@ def main() -> None:
                 continue
 
             print("\n" + "=" * 60)
-            print("Running {0} with {1} ({2} runs){3}{4}".format(
+            print("Running {0} with {1} ({2} runs){3}{4}{5}".format(
                 chain["id"], tool, args.runs,
                 " [+gated]" if args.include_gated else "",
+                " [+builtin]" if args.include_builtin else "",
                 " [no-NO]" if args.skip_no_session else ""))
             no_agg, with_agg, gated_agg = run_chain_full(
                 chain, tool, args.runs,
                 include_gated=args.include_gated,
                 skip_no_session=args.skip_no_session,
+                include_builtin=args.include_builtin,
             )
             if no_agg is None:
                 # Synthesize a zero-baseline "NO" agg for print_chain_summary so
