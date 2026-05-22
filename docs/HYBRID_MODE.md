@@ -7,29 +7,34 @@ pattern of routing each layer to the auth that fits its job:
 - **Judge** — used for `prpt checkpoint` / `restart` / `bootstrap`. Route through whatever's cheapest given how often you handoff.
 - **Downstream coding agent** — actually writes/edits code. Route through a **subscription CLI** (`claude-code` or `codex`) — pays for itself if you use a coding agent daily.
 
-The headline: pay API cents for the frequent small calls, route the expensive
-code-writing calls to a subscription you're **already paying for**.
+## What this achieves
 
-In one measured chain5 run (see
-[Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)), the SLM
-layer cost **~$0.0085 in real API spend**, while the same downstream agent work
-would cost **~$38 at per-token API rates** — a ~4,500× gap.
+Take a real 15-turn coding chain on `httpx`. Two ways to pay for it:
 
-**But read that honestly — it is a *marginal* cost ratio, not total cost of
-ownership.** The downstream work didn't run for free; it consumed **subscription
-quota**, which has two real costs the ratio ignores:
+| | Pure metered API | PromptPilot hybrid |
+|---|---|---|
+| Downstream coding agent | ~$38 (per-token API, scales with every run) | **$0 marginal** — runs on the Max/ChatGPT subscription you already pay a flat fee for |
+| SLM rewrite layer (runs every call) | — | **~$0.0085** real API spend |
+| Cost model | metered, grows linearly with usage | **flat monthly fee + cents of API** |
 
-1. **A fixed monthly fee** ($20–$200/mo depending on tier) you pay whether or not
-   you route PromptPilot through it. Amortize that into any honest comparison.
-2. **A finite quota ceiling.** Subscription quota is *not* unlimited — sustained
-   runs exhaust it. (We hit the ChatGPT usage limit partway through a codex N=5
-   experiment in May 2026; the run aborted until the quota window reset.)
+That's the point of the harness: **it turns a metered, usage-scaling agent bill
+into a flat subscription you're already buying — plus a few cents of API for an
+SLM layer that makes each agent call sharper and leaner.** For someone who runs a
+coding agent daily, that's the difference between a per-token invoice that climbs
+with every prompt and a predictable monthly cost.
 
-So the accurate claim is: **if you already pay for a subscription for interactive
-use and have spare quota, the *marginal* API cost of routing programmatic agent
-work through it is near-zero.** It is *not* "$38 of work for $0.0085" in
-total-cost terms, and it is *not* an unlimited free-work generator. The 4,500×
-is real as a marginal-spend-vs-shadow-price figure on one workload — nothing more.
+And the SLM layer earns its cents twice over: the rewrite resolves ambiguity and
+the bounded session avoids transcript bloat, so each agent call does more with
+less context (measured ~order-of-magnitude fewer input tokens than the tool's own
+`--resume` session — see [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory)).
+
+**The one real boundary:** subscription quota is finite. Within your plan's quota
+this is near-free marginal work; *beyond* it (sustained CI loops, batch jobs) the
+quota runs out — we hit the ChatGPT usage limit mid-experiment in May 2026 — so
+for high-volume automation, use the API-key path on both layers instead. Pick the
+auth to match the workload, not a single number. (The ~4,500× spend gap is one
+workload's marginal-API-vs-metered-API figure; the *cost-structure shift* is the
+durable win, not the multiplier.)
 
 ## When hybrid pays off
 

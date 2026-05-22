@@ -1,6 +1,6 @@
 # Project Overview
 
-**PromptPilot pays API cents for the cheap harness calls and routes the expensive coding-agent calls to a subscription you already pay for.** Same prompt, fewer wasted agent turns, and explicit constraints preserved on the way through. In one measured chain run the SLM layer cost ~$0.0085 of real API spend while the agent work would cost ~$38 at per-token API rates — but that's a *marginal* gap, not free work: the agent side consumes subscription quota (fixed monthly fee + finite ceiling). Single workload; the pattern, not the multiplier, is the point.
+**PromptPilot turns a metered, usage-scaling coding-agent bill into a flat subscription you already pay for — plus cents of API for an SLM layer that makes each agent call sharper and leaner.** Same prompt, fewer wasted agent turns, explicit constraints preserved. In one measured 15-turn chain, the agent work would run ~$38 on metered per-token API; via the hybrid pattern it ran on the subscription (flat fee, already bought) plus ~$0.0085 of API for the SLM layer. Predictable monthly cost instead of a climbing invoice — bounded by the subscription's finite quota (use the API path for sustained automation beyond it). Single workload; the cost-structure shift is the point.
 
 PromptPilot is an SLM-powered control plane for AI coding agents.
 
