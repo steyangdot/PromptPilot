@@ -18,8 +18,10 @@ chain on `httpx`, by input-token footprint:
 | **SLM control layer** | **~24k** | rewrote every prompt, managed session, ran every call | cheap metered API |
 | **Coding agent** | **~12.66M** | the actual code-writing (268 tool calls) | your flat-fee subscription |
 
-The control layer is **~0.2% of the token footprint** but shapes the other 99.8%
-— it decides what the agent sees, resolves references, and keeps context bounded.
+The control layer is **~0.2% of the token footprint** — nearly free to add. It
+frames what the agent does (decides what the agent sees, resolves references,
+keeps context bounded), but it doesn't generate the other 99.8% — codex's own
+agent loop produces those tokens.
 That's the hybrid split: route the tiny, frequent control layer to pay-per-token
 API (predictable, uncapped) and the heavy agent tokens to a subscription you
 already pay a flat fee for.
