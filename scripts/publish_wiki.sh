@@ -104,6 +104,7 @@ copy_page "docs/TROUBLESHOOTING.md" "Troubleshooting.md"
 copy_page "docs/ARCHITECTURE.md" "Architecture.md"
 copy_page "docs/SLM_HARNESS.md" "SLM-Harness.md"
 copy_page "docs/ROUTES_AND_DECISIONS.md" "Routes-and-Decisions.md"
+copy_page "docs/SESSION_MEMORY.md" "Session-Memory.md"
 copy_page "docs/SEMANTIC_PRESERVATION.md" "Semantic-Preservation.md"
 copy_page "docs/SAFETY_MODEL.md" "Safety-Model.md"
 copy_page "docs/TELEMETRY_AND_REPLAY.md" "Telemetry-and-Replay.md"
@@ -126,6 +127,7 @@ cat > "$workdir/_Sidebar.md" <<'SIDEBAR'
   - [Architecture](Architecture)
   - [SLM Harness](SLM-Harness)
   - [Routes and Decisions](Routes-and-Decisions)
+  - [Session Memory](Session-Memory)
   - [Semantic Preservation](Semantic-Preservation)
   - [Safety Model](Safety-Model)
 - Operations

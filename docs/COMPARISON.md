@@ -9,6 +9,7 @@ PromptPilot is closest to an SLM-powered harness, not a pure token reducer or co
 | Model router | Choose cheap or expensive model | PromptPilot routes workflow actions, not only model calls |
 | Agent orchestrator | Run agents | PromptPilot controls the context and decisions around agent execution |
 | Coding agent | Write/debug code | PromptPilot delegates coding to Codex/Claude-style agents |
+| Native session (`claude --resume`, `codex exec resume`) | Carry the full conversation transcript across turns | PromptPilot's `withSession` carries a **bounded** window of one-line intent summaries — flat per-turn cost vs the native transcript that grows every turn (measured 465k→2.36M over 5 codex turns). See [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory) |
 | Third-party Claude harnesses (OpenClaw, OpenCode) | Extract Claude OAuth tokens and make direct API calls | PromptPilot does not handle the token at all — see [Compliance posture](#compliance-posture-vs-openclaw--opencode) below |
 
 ## Positioning

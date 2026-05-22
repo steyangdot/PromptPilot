@@ -16,10 +16,17 @@ These numbers come from the in-repo chain harness ([research/chain_test_v2.py](h
 | chain5 codex hybrid | API-key Haiku SLM + ChatGPT-subscription codex LLM | Real $ vs equivalent-API agent work | **~$0.0085 real spend drove ~$38 of equivalent agent work — ~4,500× subsidy ratio** |
 | Codex CLI vs OpenAI SDK | Same prompt through `CodexCliJudge` and `OpenAiJudge` | Per-call cost | **SDK path ~100× cheaper per call**; codex CLI burns ~19k input tokens of agent-loop overhead per invocation |
 | `--gate-session` (chain4 N=10, v2 record) | With vs without session-history gating under the v2 short memory_record | Input tokens, success delta, cost-per-success | **−4.6% input tokens, −0.25 sum success, +5.0% cps** — net loss under v2; gate matters more on long-session workloads |
-| Session memory value (chain1 N=5) | WITH session memory vs NO session memory | Success rate, cost-per-success | **+60% success, −28.7% cps** in favor of WITH-session — session loading defaults to on |
+| Session memory value, **claude-code** (chain1 N=5) | WITH session vs NO session (both SLM-rewritten — clean isolation) | Success rate, cost-per-success | **+60% success, −28.7% cps** in favor of WITH-session |
+| Session memory value, **codex** (chain1 N=5) | WITH session vs NO session | Success, input tokens | **success tied (1.70 vs 1.90, within noise), −20% input tokens** — on codex, session is a *cost* optimization, not a quality lift |
+| Session vs native `exec resume`, **codex** (chain1 N=5) | full PromptPilot vs raw-prompt + native codex session | Cost-per-success, input growth | **~8.5× cheaper per success** at equal quality; native input grows **465k→2.36M** across 5 turns (unbounded transcript) while PromptPilot stays flat ~44k/turn |
+
+See [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory) for the full breakdown and the bounded-vs-unbounded mechanism.
 
 Caveats:
 - Single workload (`httpx`). Your repo will land somewhere different.
+- **Session value is tool-dependent:** the +60% success lift is **claude-code-specific**; codex shows session as a cost optimization (tied success). Don't quote +60% as a universal PromptPilot number.
+- The "~8.5× cheaper" (and the analogous claude-code "~3× cheaper than `--resume`") compares *full PromptPilot* (SLM rewrite + bounded session) against a *raw-prompt + native-session* baseline — so the ratio bundles the rewrite benefit with the session-mechanism benefit. It's a product comparison, not an isolated session-only number. The transcript-growth curve is the clean session-mechanism evidence.
+- N=5 success deltas under ~0.2/turn are within the noise floor; cost gaps are the robust signal.
 - Cost ratios depend on subscription terms; the 4,500× figure is shadow-dollars against per-token API rates.
 - "Success" is judged by an SLM rubric; see [research/chain_test_v2.py](https://github.com/steyangdot/PromptPilot/blob/main/research/chain_test_v2.py) for the scorer.
 

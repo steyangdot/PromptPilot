@@ -4,7 +4,7 @@
 
 PromptPilot is an SLM-powered control plane for AI coding agents.
 
-It sits before Codex/Claude-style tools and uses a small model to make bounded workflow decisions: clarify ambiguous prompts, answer simple non-coding requests, pass through high-risk context unchanged, compress noisy tool output, and preserve constraints before invoking the frontier coding agent.
+It sits before Codex/Claude-style tools and uses a small model to make bounded workflow decisions: clarify ambiguous prompts, answer simple non-coding requests, pass through high-risk context unchanged, compress noisy tool output, carry bounded cross-turn [session memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory) so follow-ups resolve references cheaply, and preserve constraints before invoking the frontier coding agent.
 
 The goal is not to replace the coding model. The goal is to make expensive agent runs clearer, safer, and less wasteful.
 
@@ -18,6 +18,7 @@ AI coding sessions often waste frontier-model context on work that does not requ
 - Simple requests that can be answered without running the coding agent.
 - Repeated logs, stack traces, grep floods, installer output, and large diffs.
 - Prompt rewrites that accidentally drop file paths, tests, flags, or user constraints.
+- Re-explaining prior turns across separate invocations — or paying the native tool's full transcript replay every turn (which grows unbounded; PromptPilot's bounded session stays flat — see [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory)).
 
 PromptPilot treats these as harness decisions. The small model manages the workflow around the coding agent, while the frontier model remains responsible for code understanding, implementation, debugging, and test repair.
 
