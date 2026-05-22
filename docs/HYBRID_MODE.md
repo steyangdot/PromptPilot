@@ -7,34 +7,49 @@ pattern of routing each layer to the auth that fits its job:
 - **Judge** — used for `prpt checkpoint` / `restart` / `bootstrap`. Route through whatever's cheapest given how often you handoff.
 - **Downstream coding agent** — actually writes/edits code. Route through a **subscription CLI** (`claude-code` or `codex`) — pays for itself if you use a coding agent daily.
 
-## What this achieves
+## What this achieves — measured in tokens
 
-Take a real 15-turn coding chain on `httpx`. Two ways to pay for it:
+Tokens are the honest, provider-neutral unit: they're measured directly and don't
+depend on which API rates or subscription tier you assume. A real 15-turn coding
+chain on `httpx`, by input-token footprint:
 
-| | Pure metered API | PromptPilot hybrid |
-|---|---|---|
-| Downstream coding agent | ~$38 (per-token API, scales with every run) | **$0 marginal** — runs on the Max/ChatGPT subscription you already pay a flat fee for |
-| SLM rewrite layer (runs every call) | — | **~$0.0085** real API spend |
-| Cost model | metered, grows linearly with usage | **flat monthly fee + cents of API** |
+| Layer | Input tokens | What it did | Routes to |
+|---|---:|---|---|
+| **SLM control layer** | **~24k** | rewrote every prompt, managed session, ran every call | cheap metered API |
+| **Coding agent** | **~12.66M** | the actual code-writing (268 tool calls) | your flat-fee subscription |
 
-That's the point of the harness: **it turns a metered, usage-scaling agent bill
-into a flat subscription you're already buying — plus a few cents of API for an
-SLM layer that makes each agent call sharper and leaner.** For someone who runs a
-coding agent daily, that's the difference between a per-token invoice that climbs
-with every prompt and a predictable monthly cost.
+The control layer is **~0.2% of the token footprint** but shapes the other 99.8%
+— it decides what the agent sees, resolves references, and keeps context bounded.
+That's the hybrid split: route the tiny, frequent control layer to pay-per-token
+API (predictable, uncapped) and the heavy agent tokens to a subscription you
+already pay a flat fee for.
 
-And the SLM layer earns its cents twice over: the rewrite resolves ambiguity and
-the bounded session avoids transcript bloat, so each agent call does more with
-less context (measured ~order-of-magnitude fewer input tokens than the tool's own
-`--resume` session — see [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory)).
+Two wins, both in tokens (no pricing assumptions):
 
-**The one real boundary:** subscription quota is finite. Within your plan's quota
-this is near-free marginal work; *beyond* it (sustained CI loops, batch jobs) the
-quota runs out — we hit the ChatGPT usage limit mid-experiment in May 2026 — so
-for high-volume automation, use the API-key path on both layers instead. Pick the
-auth to match the workload, not a single number. (The ~4,500× spend gap is one
-workload's marginal-API-vs-metered-API figure; the *cost-structure shift* is the
-durable win, not the multiplier.)
+1. **Cheap control** — ~24k tokens of SLM work direct ~12.66M tokens of agent work.
+2. **Leaner agent runs** — the bounded session stops the agent's own token
+   consumption from ballooning: the same multi-turn work runs on **~7.6× fewer
+   input tokens** than the tool's native `--resume`/`exec resume` session (1.11M
+   vs 8.42M, codex chain1 N=5 — see
+   [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory)).
+   Native session re-feeds a growing transcript (465k→2.36M across 5 turns);
+   PromptPilot stays flat (~44k/turn).
+
+### Translating tokens to money (downstream, assumption-laden)
+
+What those tokens *cost* depends entirely on your auth, which is why we lead with
+tokens, not dollars:
+
+- **Metered API:** you pay per token. At gpt-5.5 list rates the ~12.66M agent
+  input tokens would be ~$38; the ~24k SLM tokens were ~$0.0085 of real API spend.
+- **Subscription:** a flat monthly fee covers the agent tokens, drawing **finite
+  quota** rather than per-token charges. Within quota the agent tokens are
+  marginal-free; beyond it (sustained CI/batch) the quota runs out — we hit the
+  ChatGPT usage limit mid-experiment in May 2026, so use the API path for
+  high-volume automation.
+
+The token counts above are the measured fact; the dollar figures are one
+translation of them under specific rate/quota assumptions. Pitch the tokens.
 
 ## When hybrid pays off
 
