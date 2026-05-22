@@ -685,6 +685,50 @@ def record_to_session(cwd: str, raw: str, prepared: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Quota-exhaustion guard
+# ---------------------------------------------------------------------------
+
+class QuotaExhausted(Exception):
+    """Raised when a downstream tool call is rejected for hitting a usage/quota
+    limit. Lets run_chain_full abort cleanly instead of recording the rejected
+    turn (and every subsequent one) as a phantom 0-success data point.
+
+    Real incident 2026-05-21: a codex 3-way run hit the ChatGPT usage limit
+    partway through the BUILTIN arm; 20 quota-rejected turns were logged as
+    0-success and polluted the aggregate. See
+    research/data/_codex_session_3way/COMPARISON.md.
+    """
+
+
+def _quota_exhausted(out_path: Path, tool: str) -> bool:
+    """Detect a usage/quota-limit rejection in a tool's output.
+
+    codex emits JSONL with `{"type":"turn.failed","error":{"message":"...usage
+    limit..."}}` (and a matching `{"type":"error",...}`). claude-code surfaces
+    rate/usage limits in its JSON `result`/`error` text. Match conservatively
+    on the well-known phrases so a normal run is never falsely aborted.
+    """
+    SIGNATURES = ("usage limit", "rate limit", "quota", "exceeded your",
+                  "purchase more credits", "try again at")
+    try:
+        text = Path(out_path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    low = text.lower()
+    if tool == "codex":
+        # Only treat as quota-hit when a turn actually FAILED with the phrase,
+        # not when the agent merely mentions "rate limit" in prose.
+        if "turn.failed" in low and any(s in low for s in SIGNATURES):
+            return True
+        if '"type": "error"' in low and "usage limit" in low:
+            return True
+        return False
+    # claude-code / generic
+    return any(s in low for s in ("usage limit", "rate_limit_error",
+                                  "exceeded your", "quota exceeded"))
+
+
+# ---------------------------------------------------------------------------
 # Single-chain runners (one full pass through all turns)
 # ---------------------------------------------------------------------------
 
@@ -749,6 +793,17 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         out_path = out_dir / "run{0}_{1}_t{2}{3}".format(run_idx, variant, i, ext)
         wall_t, _ = _run_one(prepared["optimized"], out_path, HTTPX_DIR, tool,
                              session_id=builtin_session_id if uses_builtin else None)
+
+        # Quota guard: if the tool rejected this turn for a usage/quota limit,
+        # abort the whole run NOW rather than recording this turn (and every
+        # subsequent one) as a phantom 0-success. Every following call would
+        # fail identically until the quota window resets. (2026-05-21 incident.)
+        if _quota_exhausted(out_path, tool):
+            raise QuotaExhausted(
+                "{tool} hit a usage/quota limit at {v}/run{r}/T{i} — "
+                "aborting. Re-run after the quota window resets.".format(
+                    tool=tool, v=variant, r=run_idx, i=i))
+
         usage = _parse_one(out_path, tool)
 
         # For variants using built-in session, capture session_id for next turn.
@@ -1078,61 +1133,78 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     out_dir = OUT_DIR / tool / chain["id"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if skip_no_session:
-        print("\n--- NO_SESSION arm skipped (--skip-no-session) ---")
-        no_runs = None
-    else:
-        print("\n--- NO_SESSION ({0} runs) ---".format(n_runs))
-        no_runs = []
-        for r in range(1, n_runs + 1):
-            results = run_chain_once(chain, tool, "no_session", r, out_dir)
-            save_run(out_dir, "no_session", r, results)
-            no_runs.append(results)
+    no_runs: list | None = None
+    with_runs: list = []
+    gated_runs: list = []
+    builtin_runs: list = []
+    quota_hit = False
 
-    print("\n--- WITH_SESSION ({0} runs) ---".format(n_runs))
-    with_runs = []
-    for r in range(1, n_runs + 1):
-        results = run_chain_once(chain, tool, "with_session", r, out_dir)
-        save_run(out_dir, "with_session", r, results)
-        with_runs.append(results)
+    def _agg_complete(runs):
+        """Aggregate an arm only if it ran the full n_runs — a partially-failed
+        arm (quota abort mid-arm) is discarded rather than reported."""
+        return aggregate_runs(runs) if runs and len(runs) == n_runs else None
 
-    gated_agg: list[dict] | None = None
-    if include_gated:
-        print("\n--- GATED_SESSION ({0} runs) ---".format(n_runs))
-        gated_runs = []
-        for r in range(1, n_runs + 1):
-            results = run_chain_once(chain, tool, "gated_session", r, out_dir)
-            save_run(out_dir, "gated_session", r, results)
-            gated_runs.append(results)
-        gated_agg = aggregate_runs(gated_runs)
-
-    builtin_agg: list[dict] | None = None
-    if include_builtin:
-        # BUILTIN = the downstream tool's NATIVE session (claude --resume /
-        # codex exec resume), with RAW prompts (no SLM rewrite, no PromptPilot
-        # session). This is the "just use the tool's own conversation memory"
-        # baseline. The runners gate native resume on USE_BUILTIN_SESSION=1, so
-        # set it for the duration of this arm and restore afterward.
-        print("\n--- BUILTIN (native {0} session) ({1} runs) ---".format(tool, n_runs))
-        prev = os.environ.get("USE_BUILTIN_SESSION")
-        os.environ["USE_BUILTIN_SESSION"] = "1"
-        try:
-            builtin_runs = []
+    try:
+        if skip_no_session:
+            print("\n--- NO_SESSION arm skipped (--skip-no-session) ---")
+        else:
+            print("\n--- NO_SESSION ({0} runs) ---".format(n_runs))
+            no_runs = []
             for r in range(1, n_runs + 1):
-                results = run_chain_once(chain, tool, "builtin", r, out_dir)
-                save_run(out_dir, "builtin", r, results)
-                builtin_runs.append(results)
-            builtin_agg = aggregate_runs(builtin_runs)
-        finally:
-            if prev is None:
-                os.environ.pop("USE_BUILTIN_SESSION", None)
-            else:
-                os.environ["USE_BUILTIN_SESSION"] = prev
+                results = run_chain_once(chain, tool, "no_session", r, out_dir)
+                save_run(out_dir, "no_session", r, results)
+                no_runs.append(results)
 
-    no_agg = aggregate_runs(no_runs) if no_runs is not None else None
-    with_agg = aggregate_runs(with_runs)
+        print("\n--- WITH_SESSION ({0} runs) ---".format(n_runs))
+        for r in range(1, n_runs + 1):
+            results = run_chain_once(chain, tool, "with_session", r, out_dir)
+            save_run(out_dir, "with_session", r, results)
+            with_runs.append(results)
+
+        if include_gated:
+            print("\n--- GATED_SESSION ({0} runs) ---".format(n_runs))
+            for r in range(1, n_runs + 1):
+                results = run_chain_once(chain, tool, "gated_session", r, out_dir)
+                save_run(out_dir, "gated_session", r, results)
+                gated_runs.append(results)
+
+        if include_builtin:
+            # BUILTIN = the downstream tool's NATIVE session (claude --resume /
+            # codex exec resume), with RAW prompts (no SLM rewrite, no
+            # PromptPilot session). The runners gate native resume on
+            # USE_BUILTIN_SESSION=1, so set it for this arm and restore after.
+            print("\n--- BUILTIN (native {0} session) ({1} runs) ---".format(tool, n_runs))
+            prev = os.environ.get("USE_BUILTIN_SESSION")
+            os.environ["USE_BUILTIN_SESSION"] = "1"
+            try:
+                for r in range(1, n_runs + 1):
+                    results = run_chain_once(chain, tool, "builtin", r, out_dir)
+                    save_run(out_dir, "builtin", r, results)
+                    builtin_runs.append(results)
+            finally:
+                if prev is None:
+                    os.environ.pop("USE_BUILTIN_SESSION", None)
+                else:
+                    os.environ["USE_BUILTIN_SESSION"] = prev
+    except QuotaExhausted as e:
+        quota_hit = True
+        print("\n" + "!" * 72)
+        print("  QUOTA EXHAUSTED — {0}".format(e))
+        print("  Aborting cleanly. Only FULLY-completed arms are saved to the")
+        print("  summary; the partial arm is discarded (no phantom 0-success).")
+        print("!" * 72)
+
+    no_agg = _agg_complete(no_runs) if no_runs is not None else None
+    with_agg = _agg_complete(with_runs)
+    gated_agg = _agg_complete(gated_runs) if include_gated else None
+    builtin_agg = _agg_complete(builtin_runs) if include_builtin else None
     save_summary(out_dir, no_agg, with_agg, chain["id"], tool, n_runs,
                  gated_agg=gated_agg, builtin_agg=builtin_agg)
+    if quota_hit:
+        print("\n[saved] arms completed: " + ", ".join(
+            name for name, agg in [("no", no_agg), ("with", with_agg),
+                                    ("gated", gated_agg), ("builtin", builtin_agg)]
+            if agg is not None) or "(none)")
     return no_agg, with_agg, gated_agg
 
 
@@ -1251,7 +1323,12 @@ def main() -> None:
                 skip_no_session=args.skip_no_session,
                 include_builtin=args.include_builtin,
             )
-            if no_agg is None:
+            if with_agg is None:
+                # Quota abort before WITH_SESSION completed — nothing to chart.
+                # run_chain_full already printed the abort + saved arms message.
+                print("(WITH_SESSION arm did not complete; skipping summary table. "
+                      "See saved per-run files + summary.json for any complete arms.)")
+            elif no_agg is None:
                 # Synthesize a zero-baseline "NO" agg for print_chain_summary so
                 # the existing diff table renders; cells will show 0s/n/a but
                 # the WITH and GATED columns are correct.
