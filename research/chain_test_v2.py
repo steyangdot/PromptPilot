@@ -1122,7 +1122,8 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                    include_gated: bool = False,
                    skip_no_session: bool = False,
                    include_builtin: bool = False,
-                   ) -> tuple[list[dict] | None, list[dict], list[dict] | None]:
+                   skip_with_session: bool = False,
+                   ) -> tuple[list[dict] | None, list[dict] | None, list[dict] | None]:
     """Run N passes of NO_SESSION (unless `skip_no_session`) + N of WITH_SESSION
     (+ optionally GATED_SESSION when `include_gated=True`, + optionally the
     native BUILTIN session arm when `include_builtin=True`). Returns aggregated
@@ -1155,11 +1156,14 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 save_run(out_dir, "no_session", r, results)
                 no_runs.append(results)
 
-        print("\n--- WITH_SESSION ({0} runs) ---".format(n_runs))
-        for r in range(1, n_runs + 1):
-            results = run_chain_once(chain, tool, "with_session", r, out_dir)
-            save_run(out_dir, "with_session", r, results)
-            with_runs.append(results)
+        if skip_with_session:
+            print("\n--- WITH_SESSION arm skipped (--skip-with-session) ---")
+        else:
+            print("\n--- WITH_SESSION ({0} runs) ---".format(n_runs))
+            for r in range(1, n_runs + 1):
+                results = run_chain_once(chain, tool, "with_session", r, out_dir)
+                save_run(out_dir, "with_session", r, results)
+                with_runs.append(results)
 
         if include_gated:
             print("\n--- GATED_SESSION ({0} runs) ---".format(n_runs))
@@ -1243,6 +1247,13 @@ def main() -> None:
              "PromptPilot's session against the tool's own conversation memory. "
              "Sets USE_BUILTIN_SESSION=1 for that arm automatically.",
     )
+    parser.add_argument(
+        "--skip-with-session", action="store_true",
+        help="Skip the WITH_SESSION arm. Combine with --skip-no-session "
+             "--include-builtin to run ONLY the native BUILTIN arm and reuse a "
+             "prior WITH_SESSION result from another out-dir for the comparison "
+             "(saves quota when WITH was already measured).",
+    )
     args = parser.parse_args()
 
     # Loud-fail guard for the missing-.env trap. We load .env from THIS file's
@@ -1312,16 +1323,18 @@ def main() -> None:
                 continue
 
             print("\n" + "=" * 60)
-            print("Running {0} with {1} ({2} runs){3}{4}{5}".format(
+            print("Running {0} with {1} ({2} runs){3}{4}{5}{6}".format(
                 chain["id"], tool, args.runs,
                 " [+gated]" if args.include_gated else "",
                 " [+builtin]" if args.include_builtin else "",
-                " [no-NO]" if args.skip_no_session else ""))
+                " [no-NO]" if args.skip_no_session else "",
+                " [no-WITH]" if args.skip_with_session else ""))
             no_agg, with_agg, gated_agg = run_chain_full(
                 chain, tool, args.runs,
                 include_gated=args.include_gated,
                 skip_no_session=args.skip_no_session,
                 include_builtin=args.include_builtin,
+                skip_with_session=args.skip_with_session,
             )
             if with_agg is None:
                 # Quota abort before WITH_SESSION completed — nothing to chart.
