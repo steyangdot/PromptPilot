@@ -6,7 +6,7 @@ PromptPilot uses a small-model harness around Codex/Claude-style agents to route
 
 PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction.
 
-**Headline cost pattern (hybrid mode):** pay API cents for the frequent small harness calls, burn subscription credits on the expensive coding-agent calls. In one measured chain5 run, ~$0.0085 of real API spend drove ~$38 of equivalent agent work — see [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
+**Headline cost pattern (hybrid mode):** pay API cents for the frequent small harness calls, route the expensive coding-agent calls to a subscription you already pay for. In one measured chain5 run the SLM layer cost ~$0.0085 of real API spend while the same agent work would cost ~$38 at per-token API rates. That's a **marginal** gap, not free work — the agent side consumes subscription quota (fixed monthly fee + finite ceiling that sustained runs *do* exhaust). See [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
 
 > **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)**.
 

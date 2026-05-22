@@ -13,7 +13,7 @@ These numbers come from the in-repo chain harness ([research/chain_test_v2.py](h
 
 | Experiment | Setup | What was measured | Result |
 |---|---|---|---|
-| chain5 codex hybrid | API-key Haiku SLM + ChatGPT-subscription codex LLM | Real $ vs equivalent-API agent work | **~$0.0085 real spend drove ~$38 of equivalent agent work — ~4,500× subsidy ratio** |
+| chain5 codex hybrid | API-key Haiku SLM + ChatGPT-subscription codex LLM | Marginal API spend vs per-token-API-priced agent work | **SLM layer cost ~$0.0085; equivalent agent work at per-token API rates ≈ $38 (~4,500× gap). MARGINAL only** — the agent work consumed subscription quota (fixed monthly fee + finite ceiling), not $0. See caveat below. |
 | Codex CLI vs OpenAI SDK | Same prompt through `CodexCliJudge` and `OpenAiJudge` | Per-call cost | **SDK path ~100× cheaper per call**; codex CLI burns ~19k input tokens of agent-loop overhead per invocation |
 | `--gate-session` (chain4 N=10, v2 record) | With vs without session-history gating under the v2 short memory_record | Input tokens, success delta, cost-per-success | **−4.6% input tokens, −0.25 sum success, +5.0% cps** — net loss under v2; gate matters more on long-session workloads |
 | Session memory value, **claude-code** (chain1 N=5) | WITH session vs NO session (both SLM-rewritten — clean isolation) | Success rate, cost-per-success | **+60% success, −28.7% cps** in favor of WITH-session |
@@ -27,7 +27,7 @@ Caveats:
 - **Session value is tool-dependent:** the +60% success lift is **claude-code-specific**; codex shows session as a cost optimization (tied success). Don't quote +60% as a universal PromptPilot number.
 - The "~8.5× cheaper" (and the analogous claude-code "~3× cheaper than `--resume`") compares *full PromptPilot* (SLM rewrite + bounded session) against a *raw-prompt + native-session* baseline — so the ratio bundles the rewrite benefit with the session-mechanism benefit. It's a product comparison, not an isolated session-only number. The transcript-growth curve is the clean session-mechanism evidence.
 - N=5 success deltas under ~0.2/turn are within the noise floor; cost gaps are the robust signal.
-- Cost ratios depend on subscription terms; the 4,500× figure is shadow-dollars against per-token API rates.
+- **The 4,500× figure is a MARGINAL-cost ratio, not total cost of ownership.** It compares real API micro-spend on the SLM layer against what the downstream work *would* cost at per-token API rates. It ignores (a) the subscription's fixed monthly fee, which you pay regardless, and (b) the finite quota ceiling — subscription quota is not unlimited and sustained runs exhaust it (we hit the ChatGPT usage limit mid-experiment in May 2026). The honest claim: *if you already pay for a subscription and have spare quota, the marginal API cost of routing agent work through it is near-zero* — not "$38 of work for $0.0085" in total terms.
 - "Success" is judged by an SLM rubric; see [research/chain_test_v2.py](https://github.com/steyangdot/PromptPilot/blob/main/research/chain_test_v2.py) for the scorer.
 
 ## Preservation targets

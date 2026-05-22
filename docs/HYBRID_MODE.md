@@ -7,12 +7,29 @@ pattern of routing each layer to the auth that fits its job:
 - **Judge** — used for `prpt checkpoint` / `restart` / `bootstrap`. Route through whatever's cheapest given how often you handoff.
 - **Downstream coding agent** — actually writes/edits code. Route through a **subscription CLI** (`claude-code` or `codex`) — pays for itself if you use a coding agent daily.
 
-The headline: pay API cents for the frequent small calls, burn subscription
-credits on the expensive code-writing calls. In one measured chain5 run
-(see [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)),
-the subsidized-vs-paid cost ratio came out around ~4,500× on the downstream
-work, because the subscription absorbed the expensive part. That ratio is a
-single data point, not a guarantee — your workload will land where it lands.
+The headline: pay API cents for the frequent small calls, route the expensive
+code-writing calls to a subscription you're **already paying for**.
+
+In one measured chain5 run (see
+[Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks)), the SLM
+layer cost **~$0.0085 in real API spend**, while the same downstream agent work
+would cost **~$38 at per-token API rates** — a ~4,500× gap.
+
+**But read that honestly — it is a *marginal* cost ratio, not total cost of
+ownership.** The downstream work didn't run for free; it consumed **subscription
+quota**, which has two real costs the ratio ignores:
+
+1. **A fixed monthly fee** ($20–$200/mo depending on tier) you pay whether or not
+   you route PromptPilot through it. Amortize that into any honest comparison.
+2. **A finite quota ceiling.** Subscription quota is *not* unlimited — sustained
+   runs exhaust it. (We hit the ChatGPT usage limit partway through a codex N=5
+   experiment in May 2026; the run aborted until the quota window reset.)
+
+So the accurate claim is: **if you already pay for a subscription for interactive
+use and have spare quota, the *marginal* API cost of routing programmatic agent
+work through it is near-zero.** It is *not* "$38 of work for $0.0085" in
+total-cost terms, and it is *not* an unlimited free-work generator. The 4,500×
+is real as a marginal-spend-vs-shadow-price figure on one workload — nothing more.
 
 ## When hybrid pays off
 
@@ -114,7 +131,8 @@ PROMPTPILOT_JUDGE=anthropic prpt restart # use Anthropic API key for the judge
 
 ### Mixed-vendor hybrid (Anthropic API key + ChatGPT subscription)
 
-This is the pattern that hits the **highest subsidy ratio** if you have both:
+This is the pattern with the **lowest marginal cost** if you have both (subject to
+the subscription's fixed monthly fee + finite quota — see the headline caveat above):
 
 ```bash
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env   # Haiku SLM, cheap and fast
