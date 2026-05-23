@@ -26,6 +26,7 @@ scripts/publish_wiki.sh
 - `docs/ARCHITECTURE.md` → `Architecture.md`
 - `docs/SLM_HARNESS.md` → `SLM-Harness.md`
 - `docs/ROUTES_AND_DECISIONS.md` → `Routes-and-Decisions.md`
+- `docs/SESSION_MEMORY.md` → `Session-Memory.md`
 - `docs/SEMANTIC_PRESERVATION.md` → `Semantic-Preservation.md`
 - `docs/SAFETY_MODEL.md` → `Safety-Model.md`
 - `docs/TELEMETRY_AND_REPLAY.md` → `Telemetry-and-Replay.md`
