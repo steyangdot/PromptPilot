@@ -12,6 +12,30 @@ The goal is not to replace the frontier model with a small language model. The S
 
 PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction. A rewritten prompt may be longer than the original when that preserves constraints; the savings come from fewer ambiguous agent turns, bounded session replay, and compressed noisy context.
 
+## How PromptPilot fits
+
+```mermaid
+flowchart LR
+  U["Developer request"] --> M["Bounded session memory<br/>recent intent summaries"]
+  M --> C["SLM control layer<br/>clarify / answer / passthrough / act"]
+
+  C -->|clarify| Q["Ask before execution"]
+  C -->|answer| A["Answer simple request"]
+  C -->|passthrough| P["Forward unchanged<br/>when rewrite is risky"]
+  C -->|act| R["Rewrite prompt<br/>preserve constraints"]
+
+  P --> F["Codex / Claude-style<br/>frontier coding agent"]
+  R --> F
+  F --> O["Code changes<br/>debugging / tests / summary"]
+
+  F --> T["Tool output"]
+  T --> H["Optional hooks<br/>compress noisy logs and diffs"]
+  H --> F
+
+  C -. "hybrid mode" .-> API["Metered SLM API<br/>small control cost"]
+  F -. "hybrid mode" .-> SUB["Subscription CLI<br/>heavy agent work"]
+```
+
 **Measured example (hybrid mode):** in one 15-turn chain, ~24k input tokens of SLM work directed ~12.66M input tokens of agent work. The control layer was ~0.2% of the input-token footprint, and the bounded session ran the same multi-turn work on ~7.6x fewer input tokens than the tool's native `--resume` session. Hybrid mode can route the small control layer to metered API usage and the heavy coding-agent work to a subscription CLI. See [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
 
 > **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)**.
