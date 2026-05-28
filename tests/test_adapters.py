@@ -402,7 +402,7 @@ class TestOpenAIDirectAdapterMocked:
                 api_key="sk-test", verbose=False,
             ))
 
-        assert adapter._model == "gpt-5.5"
+        assert adapter._model == "gpt-4o"
 
     @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_run_returns_text(self, mock_openai_mod, capsys):
