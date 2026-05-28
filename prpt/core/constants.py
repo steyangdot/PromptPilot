@@ -59,7 +59,7 @@ MODEL_PRICING: dict = {
     "gpt-5.4-nano":              {"input": 0.20,  "output": 1.25},
     "gpt-5.4-mini":              {"input": 0.75,  "output": 4.50},
     "gpt-5.4":                   {"input": 2.50,  "output": 10.00},
-    "gpt-5.5":                   {"input": 5.00,  "output": 20.00},
+    "gpt-5.5":                   {"input": 5.00,  "output": 30.00},
     # OpenAI - legacy
     "gpt-4o-mini":               {"input": 0.15,  "output": 0.60},
     "gpt-4o-mini-2024-07-18":    {"input": 0.15,  "output": 0.60},
@@ -74,7 +74,9 @@ CACHE_WRITE_MULTIPLIER = 1.25   # cache creation billed at 1.25x input
 CACHE_READ_MULTIPLIER  = 0.10   # cache reads billed at 0.10x input
 
 DEFAULT_TARGET_MODEL = "claude-opus-4-7"
-DEFAULT_OPENAI_TARGET_MODEL = "gpt-4o"
+# Direct OpenAI SDK calls default to the current published GPT-5.5
+# Chat Completions model; see tests for the compatibility guard.
+DEFAULT_OPENAI_TARGET_MODEL = "gpt-5.5"
 DEFAULT_SLM_ANTHROPIC = "claude-haiku-4-5-20251001"
 DEFAULT_SLM_OPENAI = "gpt-5.4-nano"
 DEFAULT_LOG_FILE = ".promptpilot_runs.jsonl"
