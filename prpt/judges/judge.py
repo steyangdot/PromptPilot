@@ -224,11 +224,13 @@ class CodexCliJudge:
     ``codex exec -m gpt-5.4-mini`` on codex CLI 0.130 (2026-05-15).
 
     ChatGPT-auth codex restricts which models can be invoked. Confirmed
-    accepted: ``gpt-5.4-mini``, ``gpt-5.4``, ``gpt-5.3-codex``, ``gpt-5.2``,
-    plus the unspecified default (``gpt-5.5``). Legacy ``gpt-4o-mini`` /
-    ``o4-mini`` names return 400 ("not supported when using Codex with a
-    ChatGPT account"). For API-key-backed codex (no ChatGPT-auth
-    restriction), pass any OpenAI model name.
+    accepted: ``gpt-5.4-mini``, ``gpt-5.4``, ``gpt-5.3-codex``, ``gpt-5.2``.
+    When ``model=None`` is passed, this wrapper omits ``-m`` and lets the
+    Codex CLI choose its configured/default model; this code does not assert
+    that model name. Legacy ``gpt-4o-mini`` / ``o4-mini`` names return 400
+    ("not supported when using Codex with a ChatGPT account"). For
+    API-key-backed codex (no ChatGPT-auth restriction), pass any OpenAI model
+    name.
 
     Per-call cost is heavier than MaxHaikuJudge because ``codex exec`` spins
     up the agent loop even for one-shot prompts (~20k input tokens overhead

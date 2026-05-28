@@ -560,7 +560,7 @@ class TestOpenAIReasoningModelKwarg:
         ("gpt-4o-mini", "max_tokens"),
         ("gpt-5", "max_completion_tokens"),
         ("gpt-5.4-nano", "max_completion_tokens"),
-        ("gpt-5.5", "max_completion_tokens"),
+        ("gpt-5.2", "max_completion_tokens"),
         ("o1", "max_completion_tokens"),
         ("o1-mini", "max_completion_tokens"),
         ("o3", "max_completion_tokens"),
@@ -601,7 +601,7 @@ class TestOpenAIReasoningModelKwarg:
         assert OpenAIDirectAdapter._is_reasoning_model("o3-mini")
         assert OpenAIDirectAdapter._is_reasoning_model("O4-MINI")
         assert OpenAIDirectAdapter._is_reasoning_model("openai/o3")
-        assert OpenAIDirectAdapter._is_reasoning_model("gpt-5.5")
+        assert OpenAIDirectAdapter._is_reasoning_model("gpt-5.2")
         assert not OpenAIDirectAdapter._is_reasoning_model("gpt-4o")
 
 
