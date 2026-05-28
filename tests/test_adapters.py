@@ -391,6 +391,12 @@ class TestAnthropicAdapterOpus47:
 # ---------------------------------------------------------------------------
 
 class TestOpenAIDirectAdapterMocked:
+    def test_openai_default_constant_stays_on_gpt55_chat_model(self):
+        from prpt.core.constants import DEFAULT_OPENAI_TARGET_MODEL, MODEL_PRICING
+
+        assert DEFAULT_OPENAI_TARGET_MODEL == "gpt-5.5"
+        assert MODEL_PRICING[DEFAULT_OPENAI_TARGET_MODEL] == {"input": 5.00, "output": 30.00}
+
     def test_factory_default_model_is_openai_model(self):
         mock_openai_mod = MagicMock()
         mock_openai_mod.OpenAI.return_value = MagicMock()
@@ -402,7 +408,7 @@ class TestOpenAIDirectAdapterMocked:
                 api_key="sk-test", verbose=False,
             ))
 
-        assert adapter._model == "gpt-4o"
+        assert adapter._model == "gpt-5.5"
 
     @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_run_returns_text(self, mock_openai_mod, capsys):
