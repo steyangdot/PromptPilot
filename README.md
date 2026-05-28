@@ -69,7 +69,7 @@ flowchart LR
   class API,SUB infra;
 ```
 
-For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled with `--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`; otherwise the request continues to the agent.
+For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled with `--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`; otherwise the request continues to the agent. The diagram keeps node labels intentionally short so GitHub Mermaid previews do not clip long text.
 
 **Measured example (hybrid mode):** in one 15-turn chain, ~24k input tokens of SLM work directed ~12.66M input tokens of agent work. The control layer was ~0.2% of the input-token footprint, and the bounded session ran the same multi-turn work on ~7.6x fewer input tokens than the tool's native `--resume` session. Hybrid mode can route the small control layer to metered API usage and the heavy coding-agent work to a subscription CLI. See [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
 
