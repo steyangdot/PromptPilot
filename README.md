@@ -15,26 +15,61 @@ PromptPilot optimizes for **semantic-preserving context control**, not blind tok
 ## How PromptPilot fits
 
 ```mermaid
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 48, "rankSpacing": 60}}}%%
 flowchart LR
-  U["Developer request"] --> M["Bounded session memory<br/>recent intent summaries"]
-  M --> C["SLM control layer<br/>clarify / answer / passthrough / act"]
+  U([Developer request])
 
-  C -->|clarify| Q["Ask before execution"]
-  C -->|answer| A["Answer simple request"]
-  C -->|passthrough| P["Forward unchanged<br/>when rewrite is risky"]
-  C -->|act| R["Rewrite prompt<br/>preserve constraints"]
+  subgraph PP["PromptPilot control plane"]
+    direction LR
+    M[["Session memory<br/>bounded summaries"]]
+    C{{"SLM route<br/>clarify · answer · passthrough · act"}}
+    Q["Clarify<br/>ask first"]
+    A["Answer<br/>offer reply"]
+    D["Direct reply<br/>opt-in only"]
+    P["Passthrough<br/>raw prompt"]
+    R["Act<br/>safe rewrite"]
+  end
 
-  P --> F["Codex / Claude-style<br/>frontier coding agent"]
-  R --> F
-  F --> O["Code changes<br/>debugging / tests / summary"]
+  subgraph AG["Frontier coding agent"]
+    direction LR
+    F["Codex / Claude CLI"]
+    O["Code changes<br/>tests · summary"]
+    T["Tool output"]
+  end
 
-  F --> T["Tool output"]
-  T --> H["Optional hooks<br/>compress noisy logs and diffs"]
-  H --> F
+  subgraph HK["Optional hooks"]
+    H["Compress logs<br/>pytest · grep · diff"]
+  end
 
-  C -. "hybrid mode" .-> API["Metered SLM API<br/>small control cost"]
-  F -. "hybrid mode" .-> SUB["Subscription CLI<br/>heavy agent work"]
+  U --> M --> C
+  C -->|clarify| Q
+  C -->|answer| A
+  A -->|enabled| D
+  A -.->|otherwise| F
+  C -->|passthrough| P --> F
+  C -->|act| R --> F
+  F --> O
+  F --> T --> H --> F
+
+  C -. "hybrid" .-> API[("Metered SLM API")]
+  F -. "hybrid" .-> SUB[("Subscription CLI")]
+
+  classDef entry fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#7c2d12;
+  classDef control fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
+  classDef route fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#4c1d95;
+  classDef agent fill:#ecfeff,stroke:#06b6d4,stroke-width:2px,color:#164e63;
+  classDef hook fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d;
+  classDef infra fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px,color:#334155;
+
+  class U entry;
+  class M,Q,A,D,P,R control;
+  class C route;
+  class F,O,T agent;
+  class H hook;
+  class API,SUB infra;
 ```
+
+For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled with `--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`; otherwise the request continues to the agent.
 
 **Measured example (hybrid mode):** in one 15-turn chain, ~24k input tokens of SLM work directed ~12.66M input tokens of agent work. The control layer was ~0.2% of the input-token footprint, and the bounded session ran the same multi-turn work on ~7.6x fewer input tokens than the tool's native `--resume` session. Hybrid mode can route the small control layer to metered API usage and the heavy coding-agent work to a subscription CLI. See [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
 
