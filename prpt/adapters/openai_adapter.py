@@ -5,6 +5,7 @@ import argparse
 import os
 from typing import Optional
 
+from prpt.core.constants import DEFAULT_OPENAI_TARGET_MODEL
 from prpt.core.utils import write_stderr
 from prpt.adapters.echo import ToolAdapter
 
@@ -16,7 +17,7 @@ class OpenAIDirectAdapter(ToolAdapter):
     """
 
     def __init__(
-        self, model: str = "gpt-4o", api_key: Optional[str] = None, max_tokens: int = 4096,
+        self, model: str = DEFAULT_OPENAI_TARGET_MODEL, api_key: Optional[str] = None, max_tokens: int = 4096,
     ):
         try:
             import openai as _openai
@@ -33,13 +34,15 @@ class OpenAIDirectAdapter(ToolAdapter):
         self.last_usage: Optional[dict] = None
 
     @staticmethod
-    def _is_reasoning_model(model: str) -> bool:
-        """Return True if the model is an o-series reasoning model (o1/o3/o4/o5+)."""
+    def _uses_completion_token_limit(model: str) -> bool:
+        """Return True for current reasoning families that prefer max_completion_tokens."""
         name = model.lower()
         # Strip common provider prefixes (e.g. "openai/o3-mini", "azure/o1")
         if "/" in name:
             name = name.rsplit("/", 1)[1]
-        return name.startswith(("o1", "o3", "o4", "o5", "o6", "o7", "o8", "o9"))
+        return name.startswith(("gpt-5", "o1", "o3", "o4", "o5", "o6", "o7", "o8", "o9"))
+
+    _is_reasoning_model = _uses_completion_token_limit
 
     def run(self, final_prompt: str, args: argparse.Namespace) -> int:
         self.last_usage = None
@@ -50,7 +53,7 @@ class OpenAIDirectAdapter(ToolAdapter):
             # require `max_completion_tokens` instead.
             token_kwarg = (
                 "max_completion_tokens"
-                if self._is_reasoning_model(self._model)
+                if self._uses_completion_token_limit(self._model)
                 else "max_tokens"
             )
             create_kwargs = {

@@ -74,6 +74,7 @@ CACHE_WRITE_MULTIPLIER = 1.25   # cache creation billed at 1.25x input
 CACHE_READ_MULTIPLIER  = 0.10   # cache reads billed at 0.10x input
 
 DEFAULT_TARGET_MODEL = "claude-opus-4-7"
+DEFAULT_OPENAI_TARGET_MODEL = "gpt-5.5"
 DEFAULT_SLM_ANTHROPIC = "claude-haiku-4-5-20251001"
 DEFAULT_SLM_OPENAI = "gpt-5.4-nano"
 DEFAULT_LOG_FILE = ".promptpilot_runs.jsonl"
