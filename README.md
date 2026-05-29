@@ -22,7 +22,7 @@ flowchart LR
   subgraph PP["PromptPilot control plane"]
     direction LR
     M[["Session memory<br/>bounded summaries"]]
-    C{{"SLM route<br/>clarify · answer · passthrough · act"}}
+    C{{"SLM route<br/>clarify / answer / passthrough / act"}}
     Q["Clarify<br/>ask first"]
     A["Answer<br/>offer reply"]
     D["Direct reply<br/>opt-in only"]
@@ -33,12 +33,12 @@ flowchart LR
   subgraph AG["Frontier coding agent"]
     direction LR
     F["Codex / Claude CLI"]
-    O["Code changes<br/>tests · summary"]
+    O["Code changes<br/>tests / summary"]
     T["Tool output"]
   end
 
   subgraph HK["Optional hooks"]
-    H["Compress logs<br/>pytest · grep · diff"]
+    H["Compress logs<br/>pytest / grep / diff"]
   end
 
   U --> M --> C
