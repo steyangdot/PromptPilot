@@ -132,7 +132,7 @@ class TestPrintStats:
         print_compress_stats(records)
 
         output = capsys.readouterr().out
-        assert "Bytes saved:" in output
+        assert "Eligible bytes saved:" in output
         assert "300" in output
         assert "(+75.0%)" in output
 
@@ -149,7 +149,7 @@ class TestPrintStats:
         print_compress_stats(records)
 
         output = capsys.readouterr().out
-        assert "Bytes saved:" in output
+        assert "Eligible bytes saved:" in output
         assert "-25" in output
         assert "(-25.0%)" in output
 

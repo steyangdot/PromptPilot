@@ -40,6 +40,14 @@ def _allow(additional_context: str | None = None) -> None:
 
 
 def main() -> None:
+    # --- 0. Recursion guard ---
+    # Skip when invoked inside a promptpilot-spawned SLM subprocess
+    # (judge_via_max / CodexCliJudge set PROMPTPILOT_SLM_SUBPROCESS). Without
+    # this, the nested agent the SLM rewrite spawns re-fires this hook and
+    # recurses until the hook timeout kills it.
+    if os.environ.get("PROMPTPILOT_SLM_SUBPROCESS"):
+        _allow()
+
     # --- 1. Parse hook payload ---
     try:
         raw = sys.stdin.read()

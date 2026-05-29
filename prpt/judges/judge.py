@@ -265,11 +265,16 @@ class CodexCliJudge:
         if self.model:
             cmd.extend(["-m", self.model])
         cmd.append("-")
+        # Recursion guard: same rationale as judge_via_max -- mark the spawned
+        # codex subprocess so a `.codex/hooks/optimize_prompt.py` UserPromptSubmit
+        # hook skips re-running the SLM rewrite instead of recursing.
+        env = dict(os.environ)
+        env["PROMPTPILOT_SLM_SUBPROCESS"] = "1"
         try:
             proc = subprocess.run(
                 cmd, input=prompt.encode("utf-8"),
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                timeout=timeout,
+                timeout=timeout, env=env,
             )
         except subprocess.TimeoutExpired:
             return "", 0.0, time.time() - t0
