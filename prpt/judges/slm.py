@@ -46,6 +46,14 @@ def judge_via_max(prompt: str, timeout: int | None = None) -> tuple[str, float, 
         "--no-session-persistence",
     ]
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+    # Recursion guard: flag this as a promptpilot-spawned SLM subprocess so the
+    # nested `claude` invocation's UserPromptSubmit hook (optimize_prompt.py)
+    # skips re-running the SLM rewrite. Without it, the rewrite spawns another
+    # `claude -p` that re-fires the hook, recursing until the hook timeout kills
+    # it (~17s wasted per call). We deliberately do NOT use `--bare`: it forces
+    # ANTHROPIC_API_KEY-only auth and never reads OAuth/keychain, which would
+    # break this Max path (judge_via_max strips ANTHROPIC_API_KEY on purpose).
+    env["PROMPTPILOT_SLM_SUBPROCESS"] = "1"
     t0 = time.time()
     try:
         proc = subprocess.run(
