@@ -25,7 +25,7 @@ Hook output (stdout, JSON) to override the tool response seen by the LLM:
     {
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "toolResponse": "<compressed output>"
+            "updatedToolOutput": "<compressed output>"
         }
     }
 
@@ -77,11 +77,18 @@ def _passthrough() -> None:
 
 
 def _override(compressed: str) -> None:
-    """Emit the replacement tool response and exit."""
+    """Emit the replacement tool response and exit.
+
+    Uses ``updatedToolOutput`` -- the field Claude Code honors to replace tool
+    output. Replacing output for non-MCP tools (e.g. Bash) requires claude CLI
+    >= v2.1.120; on older versions this hook still logs telemetry but the model
+    sees the original, uncompressed output. (The old ``toolResponse`` field was
+    never recognized, so compression silently no-op'd regardless of version.)
+    """
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "toolResponse": compressed,
+            "updatedToolOutput": compressed,
         }
     }))
     sys.exit(0)
