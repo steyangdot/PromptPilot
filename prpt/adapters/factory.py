@@ -12,7 +12,7 @@ import shutil
 import sys
 from typing import Optional
 
-from prpt.core.constants import DEFAULT_TARGET_MODEL
+from prpt.core.constants import DEFAULT_OPENAI_TARGET_MODEL, DEFAULT_TARGET_MODEL
 from prpt.core.utils import write_stderr
 from prpt.adapters.echo import EchoAdapter, ToolAdapter
 from prpt.adapters.shell import CodexAdapter, ShellToolAdapter, resolve_executable_name
@@ -124,7 +124,8 @@ class AdapterFactory:
 
         if tool == "openai":
             from prpt.adapters.openai_adapter import OpenAIDirectAdapter
-            return OpenAIDirectAdapter(model=model, api_key=api_key, max_tokens=max_tokens)
+            openai_model = getattr(args, "model", None) or DEFAULT_OPENAI_TARGET_MODEL
+            return OpenAIDirectAdapter(model=openai_model, api_key=api_key, max_tokens=max_tokens)
 
         # claude-code or any other shell CLI
         if tool == "claude-code" and not (shutil.which("claude") or shutil.which("claude.cmd")):

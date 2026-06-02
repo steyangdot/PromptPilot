@@ -391,6 +391,25 @@ class TestAnthropicAdapterOpus47:
 # ---------------------------------------------------------------------------
 
 class TestOpenAIDirectAdapterMocked:
+    def test_openai_default_constant_stays_on_gpt55_chat_model(self):
+        from prpt.core.constants import DEFAULT_OPENAI_TARGET_MODEL, MODEL_PRICING
+
+        assert DEFAULT_OPENAI_TARGET_MODEL == "gpt-5.5"
+        assert MODEL_PRICING[DEFAULT_OPENAI_TARGET_MODEL] == {"input": 5.00, "output": 30.00}
+
+    def test_factory_default_model_is_openai_model(self):
+        mock_openai_mod = MagicMock()
+        mock_openai_mod.OpenAI.return_value = MagicMock()
+
+        with patch.dict("sys.modules", {"openai": mock_openai_mod}):
+            from prpt.adapters.factory import AdapterFactory
+            adapter = AdapterFactory.create(SimpleNamespace(
+                tool="openai", tool_arg=[], model=None, max_tokens=4096,
+                api_key="sk-test", verbose=False,
+            ))
+
+        assert adapter._model == "gpt-5.5"
+
     @patch("prpt.adapters.openai_adapter.openai", create=True)
     def test_run_returns_text(self, mock_openai_mod, capsys):
         mock_client = MagicMock()
@@ -538,14 +557,16 @@ class TestShellExecutableResolution:
 
 
 # ---------------------------------------------------------------------------
-# Fix #3 — OpenAI o-series reasoning models use max_completion_tokens
+# Fix #3 — OpenAI reasoning models use max_completion_tokens
 # ---------------------------------------------------------------------------
 
 class TestOpenAIReasoningModelKwarg:
     @pytest.mark.parametrize("model,expected_kwarg", [
         ("gpt-4o", "max_tokens"),
         ("gpt-4o-mini", "max_tokens"),
-        ("gpt-5", "max_tokens"),
+        ("gpt-5", "max_completion_tokens"),
+        ("gpt-5.4-nano", "max_completion_tokens"),
+        ("gpt-5.2", "max_completion_tokens"),
         ("o1", "max_completion_tokens"),
         ("o1-mini", "max_completion_tokens"),
         ("o3", "max_completion_tokens"),
@@ -586,8 +607,8 @@ class TestOpenAIReasoningModelKwarg:
         assert OpenAIDirectAdapter._is_reasoning_model("o3-mini")
         assert OpenAIDirectAdapter._is_reasoning_model("O4-MINI")
         assert OpenAIDirectAdapter._is_reasoning_model("openai/o3")
+        assert OpenAIDirectAdapter._is_reasoning_model("gpt-5.2")
         assert not OpenAIDirectAdapter._is_reasoning_model("gpt-4o")
-        assert not OpenAIDirectAdapter._is_reasoning_model("gpt-5")
 
 
 # ---------------------------------------------------------------------------
