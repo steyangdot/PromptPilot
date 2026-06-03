@@ -16,13 +16,13 @@ python examples/demo.py --full     # print the full structured prompt for every 
 python examples/demo.py --ascii    # ASCII-only box glyphs for limited terminals
 ```
 
-By default the demo uses the rule-based heuristic normalizer so anyone (and CI)
-can run it. If an SLM backend is detected (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
-in the environment) it auto-upgrades to the real small-model rewrite; `--slm`
-forces it (including for Max / ChatGPT subscriptions). Every field shown —
-route, task type, confidence, protected spans, hard constraints, ambiguities —
-is computed by PromptPilot's real pipeline against a fixed synthetic repo, so
-the output is deterministic and reproducible wherever you run it.
+By default the demo stays offline (the rule-based heuristic normalizer) so
+anyone — and CI — can run it for free. It auto-loads a local `.env` through
+PromptPilot's own loader, so `--slm` uses a key on disk with no shell export
+(`--slm` also works for Max / ChatGPT subscriptions). Every field shown — route,
+task type, confidence, protected spans, hard constraints, ambiguities — is
+computed by PromptPilot's real pipeline against a fixed synthetic repo, so the
+output is deterministic and reproducible wherever you run it.
 
 The three built-in examples walk from a precise request (constraints pinned) to
 an under-specified one (ambiguities flagged) to a mixed refactor (hard vs soft

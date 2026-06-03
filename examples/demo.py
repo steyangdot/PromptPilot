@@ -7,14 +7,15 @@ PromptPilot's behavior in one command:
 
     python examples/demo.py
 
-If an SLM backend is detected (ANTHROPIC_API_KEY / OPENAI_API_KEY in the
-environment) the demo auto-upgrades to the real small-model rewrite. Force it
-either way:
+By default it stays offline (the heuristic normalizer) so it's free and CI-safe.
+It auto-loads a local .env through prpt's own loader, so adding --slm uses your
+key with no shell export or shim:
 
-    python examples/demo.py --slm        # live small-model rewrite (costs ~$0.002/example)
-    python examples/demo.py --offline     # always heuristic, never touches the network
-    python examples/demo.py --only 1       # run a single example
-    python examples/demo.py --full         # show the full structured prompt for every example
+    python examples/demo.py              # offline heuristic (free, no network)
+    python examples/demo.py --slm        # live small-model rewrite (~$0.002/example)
+    python examples/demo.py --offline    # force heuristic even if a key is present
+    python examples/demo.py --only 1     # run a single example
+    python examples/demo.py --full       # show the full structured prompt for every example
 
 The demo drives PromptPilot's real pipeline — create_normalizer -> normalize ->
 SemanticValidator -> build_final_downstream_prompt — against a fixed synthetic
@@ -28,6 +29,7 @@ import os
 import sys
 import textwrap
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 
 # Make `import prpt` work from a fresh clone without `pip install` — same
@@ -36,6 +38,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from prpt.core.dotenv import load_dotenv  # noqa: E402
 from prpt.core.types import NormalizedRequest, RepoMetadata  # noqa: E402
 from prpt.normalizers.base import (  # noqa: E402
     SemanticValidator,
@@ -198,6 +201,38 @@ def _box(p: Palette, body: str) -> List[str]:
     return out
 
 
+_SPAN_STOPWORDS = {"NOT", "AND", "OR", "THE", "BUT", "FOR", "WITH"}
+
+
+def _meaningful_spans(spans: List[str], limit: int = 10) -> List[str]:
+    """Keep identifier-like protected spans for display; drop prose-word noise.
+
+    The v1 SLM normalizer fills protected_spans by re-scanning capitalized words
+    out of its own rewrite, which surfaces junk like "Do", "Add", "Requirements".
+    We keep spans that look like real anchors — paths, dotted names, multi-word
+    phrases, snake_case / has-a-digit, CamelCase identifiers, or short ALL-CAPS
+    acronyms (API, DB) — and drop bare single Capitalized words (deduping
+    case-insensitively). Display only; never changes what prpt forwards.
+    """
+    out: List[str] = []
+    seen = set()
+    for raw in spans:
+        s = (raw or "").strip()
+        key = s.lower()
+        if not s or key in seen or s.upper() in _SPAN_STOPWORDS:
+            continue
+        looks_meaningful = (
+            " " in s                                  # phrase: "minimal patch"
+            or "/" in s or "." in s                   # path: tests/test_worker.py
+            or "_" in s or any(c.isdigit() for c in s)
+            or any(c.isupper() for c in s[1:])        # CamelCase/acronym: OrderSyncWorker, API
+        )
+        if looks_meaningful:
+            seen.add(key)
+            out.append(s)
+    return out[:limit]
+
+
 # ---------------------------------------------------------------------------
 # Route resolution (mirrors prpt.cli._resolve_route without importing a
 # private symbol). The heuristic normalizer carries no spec/intent, so it
@@ -235,21 +270,27 @@ def _detect_slm_backend() -> Optional[str]:
 
 
 def _resolve_normalizer_choice(args, p: Palette) -> str:
-    """Decide heuristic vs slm and print a one-line note about why."""
+    """Decide heuristic vs slm and print a one-line note about why.
+
+    Default is offline (free, CI-safe) even when a key is present; --slm opts in
+    to the live rewrite. Since the demo auto-loads .env, a detected key earns a
+    hint rather than silently spending money on a casual run.
+    """
+    if args.slm:
+        return "slm"
     if args.offline:
         print("  {0}mode{1}  offline heuristic (forced via --offline; no network, no cost)"
               .format(p.dim, p.reset))
         return "heuristic"
-    if args.slm:
-        return "slm"
     detected = _detect_slm_backend()
     if detected:
-        print("  {0}mode{1}  live SLM — detected {2}{3}{4} (auto-upgraded; ~$0.002/example)"
-              .format(p.dim, p.reset, p.green, detected, p.reset))
-        return "slm"
-    print("  {0}mode{1}  offline heuristic (no API key found). "
-          "Set ANTHROPIC_API_KEY or pass {2}--slm{3} for the live small-model rewrite."
-          .format(p.dim, p.reset, p.bold, p.reset))
+        print("  {0}mode{1}  offline heuristic. Detected {2}{3}{4} — add {5}--slm{6} for the "
+              "live small-model rewrite (~$0.002/example)."
+              .format(p.dim, p.reset, p.green, detected, p.reset, p.bold, p.reset))
+    else:
+        print("  {0}mode{1}  offline heuristic (no API key found). "
+              "Set ANTHROPIC_API_KEY or pass {2}--slm{3} for the live small-model rewrite."
+              .format(p.dim, p.reset, p.bold, p.reset))
     return "heuristic"
 
 
@@ -300,7 +341,7 @@ def _render_example(idx: int, total: int, ex: Example, normalizer,
     print()
 
     print("  " + _label(p, "EXTRACTED"))
-    for line in _field(p, "protected spans", norm.protected_spans):
+    for line in _field(p, "protected spans", _meaningful_spans(norm.protected_spans)):
         print(line)
     for line in _field(p, "hard constraints", norm.hard_constraints):
         print(line)
@@ -358,6 +399,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.only is not None and not (1 <= args.only <= len(EXAMPLES)):
         print("error: --only must be between 1 and {0}".format(len(EXAMPLES)), file=sys.stderr)
         return 2
+
+    # Auto-load .env (cwd, then this repo's root) via prpt's own loader so --slm
+    # works with a key on disk — no shell export. The loader strips curly quotes
+    # and never overrides an existing shell value.
+    for _env_dir in (Path.cwd(), Path(_REPO_ROOT)):
+        load_dotenv(_env_dir / ".env")
 
     _reconfigure_stdout_utf8()
     enc = (getattr(sys.stdout, "encoding", "") or "").lower()
