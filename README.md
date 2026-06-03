@@ -4,14 +4,6 @@
 
 **PromptPilot puts a cheap small model in front of Codex and Claude Code: it turns a rough prompt into a clear, constraint-pinned brief — so the frontier model stops burning tokens on ambiguity, repeated history, and noisy tool output.**
 
-**▶ See it in action** — watch a rough prompt become a structured brief, with **zero setup** (no API key, no coding agent, no network):
-
-```bash
-python examples/demo.py
-```
-
-Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.
-
 ## What it does
 
 - **Clarifies vague requests** — flags ambiguity and asks first instead of guessing.
@@ -112,6 +104,16 @@ prpt restart                              # collapse a heavy session -> handoff.
 ```
 
 `prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code. Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
+
+## Demo
+
+See the SLM control layer reshape a rough prompt into a structured brief, with **zero setup** — no API key, no coding agent, no network:
+
+```bash
+python examples/demo.py
+```
+
+Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.
 
 ## Docs
 
