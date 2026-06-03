@@ -2,17 +2,21 @@
 
 > Small-language-model control layer for AI coding agents.
 
-PromptPilot helps Codex and Claude-style coding agents spend less context on avoidable work.
+**PromptPilot puts a cheap small model in front of Codex and Claude Code: it turns a rough prompt into a clear, constraint-pinned brief — so the frontier model stops burning tokens on ambiguity, repeated history, and noisy tool output.**
 
-Long coding sessions often burn frontier-model tokens on ambiguous prompts, repeated session history, noisy tool output, and constraints that should have been made explicit before coding starts. PromptPilot adds a small language model (SLM) control layer in front of those agents to make that work clearer before the expensive model starts coding.
+## What it does
 
-It clarifies unclear requests, rewrites prompts to preserve constraints, routes simple or risky requests appropriately, carries bounded session memory, and can compress noisy tool output through agent hooks.
+- **Clarifies vague requests** — flags ambiguity and asks first instead of guessing.
+- **Pins constraints & protected spans** — APIs, file paths, "don't touch X" go into the prompt explicitly.
+- **Routes every request** — *clarify / answer / passthrough / act* — instead of blindly forwarding.
+- **Bounds session memory** — long sessions don't re-feed the whole transcript every turn.
+- **Compresses noisy tool output** — pytest / grep / diff, via agent hooks, before the expensive model reads it.
 
-The goal is not to replace the frontier model with a small language model. The SLM manages the workflow; the frontier model writes and debugs the code.
+The SLM manages the workflow; the frontier model still writes and debugs the code. PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction — a rewrite may be *longer* when that preserves a constraint. The savings come from fewer ambiguous turns, bounded replay, and compressed context.
 
-PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction. A rewritten prompt may be longer than the original when that preserves constraints; the savings come from fewer ambiguous agent turns, bounded session replay, and compressed noisy context.
+> **Measured (hybrid mode, one 15-turn chain):** ~24k input tokens of SLM work directed ~12.66M input tokens of agent work — the control layer was **~0.2%** of the input footprint, and the bounded session ran the same work on **~7.6× fewer** input tokens than the tool's native `--resume`. Single workload, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
 
-## How PromptPilot fits
+## How it works
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 48, "rankSpacing": 60}}}%%
@@ -69,29 +73,16 @@ flowchart LR
   class API,SUB infra;
 ```
 
-For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled with `--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`; otherwise the request continues to the agent. The diagram keeps node labels intentionally short so GitHub Mermaid previews do not clip long text.
+For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled (`--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`); otherwise the request continues to the agent. The diagram keeps node labels short so GitHub Mermaid previews do not clip long text.
 
-**Measured example (hybrid mode):** in one 15-turn chain, ~24k input tokens of SLM work directed ~12.66M input tokens of agent work. The control layer was ~0.2% of the input-token footprint, and the bounded session ran the same multi-turn work on ~7.6x fewer input tokens than the tool's native `--resume` session. Hybrid mode can route the small control layer to metered API usage and the heavy coding-agent work to a subscription CLI. See [docs/HYBRID_MODE.md](docs/HYBRID_MODE.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Single workload, not a guarantee.
-
-> **First-time user?** Start with **[QUICKSTART.md](QUICKSTART.md)**.
-
-> **Full documentation:** read the rendered **[PromptPilot GitHub Wiki](https://github.com/steyangdot/PromptPilot/wiki)**.
-
-## Docs
-
-Long-form documentation lives in [docs/](docs/) (source of truth) and is mirrored to the **[PromptPilot GitHub Wiki](https://github.com/steyangdot/PromptPilot/wiki)** by [scripts/publish_wiki.sh](scripts/publish_wiki.sh). The wiki is the easiest place to browse the project.
-
-- Start at the **[GitHub Wiki home](https://github.com/steyangdot/PromptPilot/wiki)**, the [docs index](docs/README.md), or the [Project Overview](docs/PROJECT_OVERVIEW.md).
-- Operational pages stay at the repo root: this README, [QUICKSTART.md](QUICKSTART.md), [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md).
+Dig deeper in [Architecture](docs/ARCHITECTURE.md), [Routes and Decisions](docs/ROUTES_AND_DECISIONS.md), and [Semantic Preservation](docs/SEMANTIC_PRESERVATION.md).
 
 ## Install
 
-PromptPilot wraps an existing coding agent CLI, so install and authenticate at least one agent first:
+PromptPilot wraps an existing coding-agent CLI — install and authenticate at least one first:
 
-- **Claude Code:** `npm install -g @anthropic-ai/claude-code`, then `claude auth login --claudeai`
-- **Codex:** `npm install -g @openai/codex`, then `codex login`
-
-Then install PromptPilot. Use the extra that matches the small-model API path you want available:
+- **Claude Code:** `npm install -g @anthropic-ai/claude-code` → `claude auth login --claudeai`
+- **Codex:** `npm install -g @openai/codex` → `codex login`
 
 ```bash
 pip install prpt[claude]      # Claude/Anthropic SLM path
@@ -99,7 +90,7 @@ pip install prpt[codex]       # Codex/OpenAI SLM path
 pip install prpt[all]         # both
 ```
 
-Subscription CLI auth and API keys both work; hybrid mode can use an API key for the small control layer and a subscription CLI for the coding agent. `[anthropic]` / `[openai]` are kept as aliases for backward compatibility.
+Subscription auth and API keys both work; **hybrid mode** can route the small control layer to a metered API key and the coding agent to a subscription CLI. (`[anthropic]` / `[openai]` remain as aliases.)
 
 ## First run
 
@@ -109,30 +100,21 @@ prpt setup                                # one-time onboarding (checks + smoke 
 prpt "fix the flaky test in payments"     # auto-detects claude or codex from PATH
 prpt --dry-run "refactor auth, no API changes"  # preview the optimized prompt
 prpt --tool codex "add dark mode"         # force a specific agent
-prpt doctor                               # re-run setup checks if something breaks
-prpt install-hook                         # optional: wire prompt/tool hooks into Claude Code
+prpt restart                              # collapse a heavy session -> handoff.md -> fresh
 ```
 
-After many turns the session grows heavy:
+`prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code. Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
+
+## Demo
+
+See the SLM control layer reshape a rough prompt into a structured brief, with **zero setup** — no API key, no coding agent, no network:
 
 ```bash
-prpt restart                              # checkpoint -> handoff.md -> bootstrap fresh
+python examples/demo.py
 ```
 
-## What a run looks like
+Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.
 
-```text
-$ prpt "the test in tests/test_auth.py::test_token_refresh is flaky on CI
-        but passes locally. keep the public API of TokenStore intact."
-[promptpilot] session: carrying 0 prior turns
-[promptpilot] route=act
-[token stats] raw 248 → optimized 332 tokens (SLM call: $0.0021)
-=== forwarding to claude-code ===
-... agent works ...
-✓ tests/test_auth.py::test_token_refresh now stable (3/3 CI retries)
-```
+## Docs
 
-The SLM expanded the raw 248-token prompt into a 332-token optimized version that pinned the failing test name and made the `TokenStore` API-stability constraint explicit before the coding agent saw it. Walkthrough in [docs/TELEMETRY_AND_REPLAY.md](docs/TELEMETRY_AND_REPLAY.md).
-
-For the full guide see **[QUICKSTART.md](QUICKSTART.md)** and `prpt --help`
-(or `prpt --advanced-help` for internal/researcher flags).
+Long-form docs live in [docs/](docs/) (source of truth), mirrored to the **[PromptPilot GitHub Wiki](https://github.com/steyangdot/PromptPilot/wiki)** by [scripts/publish_wiki.sh](scripts/publish_wiki.sh). Start at the [Project Overview](docs/PROJECT_OVERVIEW.md) or the [docs index](docs/README.md). Operational pages stay at the repo root: [QUICKSTART.md](QUICKSTART.md), [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md).
