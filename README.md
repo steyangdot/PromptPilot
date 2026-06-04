@@ -103,9 +103,9 @@ prpt --tool codex "add dark mode"         # force a specific agent
 prpt restart                              # collapse a heavy session -> handoff.md -> fresh
 ```
 
-> **Applying edits:** `prpt "..."` forwards the optimized brief to the agent in a single non-interactive pass, so on the **Claude Code** path edits are *proposed, not auto-applied*. Pass `--tool-arg=--permission-mode --tool-arg=acceptEdits` to let it write files, or use `prpt install-hook` (below) to run the optimization *inside* an interactive Claude Code session where you approve edits as usual. `--dry-run` only prints the brief.
+> **Applying edits:** `prpt "..."` forwards the brief to the agent in a single non-interactive pass, and in that mode **neither agent writes files by default** — **Claude Code** *proposes* edits (pending approval), **Codex** runs in a *read-only sandbox*. To let them apply changes, add the agent's auto-approve flag: Claude → `--tool-arg=--permission-mode --tool-arg=acceptEdits`; Codex → `--tool-arg=--full-auto`. Or use `prpt install-hook` (below) to run the optimization *inside* an interactive Claude Code / Codex session where you approve changes as usual. `--dry-run` only prints the brief.
 
-`prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code. Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
+`prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code (or Codex via `prpt install-hook --tool codex`). Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
 
 ## Demo
 

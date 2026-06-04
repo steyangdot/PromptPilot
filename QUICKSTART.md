@@ -43,7 +43,7 @@ prpt --dry-run "fix the flaky test in payments"   # preview only
 prpt "fix the flaky test in payments"             # auto-detects claude or codex from PATH
 ```
 
-> **Heads-up on edits:** `prpt "fix ..."` forwards the brief to the agent in one non-interactive pass, so on the **Claude Code** path edits are *proposed, not auto-applied*. Pass `--tool-arg=--permission-mode --tool-arg=acceptEdits` to let it write files, or run `prpt install-hook` (see §"Where to look next") to optimize prompts *inside* an interactive Claude Code session.
+> **Heads-up on edits:** `prpt "fix ..."` forwards the brief to the agent in one non-interactive pass, and in that mode **neither agent writes files by default** — **Claude Code** *proposes* edits, **Codex** runs *read-only*. To apply changes, add the auto-approve flag: Claude → `--tool-arg=--permission-mode --tool-arg=acceptEdits`; Codex → `--tool-arg=--full-auto`. Or run `prpt install-hook` (see §"Where to look next") to optimize prompts *inside* an interactive Claude Code / Codex session.
 
 Each call records a turn, so follow-ups pick up context automatically:
 
