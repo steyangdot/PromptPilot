@@ -97,6 +97,12 @@ class SubscriptionSLMNormalizer(Normalizer):
         self._last_context_block: Optional[str] = None
         self._last_intent: Optional[str] = None
         self._last_scope: Optional[str] = None
+        # Working directory the judge subprocess runs in. Set from repo.cwd on
+        # every repo-bearing call so the Claude/Codex CLI resolves project
+        # context (CLAUDE.md / project memory) from the --cwd target, not the
+        # process cwd. Leaving it unset would bleed the launch repo's files
+        # into the rewrite when --cwd differs from where prpt was launched.
+        self._cwd: Optional[str] = None
         # Sum across all judge calls in a single normalize() invocation.
         self._last_cost_usd: float = 0.0
         self._last_walltime_s: float = 0.0
@@ -108,9 +114,14 @@ class SubscriptionSLMNormalizer(Normalizer):
     # Internal: single judge call with bookkeeping
     # ------------------------------------------------------------------
 
-    def _ask(self, system: str, user: str, *, timeout: int = 90) -> str:
+    def _ask(
+        self, system: str, user: str, *, timeout: int = 90, cwd: Optional[str] = None,
+    ) -> str:
         prompt = _join(system, user)
-        text, cost, walltime = self._judge(prompt, timeout=timeout)
+        # Resolve cwd from the explicit arg, falling back to the last repo.cwd
+        # seen. Never silently inherits the process cwd for grounded calls.
+        run_cwd = cwd if cwd is not None else self._cwd
+        text, cost, walltime = self._judge(prompt, timeout=timeout, cwd=run_cwd)
         self._last_cost_usd += cost
         self._last_walltime_s += walltime
         self._last_input_chars += len(prompt)
@@ -145,6 +156,7 @@ class SubscriptionSLMNormalizer(Normalizer):
         )
 
     def answer_directly(self, prompt: str, repo: RepoMetadata) -> str:
+        self._cwd = repo.cwd
         context_block = (
             self._last_context_block
             if self._last_context_block is not None
@@ -159,13 +171,14 @@ class SubscriptionSLMNormalizer(Normalizer):
         else:
             user_content = prompt
         try:
-            text = self._ask(_SYSTEM_ANSWER_DIRECTLY, user_content, timeout=120)
+            text = self._ask(_SYSTEM_ANSWER_DIRECTLY, user_content, timeout=120, cwd=repo.cwd)
             return text.strip()
         except Exception as exc:
             write_stderr("[slm-subscription] Direct answer failed: {0}".format(exc))
             return ""
 
     def suggest_actions(self, explanation: str, repo: RepoMetadata) -> list[str]:
+        self._cwd = repo.cwd
         context_block = (
             self._last_context_block
             if self._last_context_block is not None
@@ -180,7 +193,7 @@ class SubscriptionSLMNormalizer(Normalizer):
         else:
             user_content = explanation
         try:
-            raw = self._ask(_SYSTEM_SUGGEST_ACTIONS, user_content).strip()
+            raw = self._ask(_SYSTEM_SUGGEST_ACTIONS, user_content, cwd=repo.cwd).strip()
             actions: list[str] = []
             for line in raw.splitlines():
                 line = line.strip()
@@ -193,10 +206,10 @@ class SubscriptionSLMNormalizer(Normalizer):
             write_stderr("[slm-subscription] suggest_actions failed: {0}".format(exc))
             return []
 
-    def _classify(self, prompt: str) -> tuple[str, str]:
+    def _classify(self, prompt: str, cwd: Optional[str] = None) -> tuple[str, str]:
         """Pass 1: classify intent and scope from raw prompt -- no context loaded."""
         try:
-            text = self._ask(_SYSTEM_CLASSIFY_ONLY, prompt, timeout=30)
+            text = self._ask(_SYSTEM_CLASSIFY_ONLY, prompt, timeout=30, cwd=cwd)
             intent, scope, _ = _AnthropicNorm._parse_intent_response(text)
             return intent, scope
         except Exception as exc:
@@ -205,13 +218,18 @@ class SubscriptionSLMNormalizer(Normalizer):
             )
             return "act", "localized"
 
-    def is_referential(self, prompt: str) -> bool:
+    def is_referential(self, prompt: str, cwd: Optional[str] = None) -> bool:
         """Cheap referential check: does this prompt need prior conversation context?
+
+        ``cwd`` is the --cwd target so the classifier subprocess resolves
+        project context from the right repo (see __init__ note on _cwd).
 
         Fail-safe: on any classifier error, returns True so we DO load history.
         """
+        if cwd is not None:
+            self._cwd = cwd
         try:
-            text = self._ask(_SYSTEM_CLASSIFY_REFERENTIAL, prompt, timeout=30)
+            text = self._ask(_SYSTEM_CLASSIFY_REFERENTIAL, prompt, timeout=30, cwd=cwd)
             upper = text.strip().upper()
             if "NO" in upper and "YES" not in upper:
                 return False
@@ -227,11 +245,12 @@ class SubscriptionSLMNormalizer(Normalizer):
         self._reset_usage()
         self._last_intent = None
         self._last_scope = None
+        self._cwd = repo.cwd
         try:
             if self._last_context_block is not None:
                 context_block = self._last_context_block
             else:
-                _, scope = self._classify(prompt)
+                _, scope = self._classify(prompt, cwd=repo.cwd)
                 context_block = (
                     self._content_loader.build_context_block(prompt, repo, scope=scope)
                     if self._content_loader else ""
@@ -251,7 +270,7 @@ class SubscriptionSLMNormalizer(Normalizer):
             if "[Recent conversation]" in prompt:
                 system = system + _HISTORY_INSTRUCTION
 
-            text = self._ask(system, user_content)
+            text = self._ask(system, user_content, cwd=repo.cwd)
             if not text:
                 # Judge returned empty (timeout, missing SDK, auth fail).
                 # Fall back to original so the wrapper still does something useful.

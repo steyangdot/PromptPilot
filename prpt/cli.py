@@ -508,7 +508,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.normalizer != "heuristic":
         load_history = True
         if gate_active and hasattr(normalizer, "is_referential"):
-            referential = normalizer.is_referential(raw_prompt)
+            # Pass args.cwd so the subprocess-backed referential classifier
+            # (subscription normalizer) resolves project context from the
+            # --cwd target, not the process cwd. SDK normalizers ignore it.
+            referential = normalizer.is_referential(raw_prompt, cwd=args.cwd)
             load_history = referential
             write_stderr(
                 "[promptpilot] gate: prompt {0} (history {1})".format(

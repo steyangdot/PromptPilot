@@ -29,13 +29,25 @@ from typing import Optional
 JUDGE_TIMEOUT_SEC = int(os.environ.get("EVALUATOR_TIMEOUT_SEC", "90"))
 
 
-def judge_via_max(prompt: str, timeout: int | None = None) -> tuple[str, float, float]:
+def judge_via_max(
+    prompt: str, timeout: int | None = None, cwd: str | None = None,
+) -> tuple[str, float, float]:
     """Send ``prompt`` to Haiku via claude-code CLI; return (text, cost_usd, walltime_s).
 
     Auth: strips ``ANTHROPIC_API_KEY`` from the subprocess env so the CLI uses
     the OAuth/Max session. Tools disabled (``--tools ""``) since this is a
     pure judgment call -- no filesystem access needed. Failure-tolerant:
     on timeout or non-JSON CLI output, returns ("", 0.0, walltime).
+
+    ``cwd`` is the working directory the ``claude`` subprocess runs in. Callers
+    that ground an SLM rewrite MUST pass the user's ``--cwd`` target here:
+    ``claude`` resolves project context (CLAUDE.md / AGENTS.md / project memory)
+    from its working directory, so leaving this ``None`` makes it inherit the
+    PARENT process cwd and silently fold an unrelated repo's files into the
+    rewrite -- a cross-repo context-bleed / prompt-injection surface when
+    ``--cwd`` differs from where ``prpt`` was launched. ``None`` keeps the
+    legacy inherit-process-cwd behavior for repo-agnostic callers (e.g. the
+    handoff-doc judge, which summarizes text and needs no repo grounding).
     """
     claude = shutil.which("claude") or shutil.which("claude.cmd") or "claude"
     cmd = [
@@ -61,6 +73,7 @@ def judge_via_max(prompt: str, timeout: int | None = None) -> tuple[str, float, 
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             timeout=timeout if timeout is not None else JUDGE_TIMEOUT_SEC,
             env=env,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired:
         return "", 0.0, time.time() - t0

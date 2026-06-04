@@ -170,11 +170,15 @@ class OpenAISLMNormalizer(Normalizer):
             write_stderr("[slm-openai] classify failed ({0}), defaulting act/localized.".format(exc))
             return "act", "localized"
 
-    def is_referential(self, prompt: str) -> bool:
+    def is_referential(self, prompt: str, cwd: Optional[str] = None) -> bool:
         """Cheap referential check: does this prompt need prior conversation context?
 
         Returns True if the prompt back-references prior turns ('that fix',
         'the same', 'also', etc.). Returns False for self-contained prompts.
+
+        ``cwd`` is accepted for interface parity with the subscription
+        normalizer; the SDK path has no working-directory dependency, so it's
+        ignored.
 
         Fail-safe: on any classifier error, returns True so we DO load history
         rather than silently dropping memory on a turn that needed it.
