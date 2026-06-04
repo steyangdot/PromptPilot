@@ -43,6 +43,8 @@ prpt --dry-run "fix the flaky test in payments"   # preview only
 prpt "fix the flaky test in payments"             # auto-detects claude or codex from PATH
 ```
 
+> **Heads-up on edits:** `prpt "fix ..."` forwards the brief to the agent in one non-interactive pass, so on the **Claude Code** path edits are *proposed, not auto-applied*. Pass `--tool-arg=--permission-mode --tool-arg=acceptEdits` to let it write files, or run `prpt install-hook` (see §"Where to look next") to optimize prompts *inside* an interactive Claude Code session.
+
 Each call records a turn, so follow-ups pick up context automatically:
 
 ```bash
@@ -90,6 +92,7 @@ Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-
 | `handoff.md missing required sections` | Restore the five canonical sections; variants of each name are accepted (case-insensitive) |
 | `[dotenv] WARNING: shell environment shadows .env value` | `unset ANTHROPIC_API_KEY` (or accept that the shell value wins) |
 | `PROMPTPILOT_JUDGE=openai but OPENAI_API_KEY is not set` | Set the key in `.env`, or pick a different judge |
+| `error: unknown option '---'` (or `prpt` seems to hang / print nothing on a question) | Upgrade: `pip install -U prpt` (>=0.2.2). On older versions, work around with `prpt --tool-arg=-- "..."`. |
 
 ## Where to look next
 
