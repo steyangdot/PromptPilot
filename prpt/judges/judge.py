@@ -39,10 +39,20 @@ from prpt.judges.slm import judge_via_max as _judge_via_max
 # ---------------------------------------------------------------------------
 
 class Judge(Protocol):
-    """Single-prompt SLM call. Returns (text, cost_usd, walltime_s)."""
+    """Single-prompt SLM call. Returns (text, cost_usd, walltime_s).
+
+    ``cwd`` is the working directory for subprocess-backed judges (Max, Codex):
+    the official CLI resolves project context (CLAUDE.md / project memory) from
+    it, so callers grounding an SLM rewrite must pass the user's ``--cwd``
+    target to avoid bleeding the launch directory's repo into the rewrite.
+    SDK-backed judges (Anthropic, OpenAI) accept it for interface parity and
+    ignore it.
+    """
     name: str
 
-    def __call__(self, prompt: str, timeout: int = 90) -> tuple[str, float, float]:
+    def __call__(
+        self, prompt: str, timeout: int = 90, cwd: str | None = None,
+    ) -> tuple[str, float, float]:
         ...
 
 
@@ -120,9 +130,11 @@ class MaxHaikuJudge:
     """
     name = "max"
 
-    def __call__(self, prompt: str, timeout: int = 90) -> tuple[str, float, float]:
+    def __call__(
+        self, prompt: str, timeout: int = 90, cwd: str | None = None,
+    ) -> tuple[str, float, float]:
         warn_subscription_tos_once()
-        return _judge_via_max(prompt, timeout=timeout)
+        return _judge_via_max(prompt, timeout=timeout, cwd=cwd)
 
 
 # Pricing for SDK-based judges is looked up from MODEL_PRICING per call site
@@ -153,7 +165,11 @@ class AnthropicApiJudge:
     def __init__(self, model: str = "claude-haiku-4-5"):
         self.model = model
 
-    def __call__(self, prompt: str, timeout: int = 90) -> tuple[str, float, float]:
+    def __call__(
+        self, prompt: str, timeout: int = 90, cwd: str | None = None,
+    ) -> tuple[str, float, float]:
+        # cwd is accepted for Judge-protocol parity; the SDK path makes a
+        # direct HTTP call with no working-directory dependency, so it's unused.
         t0 = time.time()
         try:
             from anthropic import Anthropic
@@ -187,7 +203,10 @@ class OpenAiJudge:
         from prpt.core.constants import DEFAULT_SLM_OPENAI
         self.model = model or DEFAULT_SLM_OPENAI
 
-    def __call__(self, prompt: str, timeout: int = 90) -> tuple[str, float, float]:
+    def __call__(
+        self, prompt: str, timeout: int = 90, cwd: str | None = None,
+    ) -> tuple[str, float, float]:
+        # cwd accepted for Judge-protocol parity; SDK path has no cwd dependency.
         t0 = time.time()
         try:
             from openai import OpenAI
@@ -249,19 +268,27 @@ class CodexCliJudge:
     def __init__(self, model: str | None = "gpt-5.4-mini"):
         self.model = model
 
-    def __call__(self, prompt: str, timeout: int = 90) -> tuple[str, float, float]:
+    def __call__(
+        self, prompt: str, timeout: int = 90, cwd: str | None = None,
+    ) -> tuple[str, float, float]:
         warn_codex_subscription_tos_once()
         t0 = time.time()
         codex_path = shutil.which("codex") or shutil.which("codex.cmd")
         if not codex_path:
             return "", 0.0, time.time() - t0
-        # Use cwd as working dir; --skip-git-repo-check avoids the
-        # "not in a git repo" gate so this works anywhere.
+        # Run in the caller's --cwd target. codex exec is an agent loop with
+        # the sandbox bypassed, so it can read the filesystem at its working
+        # directory: if we left this as os.getcwd() it would explore whatever
+        # repo prpt was launched from and fold those files into the rewrite,
+        # even when --cwd points elsewhere (cross-repo context bleed). Fall
+        # back to the process cwd only when no cwd was supplied.
+        # --skip-git-repo-check avoids the "not in a git repo" gate.
+        run_cwd = cwd or os.getcwd()
         cmd = [
             codex_path, "exec",
             "--dangerously-bypass-approvals-and-sandbox",
             "--skip-git-repo-check",
-            "--cd", os.getcwd(),
+            "--cd", run_cwd,
             "--json",
         ]
         if self.model:
@@ -277,6 +304,7 @@ class CodexCliJudge:
                 cmd, input=prompt.encode("utf-8"),
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 timeout=timeout, env=env,
+                cwd=run_cwd,
             )
         except subprocess.TimeoutExpired:
             return "", 0.0, time.time() - t0

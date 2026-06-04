@@ -19,7 +19,13 @@ _SESSION_TTL = 300  # seconds to retain session file (5 min)
 
 
 def _session_path(cwd: str) -> Path:
-    key = hashlib.sha256(cwd.encode()).hexdigest()[:12]
+    # Normalize to an absolute path before hashing so the key is stable
+    # regardless of whether the caller passes the raw ``args.cwd`` (the save
+    # path, ShellToolAdapter.run) or the resolved ``repo.cwd`` (the load path,
+    # RepoContentLoader). Mirrors session.py._session_path. Without this, a
+    # relative or unresolved --cwd would hash differently on save vs load and
+    # the modified-files continuity section would silently never match.
+    key = hashlib.sha256(os.path.abspath(cwd).encode()).hexdigest()[:12]
     return Path(tempfile.gettempdir()) / "promptpilot_session_{0}.json".format(key)
 
 
