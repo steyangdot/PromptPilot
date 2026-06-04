@@ -103,6 +103,8 @@ prpt --tool codex "add dark mode"         # force a specific agent
 prpt restart                              # collapse a heavy session -> handoff.md -> fresh
 ```
 
+> **Applying edits:** `prpt "..."` forwards the optimized brief to the agent in a single non-interactive pass, so on the **Claude Code** path edits are *proposed, not auto-applied*. Pass `--tool-arg=--permission-mode --tool-arg=acceptEdits` to let it write files, or use `prpt install-hook` (below) to run the optimization *inside* an interactive Claude Code session where you approve edits as usual. `--dry-run` only prints the brief.
+
 `prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code. Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
 
 ## Demo

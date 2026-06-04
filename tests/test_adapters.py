@@ -681,6 +681,43 @@ class TestShellAdapterStdin:
 
 
 # ---------------------------------------------------------------------------
+# Bug fix — claude-code adapter must pipe the prompt via stdin, never argv
+# (a prompt beginning with '-'/'--'/'---' is parsed by claude as an option).
+# ---------------------------------------------------------------------------
+
+class TestClaudeAdapterStdin:
+    @staticmethod
+    def _args(tool):
+        return SimpleNamespace(
+            tool=tool, tool_arg=[], model=None, max_tokens=4096,
+            api_key=None, verbose=False,
+        )
+
+    def test_claude_adapter_never_passes_prompt_as_argv(self):
+        from prpt.adapters.factory import AdapterFactory
+
+        prompt = "--- starts with a markdown rule"
+        # Direct tool names are CI-safe: the factory returns the adapter even
+        # when the `claude` CLI is absent (it only warns).
+        for tool in ("claude", "claude-code"):
+            adapter = AdapterFactory.create(self._args(tool))
+            cmd = adapter.build_command(prompt)
+            assert adapter.use_stdin is True, tool
+            assert "-p" in cmd, tool
+            # The prompt must never reach claude's option parser.
+            assert all(prompt not in tok for tok in cmd), tool
+
+    def test_autodetect_resolves_to_stdin_claude_adapter(self):
+        from prpt.adapters.factory import AdapterFactory
+
+        # `--tool auto` resolves to claude-code via _autodetect_tool; patch it
+        # so the test doesn't depend on the CI box having the npm `claude` CLI.
+        with patch("prpt.adapters.factory._autodetect_tool", return_value="claude-code"):
+            adapter = AdapterFactory.create(self._args("auto"))
+        assert adapter.use_stdin is True
+
+
+# ---------------------------------------------------------------------------
 # Fix #6 — Anthropic thinking/tool_use/redacted_thinking block handling
 # ---------------------------------------------------------------------------
 
