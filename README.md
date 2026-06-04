@@ -109,6 +109,8 @@ prpt restart                              # collapse a heavy session -> handoff.
 
 ## Demo
 
+![PromptPilot visual demo: a rough prompt becomes a routed, constraint-pinned coding-agent brief](docs/assets/demo.svg)
+
 See the SLM control layer reshape a rough prompt into a structured brief, with **zero setup** — no API key, no coding agent, no network:
 
 ```bash
