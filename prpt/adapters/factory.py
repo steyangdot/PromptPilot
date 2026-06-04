@@ -130,5 +130,17 @@ class AdapterFactory:
         # claude-code or any other shell CLI
         if tool == "claude-code" and not (shutil.which("claude") or shutil.which("claude.cmd")):
             _print_missing_cli("claude-code")
-        shell_name = "claude" if tool == "claude-code" else tool
+        if tool == "claude-code":
+            # Pipe the prompt to `claude -p` via stdin instead of passing it as a
+            # positional argv. A bare-argv prompt that begins with '-'/'--'/'---'
+            # (markdown rules, diff hunks, flags) is parsed by claude's CLI as an
+            # option and crashes with "error: unknown option". stdin keeps the
+            # prompt off the command line entirely, which also avoids the Windows
+            # `claude.CMD` cmd.exe argv re-parse hazard (see resolve_executable_name)
+            # and the ~8191-char argv length limit. Mirrors the codex adapter,
+            # which already pipes via stdin.
+            return ShellToolAdapter(
+                tool_name="claude", extra_args=["-p", *extra_args], use_stdin=True,
+            )
+        shell_name = tool
         return ShellToolAdapter(tool_name=shell_name, extra_args=extra_args)
