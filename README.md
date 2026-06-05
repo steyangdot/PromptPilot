@@ -109,12 +109,15 @@ prpt restart                              # collapse a heavy session -> handoff.
 
 ## Demo
 
-![PromptPilot visual demo: a rough prompt becomes a routed, constraint-pinned coding-agent brief](docs/assets/demo.svg)
+![PromptPilot visual demo: a rough prompt rewritten by the small model into a routed, constraint-pinned coding-agent brief](docs/assets/demo.svg)
 
-See the SLM control layer reshape a rough prompt into a structured brief, with **zero setup** — no API key, no coding agent, no network:
+*Above: the real `slm-anthropic` rewrite of example 1 (captured live; refresh with `python scripts/make_demo_svg.py --live`).*
+
+Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live small-model rewrite pictured above:
 
 ```bash
-python examples/demo.py
+python examples/demo.py          # offline heuristic — zero setup
+python examples/demo.py --slm    # live small-model rewrite (needs an API key)
 ```
 
 Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.

@@ -1,0 +1,8 @@
+{
+  "normalizer": "SLMNormalizer",
+  "raw_prompt": "the OrderSyncWorker keeps timing out under load and dropping events. find the root cause and fix the timeout. do not change the public API, keep the DB schema backward compatible, and ship a minimal patch with a regression test in tests/test_worker.py.",
+  "route": "act",
+  "task_type": "root_cause_analysis",
+  "confidence": "high",
+  "downstream_prompt": "Investigate why OrderSyncWorker times out and drops events under load. Identify and fix the root cause with a minimal patch that:\n- Does not modify the public API\n- Maintains DB schema backward compatibility\n- Includes a regression test in tests/test_worker.py that reproduces the timeout scenario\n\nProvide the patch and test together.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: sync/order_worker.py, tests/test_worker.py]"
+}
