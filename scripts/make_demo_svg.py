@@ -47,7 +47,7 @@ ORANGE = "#ffa657"
 
 # --- geometry --------------------------------------------------------------
 WIDTH = 1040
-HEIGHT = 710
+HEIGHT = 750
 PAD = 32
 CARD_GAP = 24
 CARD_W = (WIDTH - PAD * 2 - CARD_GAP) // 2
@@ -169,6 +169,16 @@ def _prompt_preview_lines(prompt: str, width: int, max_lines: int) -> List[str]:
     return lines
 
 
+def _primary_anchor(spans: Sequence[str]) -> str:
+    """Pick the most recognizable preserved code anchor for the hero visual."""
+    for span in spans:
+        if not span or "/" in span or "." in span:
+            continue
+        if any(ch.isupper() for ch in span[1:]):
+            return span
+    return spans[0] if spans else "original symbols"
+
+
 def _extract_forwarded_preview(downstream_prompt: str, width: int, max_lines: int) -> List[List[Segment]]:
     interesting: List[str] = []
     for raw in downstream_prompt.splitlines():
@@ -227,7 +237,7 @@ def _render() -> str:
     _pill(out, WIDTH - PAD - 128, 24, "zero setup", GREEN, 128)
     _pill(out, WIDTH - PAD - 270, 24, "offline demo", BLUE, 130)
 
-    card_h = 550
+    card_h = 590
     left_x = PAD
     right_x = PAD + CARD_W + CARD_GAP
     _card(out, left_x, TOP, CARD_W, card_h, "Before", "A normal run-on developer prompt", ORANGE)
@@ -275,7 +285,22 @@ def _render() -> str:
             (norm.confidence, MAGENTA),
         ],
     )
-    y += 42
+    y += 30
+    anchor = _primary_anchor(norm.protected_spans)
+    anchor_w = 272
+    out.append(
+        f'<rect x="{x}" y="{y - 18}" width="{anchor_w}" height="28" rx="14" '
+        f'fill="{GREEN}" fill-opacity="0.12" stroke="{GREEN}" stroke-opacity="0.55"/>'
+    )
+    _add_segments(
+        out,
+        x + 14,
+        y + 1,
+        [("preserved anchor: ", DIM), (anchor, GREEN)],
+        size=13,
+        family=SANS,
+    )
+    y += 44
     for segments in _bullet_lines("PROTECTED SPANS", norm.protected_spans, width=48, limit=4):
         _add_segments(out, x, y, segments)
         y += LINE_H
