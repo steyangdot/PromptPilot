@@ -142,7 +142,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("prompt", nargs="*", help="Raw developer prompt")
     parser.add_argument(
         "--normalizer", default="slm",
-        choices=["heuristic", "slm", "slm-anthropic", "slm-openai", "slm-openai-v2", "slm-subscription"],
+        choices=["heuristic", "slm", "slm-anthropic", "slm-anthropic-v2", "slm-openai", "slm-openai-v2", "slm-subscription", "slm-subscription-v2"],
         metavar="{slm,heuristic}",
         help="slm (default; auto-detects an available SLM backend), "
              "heuristic (rule-based, no API/auth needed). "
@@ -206,12 +206,19 @@ onboarding focused. They are stable and supported, just researcher/internal.
 
 Normalizer aliases (--normalizer):
   slm                   Default. Auto-detects ANTHROPIC_API_KEY, OPENAI_API_KEY,
-                        Max OAuth, codex login - whichever is set.
+                        Max OAuth, codex login - whichever is set. SDK keys use
+                        the v2 (JSON spec + routing) normalizers.
   heuristic             Rule-based, no API/auth needed.
-  slm-anthropic         Force Anthropic SDK normalizer.
-  slm-openai            Force OpenAI SDK normalizer.
-  slm-openai-v2         JSON execution-spec normalizer (experimental).
-  slm-subscription      Max OAuth normalizer (no API key required).
+  slm-anthropic         Force Anthropic SDK normalizer (legacy v1 prose).
+  slm-anthropic-v2      Force Anthropic JSON execution-spec normalizer (routing
+                        + clarify).
+  slm-openai            Force OpenAI SDK normalizer (legacy v1 prose).
+  slm-openai-v2         Force OpenAI JSON execution-spec normalizer (routing +
+                        clarify).
+  slm-subscription      Max OAuth / ChatGPT normalizer, legacy v1 prose (no API
+                        key required).
+  slm-subscription-v2   Max OAuth / ChatGPT normalizer with JSON spec (routing +
+                        clarify); the auto-detect default for subscription auth.
 
 Hidden subcommands and env vars:
   PROMPTPILOT_JUDGE=max|codex|anthropic|openai
@@ -298,8 +305,8 @@ def _install_hook(args: argparse.Namespace) -> int:
 def _resolve_route(normalizer) -> str:
     """Return the routing decision for this normalize() call.
 
-    v2 normalizers (slm-openai-v2) populate `_last_spec.route` with one of
-    {answer, act, clarify, passthrough}. v1 normalizers don't carry a spec;
+    v2 normalizers (slm-anthropic-v2 / slm-openai-v2 / slm-subscription-v2) populate
+    `_last_spec.route` with one of {answer, act, clarify, passthrough}. v1 normalizers don't carry a spec;
     fall back to deriving from intent:
       - intent="explain" -> "answer" (offer SLM direct response)
       - intent="act" or unset -> "act" (forward to agent)
@@ -338,7 +345,7 @@ def _build_assistant_record(normalizer, normalized, modified_files) -> str:
     """Build the assistant session-turn record from spec.memory_record (v2)
     or the SLM rewrite (v1), prefixed with the adapter's modified files.
 
-    v2 normalizers (slm-openai-v2) populate `_last_spec.memory_record` with a
+    v2 normalizers (slm-anthropic-v2 / slm-openai-v2 / slm-subscription-v2) populate `_last_spec.memory_record` with a
     pre-run one-sentence summary of intent + constraints. That's higher-signal
     for future referential turns than the verbose rewritten prompt, so it
     leads when present. v1 normalizers don't carry a spec; fall back to the

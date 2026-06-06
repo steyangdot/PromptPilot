@@ -62,11 +62,12 @@ PromptPilot has two SLM output formats. The downstream coding agent **always
 receives plain text** (the rewritten prompt) — the format below is what the
 SLM emits to PromptPilot, which then extracts the text and forwards it.
 
-### Default: prose envelope (v1)
+### Legacy: prose envelope (v1)
 
-`--normalizer slm-anthropic`, `--normalizer slm-openai`, and the auto-detected
-default `slm` all use this format. The SLM emits a structured-header preamble,
-a `---` separator, and the rewritten prompt:
+`--normalizer slm-anthropic`, `--normalizer slm-openai`, and
+`--normalizer slm-subscription` use this format. (The auto-detected default `slm`
+now prefers the v2 JSON spec below for every backend — see "Default".) The SLM
+emits a structured-header preamble, a `---` separator, and the rewritten prompt:
 
 ```text
 INTENT: act
@@ -79,10 +80,15 @@ PromptPilot parses the header lines, then forwards everything after the
 separator to the coding agent. Simple, regex-based parser; no SDK
 dependencies.
 
-### Experimental: JSON ExecutionSpec (v2)
+### Default: JSON ExecutionSpec (v2)
 
-`--normalizer slm-openai-v2` makes the SLM emit a single JSON object carrying
-the full execution spec ([prpt/core/spec.py#L27](https://github.com/steyangdot/PromptPilot/blob/main/prpt/core/spec.py#L27)):
+`--normalizer slm-anthropic-v2`, `--normalizer slm-openai-v2`, and
+`--normalizer slm-subscription-v2` make the SLM emit a single JSON object
+carrying the full execution spec
+([prpt/core/spec.py#L27](https://github.com/steyangdot/PromptPilot/blob/main/prpt/core/spec.py#L27)).
+The auto-detected `slm` backend selects the v2 normalizer matching your auth
+(API key **or** Max OAuth / ChatGPT subscription), so this is the format most
+runs use — and the only one that can route `clarify` or `passthrough`:
 
 ```json
 {
@@ -120,9 +126,13 @@ falls back to the v1 prose parser
 If both fail, heuristic defaults (`intent=act`, `scope=localized`) keep the
 pipeline running. The downstream coding agent never sees broken JSON.
 
-**v1 is the default** because the prose envelope is simpler, ships across all
-SLM backends (Anthropic / OpenAI / subscription), and has more production
-mileage. v2 is opt-in until the JSON-spec path is validated on more workloads.
+**v2 is the default across every auto-detected backend** — `slm-anthropic-v2` /
+`slm-openai-v2` for SDK keys, `slm-subscription-v2` for Max OAuth / ChatGPT —
+because the routing decision (`route`), constraint hints (`target_files`,
+`context_policy`), risk, and `memory_record` it carries drive most of the
+harness, and `clarify`/`passthrough` only exist on the v2 path. v1 stays as the
+JSON-parse fallback and an explicit opt-out (`--normalizer slm-anthropic` /
+`slm-openai` / `slm-subscription`) for the simpler prose envelope.
 The mapping from `route` values to harness behavior is documented in
 [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions).
 

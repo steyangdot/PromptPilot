@@ -109,15 +109,15 @@ prpt restart                              # collapse a heavy session -> handoff.
 
 ## Demo
 
-![PromptPilot visual demo: a rough prompt rewritten by the small model into a routed, constraint-pinned coding-agent brief](docs/assets/demo.svg)
+![PromptPilot visual demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief to the coding agent](docs/assets/demo.svg)
 
-*Above: the real `slm-anthropic` rewrite of example 1 (captured live; refresh with `python scripts/make_demo_svg.py --live`).*
+*Above: a real `slm-anthropic-v2` run. A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a one-line answer it routes **`act`** and forwards a precise, constraint-pinned brief. Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
 
-Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live small-model rewrite pictured above:
+Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live routing + rewrite pictured above. The `clarify` route needs a v2 SLM backend, which the default `slm` now auto-selects for whichever auth you have — `slm-anthropic-v2` / `slm-openai-v2` (API key) or `slm-subscription-v2` (Max OAuth / ChatGPT):
 
 ```bash
 python examples/demo.py          # offline heuristic — zero setup
-python examples/demo.py --slm    # live small-model rewrite (needs an API key)
+python examples/demo.py --slm    # live routing + rewrite (needs an API key)
 ```
 
 Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.

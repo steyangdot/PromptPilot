@@ -43,6 +43,13 @@ prpt --dry-run "fix the flaky test in payments"   # preview only
 prpt "fix the flaky test in payments"             # auto-detects claude or codex from PATH
 ```
 
+Whatever auth you picked above, the default `slm` normalizer uses the v2 control
+plane (`slm-anthropic-v2` / `slm-openai-v2` for API keys, `slm-subscription-v2`
+for Max OAuth / ChatGPT): a vague prompt like `prpt "make checkout faster"` is
+routed to **`clarify`** — PromptPilot prints one focused question and exits
+instead of guessing, so you refine and re-run. Precise prompts route straight to
+`act`. (See the [demo](README.md#demo) for the full clarify → rewrite flow.)
+
 > **Heads-up on edits:** `prpt "fix ..."` forwards the brief to the agent in one non-interactive pass, and in that mode **neither agent writes files by default** — **Claude Code** *proposes* edits, **Codex** runs *read-only*. To apply changes, add the auto-approve flag: Claude → `--tool-arg=--permission-mode --tool-arg=acceptEdits`; Codex → `--tool-arg=--full-auto`. Or run `prpt install-hook` (see §"Where to look next") to optimize prompts *inside* an interactive Claude Code / Codex session.
 
 Each call records a turn, so follow-ups pick up context automatically:

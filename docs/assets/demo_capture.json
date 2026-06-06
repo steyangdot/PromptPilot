@@ -1,8 +1,22 @@
 {
-  "normalizer": "SLMNormalizer",
-  "raw_prompt": "the OrderSyncWorker keeps timing out under load and dropping events. find the root cause and fix the timeout. do not change the public API, keep the DB schema backward compatible, and ship a minimal patch with a regression test in tests/test_worker.py.",
-  "route": "act",
-  "task_type": "root_cause_analysis",
-  "confidence": "high",
-  "downstream_prompt": "Investigate why OrderSyncWorker times out and drops events under load. Identify and fix the root cause with a minimal patch that:\n- Does not modify the public API\n- Maintains DB schema backward compatibility\n- Includes a regression test in tests/test_worker.py that reproduces the timeout scenario\n\nProvide the patch and test together.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: sync/order_worker.py, tests/test_worker.py]"
+  "normalizer": "AnthropicSLMNormalizerV2",
+  "raw_prompt": "the checkout page is slow, make it faster",
+  "clarify": {
+    "route": "clarify",
+    "question": "Which checkout page performance issue should I focus on?\n\nA) Frontend rendering / JavaScript performance\nB) Backend API response times\nC) Database queries or N+1 problems\nD) Asset loading (images, bundles, etc.)\nE) Unsure — analyze the full checkout flow\n\nAlso: Do you have performance metrics or profiling data (load time, bottleneck)? If not, I'll audit the full checkout flow.",
+    "risk": "medium",
+    "memory_record": "User wants checkout page performance improved but didn't specify frontend vs backend bottleneck; needs clarification on which layer to optimize."
+  },
+  "answer": "checkout p95 is ~3s; api/checkout.py runs an N+1 DB query per line item. don't change the public API or behavior, and add a regression/benchmark test.",
+  "rewrite": {
+    "route": "act",
+    "task_type": "bug_fix",
+    "confidence": "medium",
+    "target_files": [
+      "api/checkout.py",
+      "tests/test_checkout.py"
+    ],
+    "memory_record": "User wants to optimize api/checkout.py N+1 query issue (p95 latency ~3s) without changing public API; regression test required.",
+    "downstream_prompt": "Fix N+1 database queries in api/checkout.py that are causing checkout p95 latency ~3s. Optimize queries to fetch line item relationships efficiently (e.g., use select_related or prefetch_related). Do not change the public API signature or checkout behavior. Add a regression/benchmark test to prevent future N+1 regressions.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
+  }
 }

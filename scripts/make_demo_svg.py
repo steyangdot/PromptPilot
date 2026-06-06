@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""Generate docs/assets/demo.svg — a before/after poster of a real SLM rewrite.
+"""Generate docs/assets/demo.svg — a 4-step poster of PromptPilot's clarify flow.
 
-The "after" panel shows the genuine output of prpt's small-model normalizer
-(slm-anthropic) on example 1: the rough, run-on developer prompt rewritten into
-a structured, constraint-pinned brief and the exact text that prpt forwards to
-the coding agent.
+The poster tells the story example 1 could not: a *vague* request is routed to
+`clarify` (PromptPilot asks one sharp question instead of guessing), the
+developer answers in a line, and PromptPilot then routes `act` and forwards a
+precise, constraint-pinned brief to the coding agent.
 
-Because the SLM rewrite needs an API key and is not bit-for-bit deterministic,
-the live run is captured once into docs/assets/demo_capture.json and committed
-alongside the SVG. The default build renders straight from that capture, so the
-poster can be regenerated in CI with no key and no network and never drifts:
+  step 1  you type        a vague one-liner
+  step 2  PromptPilot      route=clarify  -> a scannable clarifying question
+  step 3  you answer       one line of detail
+  step 4  PromptPilot      route=act      -> the rewritten brief it forwards
+
+Steps 2 and 4 are genuine small-model output from the v2 control plane
+(slm-anthropic-v2: the JSON ExecutionSpec normalizer that emits the routing
+decision). Because that output needs an API key and is not bit-for-bit
+deterministic, the live run is captured once into docs/assets/demo_capture.json
+(committed) and the SVG renders from that snapshot — so the poster rebuilds in
+CI with no key, no network, and never drifts:
 
     python scripts/make_demo_svg.py            # render from the committed capture
     python scripts/make_demo_svg.py --live     # re-run the real SLM, refresh both
 
 --live loads ANTHROPIC_API_KEY from the environment or a local .env (via prpt's
-own loader) and calls create_normalizer("slm"). GitHub sanitizes
-<style>/<script>/animation out of <img>-embedded SVG, so this uses only plain
-SVG primitives with inline fills.
+own loader) and drives create_normalizer("slm-anthropic-v2") through both turns.
+GitHub sanitizes <style>/<script>/animation out of <img>-embedded SVG, so this
+uses only plain SVG primitives with inline fills.
 """
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ PANEL = "#161b22"
 BORDER = "#30363d"
 FG = "#c9d1d9"
 DIM = "#8b949e"
+MUTED = "#6e7681"
 CYAN = "#56d4dd"
 BLUE = "#58a6ff"
 MAGENTA = "#d2a8ff"
@@ -49,17 +57,18 @@ YELLOW = "#e3b341"
 ORANGE = "#ffa657"
 
 # --- geometry --------------------------------------------------------------
-WIDTH = 1040
-HEIGHT = 620
-PAD = 32
-CARD_GAP = 24
-CARD_W = (WIDTH - PAD * 2 - CARD_GAP) // 2
-CARD_H = 440
-TOP = 86
+WIDTH = 1000
+PAD = 28
+RAIL_X = 52              # centre of the step-number dots
+CARD_X = 88
+CARD_W = WIDTH - CARD_X - PAD
+CARD_PAD = 18
+HEAD_H = 30             # header band inside a panel
 LINE_H = 22
-GAP_H = 10            # blank-line spacing inside the forwarded brief
+GAP_H = 16             # blank-line spacing inside a body
+STEP_GAP = 34          # vertical connector between panels
+WRAP = 92              # mono chars that fit a card row at 14px
 FONT = 14
-WRAP = 50            # mono chars that fit a card column at 14px
 MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
 SANS = "Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif"
 
@@ -70,7 +79,7 @@ def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _wrap(text: str, width: int) -> List[str]:
+def _wrap(text: str, width: int = WRAP) -> List[str]:
     return textwrap.wrap(text, width=width, break_long_words=False) or [""]
 
 
@@ -78,26 +87,12 @@ def _truncate(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(0, width - 1)] + "…"
 
 
-def _wrap_capped(text: str, width: int, max_lines: int) -> List[str]:
-    """Wrap to at most ``max_lines`` lines, ellipsizing the overflow.
-
-    Never silently drops text: everything past the budget is folded into the
-    final line with a trailing ellipsis so a clipped line reads as clipped.
-    """
-    lines = _wrap(text, width)
-    if len(lines) <= max_lines:
-        return lines
-    head = lines[: max_lines - 1]
-    head.append(_truncate(" ".join(lines[max_lines - 1:]), width))
-    return head
-
-
 # ---------------------------------------------------------------------------
-# Capture: run the real SLM once, or load the committed snapshot.
+# Capture: run the real v2 normalizer once, or load the committed snapshot.
 # ---------------------------------------------------------------------------
 
-def _capture_live() -> Dict[str, str]:
-    """Run the real small-model normalizer on example 1 and snapshot its output."""
+def _capture_live() -> Dict:
+    """Drive slm-anthropic-v2 through the vague -> clarify -> answer -> rewrite flow."""
     from pathlib import Path
 
     from prpt.core.dotenv import load_dotenv
@@ -108,27 +103,58 @@ def _capture_live() -> Dict[str, str]:
         except Exception:
             pass
 
-    from examples.demo import EXAMPLES, _route_of
+    from examples.demo import CLARIFY_EXAMPLE, _route_of
     from prpt.normalizers.base import build_final_downstream_prompt, create_normalizer
 
-    ex = EXAMPLES[0]
-    normalizer = create_normalizer("slm", load_repo_content=False)
-    norm = normalizer.normalize(ex.prompt, ex.repo, high_stakes=False)
+    ex = CLARIFY_EXAMPLE
+    if not ex.answer:
+        raise SystemExit("CLARIFY_EXAMPLE must carry a representative `answer`.")
+
+    norm = create_normalizer("slm-anthropic-v2", load_repo_content=False)
+
+    # Turn 1: the vague prompt -> clarify.
+    n1 = norm.normalize(ex.prompt, ex.repo, high_stakes=False)
+    route1 = _route_of(norm)
+    spec1 = getattr(norm, "_last_spec", None)
+
+    # Turn 2: original + question + the developer's answer -> act (rewrite).
+    norm._last_context_block = None
+    combined = (
+        "Original request: {0}\n\n"
+        "Clarifying question asked: {1}\n\n"
+        "Developer's answer: {2}"
+    ).format(ex.prompt, n1.normalized_prompt, ex.answer)
+    n2 = norm.normalize(combined, ex.repo, high_stakes=False)
+    route2 = _route_of(norm)
+    spec2 = getattr(norm, "_last_spec", None)
+    forwarded = build_final_downstream_prompt(n2, ex.repo)
+
     return {
-        "normalizer": type(normalizer).__name__,
+        "normalizer": type(norm).__name__,
         "raw_prompt": ex.prompt,
-        "route": _route_of(normalizer),
-        "task_type": norm.task_type,
-        "confidence": norm.confidence,
-        "downstream_prompt": build_final_downstream_prompt(norm, ex.repo),
+        "clarify": {
+            "route": route1,
+            "question": n1.normalized_prompt,
+            "risk": getattr(spec1, "risk", "") or "",
+            "memory_record": getattr(spec1, "memory_record", "") or "",
+        },
+        "answer": ex.answer,
+        "rewrite": {
+            "route": route2,
+            "task_type": n2.task_type,
+            "confidence": n2.confidence,
+            "target_files": list(getattr(spec2, "target_files", []) or []),
+            "memory_record": getattr(spec2, "memory_record", "") or "",
+            "downstream_prompt": forwarded,
+        },
     }
 
 
-def _load_capture() -> Dict[str, str]:
+def _load_capture() -> Dict:
     if not os.path.exists(CAPTURE_PATH):
         raise SystemExit(
             "missing {0}\nRun `python scripts/make_demo_svg.py --live` once (with an "
-            "ANTHROPIC_API_KEY / .env) to capture a real SLM rewrite.".format(
+            "ANTHROPIC_API_KEY / .env) to capture a real clarify->rewrite flow.".format(
                 os.path.relpath(CAPTURE_PATH, _REPO_ROOT)
             )
         )
@@ -141,24 +167,12 @@ def _load_capture() -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 def _add_text(
-    out: List[str],
-    x: int,
-    y: int,
-    text: str,
-    *,
-    color: str = FG,
-    size: int = FONT,
-    family: str = MONO,
-    weight: Optional[str] = None,
-    anchor: Optional[str] = None,
+    out: List[str], x: int, y: int, text: str, *,
+    color: str = FG, size: int = FONT, family: str = MONO,
+    weight: Optional[str] = None, anchor: Optional[str] = None,
 ) -> None:
-    attrs = [
-        f'x="{x}"',
-        f'y="{y}"',
-        f'fill="{color}"',
-        f'font-size="{size}"',
-        f'font-family="{family}"',
-    ]
+    attrs = [f'x="{x}"', f'y="{y}"', f'fill="{color}"',
+             f'font-size="{size}"', f'font-family="{family}"']
     if weight:
         attrs.append(f'font-weight="{weight}"')
     if anchor:
@@ -167,19 +181,12 @@ def _add_text(
 
 
 def _add_segments(
-    out: List[str],
-    x: int,
-    y: int,
-    segments: Sequence[Segment],
-    *,
-    size: int = FONT,
-    family: str = MONO,
+    out: List[str], x: int, y: int, segments: Sequence[Segment], *,
+    size: int = FONT, family: str = MONO,
 ) -> None:
     spans = "".join(
-        '<tspan fill="{color}" xml:space="preserve">{text}</tspan>'.format(
-            color=color, text=_esc(text)
-        )
-        for text, color in segments
+        '<tspan fill="{0}" xml:space="preserve">{1}</tspan>'.format(c, _esc(t))
+        for t, c in segments
     )
     out.append(
         f'<text x="{x}" y="{y}" fill="{FG}" font-size="{size}" '
@@ -187,179 +194,191 @@ def _add_segments(
     )
 
 
-def _card(out: List[str], x: int, y: int, w: int, h: int, title: str, subtitle: str, accent: str) -> None:
-    out.append(
-        f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="16" '
-        f'fill="{PANEL}" stroke="{BORDER}"/>'
-    )
-    out.append(
-        f'<rect x="{x}" y="{y}" width="{w}" height="5" rx="2.5" fill="{accent}"/>'
-    )
-    _add_text(out, x + 22, y + 34, title, color=FG, size=18, family=SANS, weight="700")
-    _add_text(out, x + 22, y + 58, subtitle, color=DIM, size=13, family=SANS)
-
-
 def _pill(out: List[str], x: int, y: int, text: str, color: str, width: int) -> None:
     out.append(
-        f'<rect x="{x}" y="{y}" width="{width}" height="28" rx="14" '
-        f'fill="{color}" fill-opacity="0.13" stroke="{color}" stroke-opacity="0.55"/>'
+        f'<rect x="{x}" y="{y}" width="{width}" height="24" rx="12" '
+        f'fill="{color}" fill-opacity="0.14" stroke="{color}" stroke-opacity="0.55"/>'
     )
-    _add_text(out, x + width // 2, y + 19, text, color=color, size=12, family=SANS, weight="700", anchor="middle")
+    _add_text(out, x + width // 2, y + 16, text, color=color, size=12,
+              family=SANS, weight="700", anchor="middle")
 
 
-def _prompt_preview_lines(prompt: str, width: int, max_lines: int) -> List[str]:
-    lines = _wrap(prompt, width)
-    if len(lines) > max_lines:
-        lines = lines[: max_lines - 1] + [_truncate(lines[max_lines - 1], width - 1)]
+# ---------------------------------------------------------------------------
+# Body builders — turn capture text into colored, wrapped segment-lines.
+# ---------------------------------------------------------------------------
+
+def _plain_lines(text: str, color: str = FG) -> List[List[Segment]]:
+    return [[(w, color)] for w in _wrap(text)]
+
+
+def _clarify_lines(question: str) -> List[List[Segment]]:
+    """Render a clarify question: intro in FG, 'A) ...' options with a cyan
+    letter, and a trailing 'Also:'/'If' follow-up dimmed."""
+    lines: List[List[Segment]] = []
+    for raw in question.split("\n"):
+        s = raw.strip()
+        if not s:
+            lines.append([])  # blank -> half-gap
+            continue
+        if len(s) >= 2 and s[0].isalpha() and s[1] == ")":
+            letter, rest = s[:2], s[2:].strip()
+            wrapped = _wrap(rest, WRAP - 6)
+            lines.append([("  " + letter + " ", CYAN), (wrapped[0], FG)])
+            for cont in wrapped[1:]:
+                lines.append([("     ", CYAN), (cont, FG)])
+        elif s.lower().startswith(("also:", "also ", "if ", "note:")):
+            for w in _wrap(s):
+                lines.append([(w, DIM)])
+        else:
+            for w in _wrap(s):
+                lines.append([(w, FG)])
     return lines
 
 
-def _render_forwarded(out: List[str], x: int, y: int, downstream_prompt: str, *, max_lines: int = 12) -> int:
-    """Render the SLM's forwarded prompt faithfully, line by line.
-
-    Section headers (``Requirements:``) are highlighted, ``- `` bullets become
-    ``•`` items, and the trailing ``[cwd=...; ...]`` runtime-context line is
-    dimmed. This is the exact text prpt sends downstream — a real rewrite, not a
-    paraphrase of the input.
-    """
-    drawn = 0
-
-    def line(segments: Sequence[Segment], *, size: int = FONT) -> bool:
-        nonlocal y, drawn
-        if drawn >= max_lines:
-            return False
-        _add_segments(out, x, y, segments, size=size)
-        y += LINE_H
-        drawn += 1
-        return True
-
-    for raw in downstream_prompt.splitlines():
-        stripped = raw.strip()
-        if not stripped:
-            y += GAP_H
+def _forwarded_lines(downstream_prompt: str) -> List[List[Segment]]:
+    """Render the forwarded brief: prose in FG, the trailing [cwd=...] runtime
+    context line dimmed."""
+    lines: List[List[Segment]] = []
+    for raw in downstream_prompt.split("\n"):
+        s = raw.strip()
+        if not s:
+            lines.append([])
             continue
-        if drawn >= max_lines:
-            _add_segments(out, x, y, [("…", DIM)])
-            y += LINE_H
-            break
-        if stripped.startswith("[") and stripped.endswith("]"):
-            for w in _wrap(stripped, WRAP):
-                if not line([(w, DIM)], size=13):
-                    break
-        elif stripped.endswith(":") and len(stripped.split()) <= 3:
-            line([(stripped, CYAN)])
-        elif stripped.startswith("- "):
-            wrapped = _wrap_capped(stripped[2:], WRAP - 4, 2)
-            line([("  • ", GREEN), (wrapped[0], FG)])
-            for cont in wrapped[1:]:
-                line([("    ", GREEN), (cont, FG)])
+        if s.startswith("[") and s.endswith("]"):
+            for w in _wrap(s):
+                lines.append([(w, DIM)])
         else:
-            for w in _wrap(stripped, WRAP):
-                if not line([(w, FG)]):
-                    break
-    return y
+            for w in _wrap(s):
+                lines.append([(w, FG)])
+    return lines
 
 
-def _render(cap: Dict[str, str]) -> str:
+# ---------------------------------------------------------------------------
+# Panels + timeline.
+# ---------------------------------------------------------------------------
+
+def _panel(
+    out: List[str], y: int, *,
+    num: int, who: str, accent: str,
+    body: List[List[Segment]],
+    route: Optional[str] = None,
+) -> int:
+    body_h = sum(LINE_H if segs else GAP_H for segs in body)
+    h = CARD_PAD + HEAD_H + body_h + CARD_PAD - 4
+
+    out.append(f'<rect x="{CARD_X}" y="{y}" width="{CARD_W}" height="{h}" rx="14" '
+               f'fill="{PANEL}" stroke="{BORDER}"/>')
+    out.append(f'<rect x="{CARD_X}" y="{y}" width="5" height="{h}" rx="2.5" fill="{accent}"/>')
+
+    # Step dot on the rail.
+    cy = y + 24
+    out.append(f'<circle cx="{RAIL_X}" cy="{cy}" r="14" fill="{accent}" fill-opacity="0.16" '
+               f'stroke="{accent}" stroke-opacity="0.7"/>')
+    _add_text(out, RAIL_X, cy + 5, str(num), color=accent, size=14, family=SANS,
+              weight="800", anchor="middle")
+
+    # Header: who + optional route pill + optional meta.
+    _add_text(out, CARD_X + CARD_PAD, y + 26, who, color=FG, size=14, family=SANS, weight="700")
+    if route:
+        pw = 86
+        _pill(out, CARD_X + CARD_W - CARD_PAD - pw, y + 11, "route=" + route,
+              GREEN if route == "act" else YELLOW, pw)
+
+    # Body.
+    yy = y + CARD_PAD + HEAD_H
+    for segs in body:
+        if not segs:
+            yy += GAP_H
+            continue
+        _add_segments(out, CARD_X + CARD_PAD, yy, segs)
+        yy += LINE_H
+    return y + h
+
+
+def _connector(out: List[str], y: int, label: str) -> int:
+    midx = RAIL_X
+    out.append(f'<line x1="{midx}" y1="{y + 4}" x2="{midx}" y2="{y + STEP_GAP - 4}" '
+               f'stroke="{MUTED}" stroke-width="2"/>')
+    out.append(f'<path d="M {midx - 5} {y + STEP_GAP - 11} L {midx} {y + STEP_GAP - 4} '
+               f'L {midx + 5} {y + STEP_GAP - 11}" fill="none" stroke="{MUTED}" '
+               f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>')
+    _add_text(out, CARD_X, y + STEP_GAP - 8, label, color=DIM, size=12, family=SANS)
+    return y + STEP_GAP
+
+
+def _render(cap: Dict) -> str:
+    clarify = cap["clarify"]
+    rewrite = cap["rewrite"]
+
+    body: List[str] = []
+    y = 104  # below the header band
+
+    y = _panel(
+        body, y, num=1, who="You type", accent=BLUE,
+        body=_plain_lines(cap["raw_prompt"]),
+    )
+    y = _connector(body, y, "PromptPilot routes the request")
+    y = _panel(
+        body, y, num=2, who="PromptPilot  ·  asks instead of guessing", accent=YELLOW,
+        route=clarify.get("route", "clarify"),
+        body=_clarify_lines(clarify["question"]),
+    )
+    y = _connector(body, y, "you answer in one line")
+    y = _panel(
+        body, y, num=3, who="You answer", accent=BLUE,
+        body=_plain_lines(cap["answer"]),
+    )
+    y = _connector(body, y, "PromptPilot routes the request")
+    meta_line: List[Segment] = [
+        ("task=", DIM), (rewrite.get("task_type", ""), MAGENTA),
+        ("   confidence=", DIM), (rewrite.get("confidence", ""), MAGENTA),
+    ]
+    body4 = [meta_line, []] + _forwarded_lines(rewrite["downstream_prompt"])
+    y = _panel(
+        body, y, num=4, who="PromptPilot  ·  forwards a precise brief to the coding agent",
+        accent=GREEN, route=rewrite.get("route", "act"),
+        body=body4,
+    )
+
+    content_bottom = y
+    footer_h = 44
+    height = content_bottom + 22 + footer_h + PAD
+
     out: List[str] = []
     out.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" '
-        f'viewBox="0 0 {WIDTH} {HEIGHT}">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{height}" '
+        f'viewBox="0 0 {WIDTH} {height}">'
     )
-    out.append(f'<rect x="0" y="0" width="{WIDTH}" height="{HEIGHT}" rx="24" fill="{BG}"/>')
+    out.append(f'<rect x="0" y="0" width="{WIDTH}" height="{height}" rx="24" fill="{BG}"/>')
     out.append(
-        '<defs>'
-        '<linearGradient id="hero" x1="0" x2="1" y1="0" y2="1">'
-        '<stop offset="0" stop-color="#1d4ed8" stop-opacity="0.35"/>'
-        '<stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.22"/>'
-        '<stop offset="1" stop-color="#14b8a6" stop-opacity="0.18"/>'
-        '</linearGradient>'
-        '</defs>'
+        '<defs><linearGradient id="hero" x1="0" x2="1" y1="0" y2="1">'
+        '<stop offset="0" stop-color="#1d4ed8" stop-opacity="0.33"/>'
+        '<stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.20"/>'
+        '<stop offset="1" stop-color="#14b8a6" stop-opacity="0.16"/>'
+        '</linearGradient></defs>'
     )
-    out.append(f'<rect x="0" y="0" width="{WIDTH}" height="{HEIGHT}" rx="24" fill="url(#hero)"/>')
+    out.append(f'<rect x="0" y="0" width="{WIDTH}" height="{height}" rx="24" fill="url(#hero)"/>')
 
-    _add_text(out, PAD, 42, "PromptPilot visual demo", color=FG, size=26, family=SANS, weight="800")
-    _add_text(
-        out,
-        PAD,
-        68,
-        "A real small-model rewrite: rough request in → constraint-pinned agent brief out",
-        color=DIM,
-        size=14,
-        family=SANS,
-    )
-    _pill(out, WIDTH - PAD - 120, 24, "real SLM", GREEN, 120)
-    _pill(out, WIDTH - PAD - 120 - 12 - 134, 24, "slm-anthropic", BLUE, 134)
+    # Header band.
+    _add_text(out, PAD, 44, "PromptPilot visual demo", color=FG, size=26, family=SANS, weight="800")
+    _add_text(out, PAD, 72,
+              "A vague ask becomes a precise brief — it asks one sharp question first, "
+              "instead of burning an agent run on a guess.",
+              color=DIM, size=14, family=SANS)
+    _pill(out, WIDTH - PAD - 120, 30, "real SLM", GREEN, 120)
+    _pill(out, WIDTH - PAD - 120 - 12 - 134, 30, "slm-anthropic-v2", BLUE, 134)
 
-    left_x = PAD
-    right_x = PAD + CARD_W + CARD_GAP
-    _card(out, left_x, TOP, CARD_W, CARD_H, "Before", "The raw prompt, as typed", ORANGE)
-    _card(out, right_x, TOP, CARD_W, CARD_H, "After PromptPilot", "Rewritten by the small model, forwarded to the agent", GREEN)
-
-    # Arrow connector, vertically centered on the cards.
-    mid_y = TOP + CARD_H // 2
-    out.append(f'<line x1="{left_x + CARD_W + 6}" y1="{mid_y}" x2="{right_x - 6}" y2="{mid_y}" stroke="{BLUE}" stroke-width="3"/>')
-    out.append(f'<path d="M {right_x - 10} {mid_y - 7} L {right_x + 2} {mid_y} L {right_x - 10} {mid_y + 7}" fill="none" stroke="{BLUE}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
-
-    # Left card body — the raw prompt + what the agent would otherwise infer.
-    x = left_x + 22
-    y = TOP + 96
-    _add_segments(out, x, y, [("$ ", GREEN), ("prpt --slm < prompt.txt", FG)])
-    y += 46
-    _add_text(out, x, y, "RAW PROMPT", color=CYAN, size=13, family=SANS, weight="800")
-    y += 26
-    for ln in _prompt_preview_lines(cap["raw_prompt"], 52, 8):
-        _add_text(out, x, y, ln, color=FG, size=14, family=MONO)
-        y += LINE_H
-    y += 24
-    _add_text(out, x, y, "What the agent otherwise has to infer", color=DIM, size=13, family=SANS)
-    y += 30
-    for ln in [
-        "Which facts are hard constraints?",
-        "Which symbols / paths must survive?",
-        "Should it ask, answer, pass through, or act?",
-    ]:
-        _add_segments(out, x, y, [("? ", YELLOW), (ln, FG)])
-        y += LINE_H
-
-    # Right card body — the real SLM rewrite that prpt forwards.
-    x = right_x + 22
-    y = TOP + 96
-    _add_segments(
-        out,
-        x,
-        y,
-        [
-            ("route=", DIM),
-            (cap["route"], MAGENTA),
-            ("  task=", DIM),
-            (cap["task_type"], MAGENTA),
-            ("  confidence=", DIM),
-            (cap["confidence"], MAGENTA),
-        ],
-    )
-    y += 28
-    _add_text(out, x, y, "▼ small-model rewrite, forwarded to the coding agent", color=DIM, size=13, family=SANS)
-    y += 28
-    _render_forwarded(out, x, y, cap["downstream_prompt"])
+    out.extend(body)
 
     # Footer outcome strip.
-    footer_y = HEIGHT - 48
-    out.append(
-        f'<rect x="{PAD}" y="{footer_y - 22}" width="{WIDTH - PAD * 2}" height="40" rx="20" '
-        f'fill="#052e2b" fill-opacity="0.85" stroke="{GREEN}" stroke-opacity="0.45"/>'
-    )
-    _add_segments(
-        out,
-        PAD + 24,
-        footer_y + 3,
-        [
-            ("✓ ", GREEN),
-            ("One run-on request, rewritten into a structured, constraint-pinned brief before the expensive coding agent runs.", FG),
-        ],
-        size=14,
-        family=SANS,
-    )
+    fy = height - PAD - footer_h
+    out.append(f'<rect x="{CARD_X}" y="{fy}" width="{CARD_W}" height="{footer_h}" rx="14" '
+               f'fill="#052e2b" fill-opacity="0.85" stroke="{GREEN}" stroke-opacity="0.45"/>')
+    _add_segments(out, CARD_X + 20, fy + 27, [
+        ("✓ ", GREEN),
+        ("A vague ask earns one sharp question — not a wrong guess — then a "
+         "constraint-pinned brief, forwarded to the agent once.", FG),
+    ], size=14, family=SANS)
 
     out.append("</svg>")
     return "\n".join(out) + "\n"
@@ -368,9 +387,9 @@ def _render(cap: Dict[str, str]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Re-run the real SLM and refresh docs/assets/demo_capture.json before rendering.",
+        "--live", action="store_true",
+        help="Re-run the real slm-anthropic-v2 clarify->rewrite flow and refresh "
+             "docs/assets/demo_capture.json before rendering.",
     )
     args = parser.parse_args()
 

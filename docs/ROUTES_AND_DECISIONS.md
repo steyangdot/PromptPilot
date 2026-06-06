@@ -13,11 +13,18 @@ the SLM's execution spec.
 | `passthrough` | Transformation risk is high | Send the raw prompt to the coding agent unchanged |
 | `act` | Coding work is needed | Forward to the coding agent (Codex / Claude-style). The SLM produces a `downstream_prompt` that preserves constraints and sharpens the original |
 
-These map 1:1 to the `route` field on the SLM's `ExecutionSpec` JSON (used by
-`--normalizer slm-openai-v2`) or to the `INTENT:` header in the prose envelope
-emitted by `slm-anthropic` / `slm-openai`. The downstream coding agent always
-receives plain text either way — see [SLM Harness &rarr; Output format](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness#output-format-prose-envelope-vs-json-spec)
+These map 1:1 to the `route` field on the SLM's `ExecutionSpec` JSON (emitted by
+the v2 normalizers `slm-anthropic-v2` / `slm-openai-v2` for API keys and
+`slm-subscription-v2` for Max OAuth / ChatGPT — the default `slm` backend
+auto-selects the v2 normalizer matching whichever auth you have). The legacy v1
+normalizers (`slm-anthropic` / `slm-openai` / `slm-subscription`) carry only the
+`INTENT:` header in a prose envelope and so always resolve to `act`/`answer` —
+`clarify` and `passthrough` require a v2 backend. The downstream coding agent always receives plain text
+either way — see [SLM Harness &rarr; Output format](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness#output-format-prose-envelope-vs-json-spec)
 for the side-by-side example.
+
+The README demo poster shows this `clarify` &rarr; `act` flow end to end on a real
+`slm-anthropic-v2` run.
 
 ### Rewrite is a behavior, not a route
 

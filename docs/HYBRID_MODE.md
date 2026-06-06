@@ -129,7 +129,7 @@ prpt "fix the flaky payment test"
 ```
 
 With both auths configured, this picks:
-- Normalizer = `slm-anthropic` (uses `ANTHROPIC_API_KEY`) or `slm-openai` (uses `OPENAI_API_KEY`)
+- Normalizer = `slm-anthropic-v2` (uses `ANTHROPIC_API_KEY`) or `slm-openai-v2` (uses `OPENAI_API_KEY`) — the v2 JSON-spec normalizers the auto-detect now prefers (legacy v1 `slm-anthropic` / `slm-openai` remain selectable)
 - Downstream agent = `claude-code` (uses Max subscription) or `codex` (uses ChatGPT subscription), whichever the auto-detect finds first
 
 No flags needed. The model layers self-segregate.

@@ -46,6 +46,11 @@ except (ImportError, RuntimeError):
     SubscriptionSLMNormalizer = None  # type: ignore[assignment]
 
 try:
+    from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+except (ImportError, RuntimeError):
+    SubscriptionSLMNormalizerV2 = None  # type: ignore[assignment]
+
+try:
     from prpt.normalizers.slm_anthropic import SLMNormalizer as AnthropicSLMNormalizer
 except ImportError:
     AnthropicSLMNormalizer = None  # type: ignore[assignment]
@@ -54,6 +59,11 @@ try:
     from prpt.normalizers.slm_openai import OpenAISLMNormalizer
 except ImportError:
     OpenAISLMNormalizer = None  # type: ignore[assignment]
+
+try:
+    from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+except ImportError:
+    AnthropicSLMNormalizerV2 = None  # type: ignore[assignment]
 
 try:
     from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
@@ -90,7 +100,9 @@ __all__ = [
     # Normalizers (concrete)
     "HeuristicNormalizer",
     "SubscriptionSLMNormalizer",
+    "SubscriptionSLMNormalizerV2",
     "AnthropicSLMNormalizer",
+    "AnthropicSLMNormalizerV2",
     "OpenAISLMNormalizer",
     "OpenAISLMNormalizerV2",
     # Judges
