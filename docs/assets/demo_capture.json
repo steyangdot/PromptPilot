@@ -3,20 +3,19 @@
   "raw_prompt": "the checkout page is slow, make it faster",
   "clarify": {
     "route": "clarify",
-    "question": "Which checkout page performance issue should I focus on?\n\nA) Frontend rendering / JavaScript performance\nB) Backend API response times\nC) Database queries or N+1 problems\nD) Asset loading (images, bundles, etc.)\nE) Unsure — analyze the full checkout flow\n\nAlso: Do you have performance metrics or profiling data (load time, bottleneck)? If not, I'll audit the full checkout flow.",
+    "question": "What is the primary bottleneck on the checkout page?\n\nA) Page load time (initial render/asset delivery)\nB) Interaction latency (form submission, API calls)\nC) Rendering performance (UI jank, re-renders)\nD) Backend API response time\nE) Database queries\n\nAlso: are there any metrics (load time target, current baseline) or user-reported slowness patterns?",
     "risk": "medium",
-    "memory_record": "User wants checkout page performance improved but didn't specify frontend vs backend bottleneck; needs clarification on which layer to optimize."
+    "memory_record": "User wants to optimize checkout page performance; needs diagnosis of bottleneck type before proposing changes."
   },
-  "answer": "checkout p95 is ~3s; api/checkout.py runs an N+1 DB query per line item. don't change the public API or behavior, and add a regression/benchmark test.",
+  "answer": "The database side — api/checkout.py runs a separate query per line item, so checkout drags on big carts (p95 is around 3s). Keep the public API and behavior unchanged, and add a regression/benchmark test.",
   "rewrite": {
     "route": "act",
-    "task_type": "bug_fix",
+    "task_type": "unknown",
     "confidence": "medium",
     "target_files": [
-      "api/checkout.py",
-      "tests/test_checkout.py"
+      "api/checkout.py"
     ],
-    "memory_record": "User wants to optimize api/checkout.py N+1 query issue (p95 latency ~3s) without changing public API; regression test required.",
-    "downstream_prompt": "Fix N+1 database queries in api/checkout.py that are causing checkout p95 latency ~3s. Optimize queries to fetch line item relationships efficiently (e.g., use select_related or prefetch_related). Do not change the public API signature or checkout behavior. Add a regression/benchmark test to prevent future N+1 regressions.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
+    "memory_record": "User identified checkout.py database query-per-line-item as bottleneck; optimize queries while preserving API contract and adding test coverage.",
+    "downstream_prompt": "Optimize api/checkout.py to reduce database query count for checkout operations with large carts. Currently, the code runs one query per line item, causing p95 latency around 3s. Batch or join the queries to reduce round trips. Preserve the public API surface and behavior exactly. Add a regression test or benchmark that validates the optimization and confirms no performance degradation on subsequent changes.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
   }
 }

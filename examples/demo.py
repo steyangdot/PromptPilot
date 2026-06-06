@@ -122,9 +122,14 @@ EXAMPLES: List[Example] = [
               "sharp question instead of guessing, then forwards a precise brief.",
         prompt="the checkout page is slow, make it faster",
         repo=_CHECKOUT_REPO,
+        # Representative human reply to the clarify question: it picks the
+        # "database" option the model offers and adds the detail a developer
+        # would actually know — a symptom, not jargon. (Named by category, not
+        # by letter, since the option letters are regenerated on each --live.)
         answer=(
-            "checkout p95 is ~3s; api/checkout.py runs an N+1 DB query per line item. "
-            "don't change the public API or behavior, and add a regression/benchmark test."
+            "The database side — api/checkout.py runs a separate query per line "
+            "item, so checkout drags on big carts (p95 is around 3s). Keep the "
+            "public API and behavior unchanged, and add a regression/benchmark test."
         ),
     ),
 ]
