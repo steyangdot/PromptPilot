@@ -892,6 +892,35 @@ class TestSubscriptionV2Factory:
         assert isinstance(n, SubscriptionSLMNormalizerV2)
 
 
+class TestLogV2Raw:
+    """The PROMPTPILOT_V2_RAW_LOG diagnostic shared by all three v2 backends."""
+
+    def test_writes_record_when_enabled(self, tmp_path, monkeypatch):
+        import json
+        from prpt.core import utils
+        monkeypatch.setenv("PROMPTPILOT_V2_RAW_LOG", "1")
+        monkeypatch.setattr(utils.Path, "home", classmethod(lambda cls: tmp_path))
+
+        utils.log_v2_raw("anthropic-v2", '{"route": "clarify"}', in_tok=12, out_tok=34)
+
+        log = tmp_path / ".promptpilot" / "v2_slm_raw.jsonl"
+        assert log.exists()
+        rec = json.loads(log.read_text(encoding="utf-8").strip())
+        assert rec["backend"] == "anthropic-v2"
+        assert rec["raw"] == '{"route": "clarify"}'
+        assert rec["raw_len"] == len('{"route": "clarify"}')
+        assert rec["in_tok"] == 12 and rec["out_tok"] == 34
+
+    def test_noop_when_disabled(self, tmp_path, monkeypatch):
+        from prpt.core import utils
+        monkeypatch.delenv("PROMPTPILOT_V2_RAW_LOG", raising=False)
+        monkeypatch.setattr(utils.Path, "home", classmethod(lambda cls: tmp_path))
+
+        utils.log_v2_raw("anthropic-v2", "anything")
+
+        assert not (tmp_path / ".promptpilot" / "v2_slm_raw.jsonl").exists()
+
+
 class TestTargetFilesHint:
     """v2 roadmap #5 benchmark hook: build_final_downstream_prompt consumes
     spec.target_files and appends `[likely files: ...]` when the

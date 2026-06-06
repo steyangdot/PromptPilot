@@ -169,6 +169,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     # Hidden / advanced flags (kept working, suppressed in --help).
     parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--show-json", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--show-spec", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--compare", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-repo-context", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--gate-session", action="store_true", help=argparse.SUPPRESS)
@@ -192,6 +193,8 @@ onboarding focused. They are stable and supported, just researcher/internal.
 
   --strict              Always review when ambiguity exists.
   --show-json           Print the normalization JSON before the final prompt.
+  --show-spec           Print the parsed v2 ExecutionSpec (the SLM's JSON routing
+                        decision) to stderr. v2 normalizers only.
   --compare             Side-by-side token comparison: raw vs optimized; no exec.
   --no-repo-context     Skip loading repo file contents for the SLM.
   --gate-session        Skip loading prior session turns when the current prompt
@@ -225,6 +228,9 @@ Hidden subcommands and env vars:
                         Force the judge backend (handoff/restart path).
   PROMPTPILOT_LET_SLM_ANSWER=1
                         Same as --let-slm-answer.
+  PROMPTPILOT_V2_RAW_LOG=1
+                        Log each v2 SLM raw JSON response to
+                        ~/.promptpilot/v2_slm_raw.jsonl (debug parse/routing).
   CLAUDE_MODEL=opus|sonnet|haiku
                         Override the Claude model in the chain harness.
   USE_MAX_AUTH=1        Chain harness uses Max OAuth instead of --bare.
@@ -558,6 +564,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.show_json:
         print(json.dumps(asdict(normalized), indent=2))
         print()
+
+    # --show-spec: print the parsed v2 ExecutionSpec (the JSON routing decision
+    # the SLM emitted) to stderr. The spec drives routing internally and is
+    # never forwarded to the coding agent verbatim, so this is the way to see
+    # it. Only v2 normalizers carry `_last_spec`.
+    if args.show_spec:
+        spec = getattr(normalizer, "_last_spec", None)
+        if spec is not None:
+            from prpt.core.spec import spec_to_dict
+            write_stderr("[promptpilot] ExecutionSpec (v2):")
+            write_stderr(json.dumps(spec_to_dict(spec), indent=2, ensure_ascii=False))
+        else:
+            write_stderr(
+                "[promptpilot] --show-spec: no ExecutionSpec available "
+                "(v1 normalizer, or the v2 JSON parse fell back to the prose envelope)."
+            )
 
     # route=clarify: SLM judged the prompt ambiguous. Print the clarifying
     # question and exit so the user can refine and re-run. --auto and

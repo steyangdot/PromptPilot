@@ -182,6 +182,58 @@ class TestMainFlow:
         output = capsys.readouterr().out
         assert '"task_type"' in output
 
+    def test_show_spec_prints_execution_spec(self, monkeypatch, tmp_path, capsys):
+        """--show-spec prints the parsed v2 ExecutionSpec JSON to stderr."""
+        from prpt.core.spec import ExecutionSpec
+
+        class FakeNormalizer:
+            _last_intent = "act"
+            _last_scope = "localized"
+            _last_spec = ExecutionSpec(
+                route="act", intent="act", scope="localized",
+                target_files=["api/checkout.py"], risk="medium",
+                downstream_prompt="Fix the N+1 query in api/checkout.py.",
+                memory_record="N+1 fix in checkout.",
+            )
+
+            def normalize(self, prompt, repo, high_stakes=False):
+                return NormalizedRequest(
+                    original_prompt=prompt, task_type="bug_fix", objective="Fix N+1",
+                    explicit_context=[], hard_constraints=[], soft_preferences=[],
+                    requested_output=[], protected_spans=[], ambiguities=[],
+                    assumptions=[], omissions=[], confidence="medium",
+                    needs_review=False,
+                    rewrite_mode=RewriteMode.EXTRACT_PLUS_LIGHT_REWRITE.value,
+                    normalized_prompt="Fix the N+1 query in api/checkout.py.",
+                )
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: FakeNormalizer())
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+
+        exit_code = main([
+            "--cwd", str(tmp_path), "--normalizer", "slm",
+            "--dry-run", "--show-spec", "make checkout faster",
+        ])
+        assert exit_code == 0
+        err = capsys.readouterr().err
+        assert "ExecutionSpec" in err
+        assert '"route": "act"' in err
+        assert "api/checkout.py" in err
+
+    def test_show_spec_no_spec_on_v1(self, capsys):
+        """On a v1 path (heuristic), --show-spec prints a clear no-spec note."""
+        exit_code = main([
+            "--dry-run", "--show-spec", "--normalizer", "heuristic",
+            "fix the timeout bug in payments",
+        ])
+        assert exit_code == 0
+        err = capsys.readouterr().err
+        assert "no ExecutionSpec available" in err
+
     def test_dry_run_dark_theme(self, capsys):
         exit_code = main(["--dry-run", "--theme", "dark", "fix the timeout bug in payments"])
         assert exit_code == 0

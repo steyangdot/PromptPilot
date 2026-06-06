@@ -27,7 +27,7 @@ from typing import Optional
 
 from prpt.core.spec import SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json
 from prpt.core.types import RepoMetadata
-from prpt.core.utils import write_stderr
+from prpt.core.utils import log_v2_raw, write_stderr
 from prpt.normalizers.slm_anthropic import (
     _CACHE_MIN_CHARS,
     _HISTORY_INSTRUCTION,
@@ -92,6 +92,11 @@ class AnthropicSLMNormalizerV2(SLMNormalizer):
             )
             self._last_usage = _extract_usage(response)
             raw = response.content[0].text if response.content else ""
+            log_v2_raw(
+                "anthropic-v2", raw,
+                in_tok=(self._last_usage or {}).get("input_tokens"),
+                out_tok=(self._last_usage or {}).get("output_tokens"),
+            )
 
             # Primary parser: JSON spec.
             spec = parse_spec_json(raw)

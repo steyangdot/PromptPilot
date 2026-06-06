@@ -18,7 +18,7 @@ from typing import Optional
 
 from prpt.core.spec import SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json
 from prpt.core.types import RepoMetadata
-from prpt.core.utils import write_stderr
+from prpt.core.utils import log_v2_raw, write_stderr
 from prpt.normalizers.slm_anthropic import (
     _HISTORY_INSTRUCTION,
     SLMNormalizer as _AnthropicNorm,
@@ -67,6 +67,11 @@ class SubscriptionSLMNormalizerV2(SubscriptionSLMNormalizer):
                 system = system + _HISTORY_INSTRUCTION
 
             text = self._ask(system, user_content, cwd=repo.cwd)
+            log_v2_raw(
+                "subscription-v2", text,
+                input_chars=self._last_input_chars,
+                output_chars=self._last_output_chars,
+            )
             if not text:
                 write_stderr(
                     "[slm-subscription-v2] judge returned empty, using original prompt."

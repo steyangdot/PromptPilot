@@ -14,12 +14,11 @@ Failure discipline (per the v2 roadmap parser-migration guardrails):
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from prpt.core.spec import SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json
 from prpt.core.types import RepoMetadata
-from prpt.core.utils import write_stderr
+from prpt.core.utils import log_v2_raw, write_stderr
 from prpt.normalizers.slm_openai import OpenAISLMNormalizer
 
 # Backend-agnostic v2 system prompt now lives in prpt.core.spec so the OpenAI and
@@ -81,29 +80,16 @@ class OpenAISLMNormalizerV2(OpenAISLMNormalizer):
             }
             raw = response.choices[0].message.content or ""
 
-            # TEMP diagnostic: when PROMPTPILOT_V2_RAW_LOG=1, capture every
-            # call's user_content + raw response + finish_reason so failed
-            # turns can be inspected post-hoc. Safe to leave on (best-effort,
-            # no exceptions surface). Remove after v2 stabilizes.
-            if os.environ.get("PROMPTPILOT_V2_RAW_LOG") == "1":
-                import json as _json, time as _time
-                from pathlib import Path as _Path
-                try:
-                    p = _Path.home() / ".promptpilot" / "v2_slm_raw.jsonl"
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    with p.open("a", encoding="utf-8") as fh:
-                        fh.write(_json.dumps({
-                            "ts": _time.time(),
-                            "user_content_len": len(user_content),
-                            "user_content_tail": user_content[-1500:],
-                            "raw": raw,
-                            "raw_len": len(raw),
-                            "finish_reason": response.choices[0].finish_reason,
-                            "in_tok": response.usage.prompt_tokens,
-                            "out_tok": response.usage.completion_tokens,
-                        }) + "\n")
-                except Exception:
-                    pass
+            # When PROMPTPILOT_V2_RAW_LOG=1, capture the literal model response
+            # (the JSON ExecutionSpec) for post-hoc inspection of routing / parse
+            # behavior. Shared helper -> all three v2 backends log the same way.
+            log_v2_raw(
+                "openai-v2", raw,
+                user_content_tail=user_content[-1500:],
+                finish_reason=getattr(response.choices[0], "finish_reason", None),
+                in_tok=response.usage.prompt_tokens,
+                out_tok=response.usage.completion_tokens,
+            )
 
             # Primary parser: JSON spec
             spec = parse_spec_json(raw)

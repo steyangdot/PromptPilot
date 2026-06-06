@@ -29,6 +29,34 @@ def write_stderr(message: str) -> None:
         pass
 
 
+def log_v2_raw(backend: str, raw: str, **fields) -> None:
+    """Append a v2 normalizer's raw model output to a JSONL log for inspection.
+
+    No-op unless ``PROMPTPILOT_V2_RAW_LOG=1`` is set. When enabled, every v2
+    rewrite call appends one record (backend, the literal model response, token
+    counts, ...) to ``~/.promptpilot/v2_slm_raw.jsonl`` so the JSON ExecutionSpec
+    the SLM emits — which PromptPilot parses and never forwards verbatim — can be
+    inspected when debugging routing or parse failures. Best-effort: any error
+    (permissions, disk) is swallowed so logging never breaks a run.
+    """
+    if os.environ.get("PROMPTPILOT_V2_RAW_LOG") != "1":
+        return
+    try:
+        path = Path.home() / ".promptpilot" / "v2_slm_raw.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "backend": backend,
+            "raw": raw,
+            "raw_len": len(raw),
+        }
+        record.update(fields)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def unique_preserve_order(items: List[str]) -> List[str]:
     seen: set = set()
     result: List[str] = []

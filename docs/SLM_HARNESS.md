@@ -110,6 +110,11 @@ exactly as in v1; the other fields drive internal routing
 (`context_policy`, `target_files`), and session memory (`memory_record`
 becomes the next turn's assistant record).
 
+The JSON is the SLM&rarr;PromptPilot wire format only — the coding agent receives
+plain text, never the spec. To see the spec itself, run `prpt --show-spec "..."`
+(prints the parsed `ExecutionSpec` to stderr) or set `PROMPTPILOT_V2_RAW_LOG=1`
+to log each raw model response to `~/.promptpilot/v2_slm_raw.jsonl`.
+
 ### Why two formats?
 
 The prose envelope carries only two structured fields (INTENT + SCOPE). The
