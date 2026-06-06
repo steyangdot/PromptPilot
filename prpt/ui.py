@@ -34,6 +34,36 @@ def _print_kv(label: str, value: object, theme: str) -> None:
     print("{0}: {1}".format(_style(label, "label", theme), _style(str(value), "value", theme)))
 
 
+def print_preview(
+    *,
+    route: str,
+    task_type: str,
+    confidence: str,
+    spec_dict: Optional[dict],
+    rewrite_text: str,
+    theme: str = "plain",
+) -> None:
+    """Render one interactive-preview turn: the routing line, the v2 JSON
+    ExecutionSpec, and the rewritten prompt (or clarifying question)."""
+    import json
+
+    print()
+    print("{0}   {1}   {2}".format(
+        _style("route=" + route, "accent", theme),
+        _style("task=" + task_type, "muted", theme),
+        _style("confidence=" + confidence, "muted", theme),
+    ))
+    if spec_dict is not None:
+        print(_style("ExecutionSpec (JSON):", "heading", theme))
+        print(json.dumps(spec_dict, indent=2, ensure_ascii=False))
+    else:
+        print(_style("(v1 normalizer — no JSON ExecutionSpec for this backend)", "muted", theme))
+    label = "Clarifying question:" if route == "clarify" else "Rewritten prompt → coding agent:"
+    print(_style(label, "heading", theme))
+    print(rewrite_text)
+    print()
+
+
 def print_review(
     normalized: NormalizedRequest,
     validation: ValidationResult,
