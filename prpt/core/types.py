@@ -10,6 +10,7 @@ class TaskType(str, Enum):
     BUG_FIX = "bug_fix"
     FEATURE_IMPLEMENTATION = "feature_implementation"
     REFACTOR = "refactor"
+    PERFORMANCE = "performance"
     CODE_EXPLANATION = "code_explanation"
     ROOT_CAUSE_ANALYSIS = "root_cause_analysis"
     TEST_GENERATION = "test_generation"
