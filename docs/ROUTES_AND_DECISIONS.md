@@ -19,7 +19,7 @@ the v2 normalizers `slm-anthropic-v2` / `slm-openai-v2` for API keys and
 auto-selects the v2 normalizer matching whichever auth you have). The legacy v1
 normalizers (`slm-anthropic` / `slm-openai` / `slm-subscription`) carry only the
 `INTENT:` header in a prose envelope and so always resolve to `act`/`answer` —
-`clarify` and `passthrough` require a v2 backend. The downstream coding agent always receives plain text
+`clarify` and `passthrough` exist only in the v2 JSON format — the auto-selected default on every backend. The downstream coding agent always receives plain text
 either way — see [SLM Harness &rarr; Output format](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness#output-format-prose-envelope-vs-json-spec)
 for the side-by-side example.
 

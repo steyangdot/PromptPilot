@@ -151,7 +151,7 @@ Raw prompt:
 Fix the failing auth test. Keep the public API stable and do not touch migrations.
 ```
 
-Default (v1 prose envelope):
+Legacy (v1 prose envelope — explicit opt-in):
 
 ```text
 INTENT: act
@@ -160,7 +160,7 @@ SCOPE: localized
 Fix the failing auth test without changing public API behavior or migration files.
 ```
 
-v2 (JSON spec):
+Default (v2 JSON spec):
 
 ```json
 {"route":"act","intent":"act","scope":"localized","needs_history":false,

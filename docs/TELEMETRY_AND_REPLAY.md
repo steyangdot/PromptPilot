@@ -75,6 +75,19 @@ Bootstrap from a curated handoff:
 prpt bootstrap
 ```
 
+Preview a prompt's routing spec + rewrite (nothing forwarded to a coding agent):
+
+```bash
+prpt preview
+```
+
+Inspect the routing decision, or capture raw model JSON:
+
+```bash
+prpt --show-spec "fix the flaky test"      # parsed ExecutionSpec -> stderr
+PROMPTPILOT_V2_RAW_LOG=1 prpt "..."         # raw model JSON -> ~/.promptpilot/v2_slm_raw.jsonl
+```
+
 ## Handoff contents
 
 A valid handoff should keep:

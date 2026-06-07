@@ -71,7 +71,7 @@ Skip hybrid (use single-auth) when:
 
 | Layer | What it does | Selected by | Auto-detect order |
 |---|---|---|---|
-| **Normalizer** | Classifies intent, decides route, rewrites prompt | `--normalizer` (default `slm`) | `ANTHROPIC_API_KEY > OPENAI_API_KEY > Max OAuth` ([prpt/normalizers/base.py#L277](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/base.py#L277)) |
+| **Normalizer** | Classifies intent, decides route, rewrites prompt | `--normalizer` (default `slm`) | `ANTHROPIC_API_KEY → slm-anthropic-v2 > OPENAI_API_KEY → slm-openai-v2 > Max OAuth → slm-subscription-v2` ([prpt/normalizers/base.py#L277](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/base.py#L277)) |
 | **Judge** | Writes/reads `handoff.md` for checkpoint and restart | `PROMPTPILOT_JUDGE` env | `max > codex > anthropic > openai` ([prpt/judges/judge.py#L372](https://github.com/steyangdot/PromptPilot/blob/main/prpt/judges/judge.py#L372)) |
 | **Downstream agent** | Invokes the coding agent | `--tool` (default `auto`) | `claude > codex` ([prpt/adapters/factory.py#L42](https://github.com/steyangdot/PromptPilot/blob/main/prpt/adapters/factory.py#L42)) |
 
@@ -139,8 +139,9 @@ No flags needed. The model layers self-segregate.
 If you want to force the split deliberately:
 
 ```bash
-# Force API-key normalizer regardless of what auto-detect would pick
-prpt --normalizer slm-anthropic "fix the flaky payment test"
+# Force the API-key normalizer regardless of what auto-detect would pick
+# (slm-anthropic-v2 is the v2 default; use slm-anthropic for the legacy v1 prose path)
+prpt --normalizer slm-anthropic-v2 "fix the flaky payment test"
 
 # Force subscription-based downstream agent
 prpt --tool claude-code "fix the flaky payment test"
@@ -177,8 +178,8 @@ import os
 from prpt.normalizers.base import create_normalizer
 from prpt.judges import get_default_judge, AnthropicApiJudge, MaxHaikuJudge
 
-# 1. Normalizer: explicit SDK path (API key)
-normalizer = create_normalizer("slm-anthropic", api_key=os.environ["ANTHROPIC_API_KEY"])
+# 1. Normalizer: explicit SDK path (API key); v2 = JSON spec + routing
+normalizer = create_normalizer("slm-anthropic-v2", api_key=os.environ["ANTHROPIC_API_KEY"])
 
 # 2. Judge: subscription (for checkpoint/restart)
 os.environ["PROMPTPILOT_JUDGE"] = "max"  # forces MaxHaikuJudge
@@ -209,7 +210,7 @@ If you've configured both API key and subscription, the default `slm`
 normalizer picks the **API key** path
 ([prpt/normalizers/base.py#L282-L289](https://github.com/steyangdot/PromptPilot/blob/main/prpt/normalizers/base.py#L282-L289)). This is
 intentional: SDK is faster and prompt-cached. If you want the normalizer to
-route through your subscription instead, pass `--normalizer slm-subscription`
+route through your subscription instead, pass `--normalizer slm-subscription-v2`
 explicitly, or unset the API key in `.env`.
 
 ### Auto-detect is a fallback, not a requirement

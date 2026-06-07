@@ -22,6 +22,18 @@ No. Token savings are useful, but they are not the goal by themselves. PromptPil
 
 No. PromptPilot sits before Codex/Claude-style agents. The frontier coding agent still performs implementation, debugging, test repair, and deep code reasoning.
 
+## Which normalizer should I use?
+
+Use the default. `prpt --slm` auto-detects a **v2 normalizer** matching your auth — `slm-anthropic-v2` (Anthropic key), `slm-openai-v2` (OpenAI key), or `slm-subscription-v2` (Max / ChatGPT). The v2 normalizers carry the routing decision, including `clarify` and `passthrough`. The legacy v1 prose normalizers (`slm-anthropic` / `slm-openai` / `slm-subscription`) remain available via `--normalizer` for pre-v2 behavior.
+
+## How do I see what route PromptPilot chose, or the JSON spec?
+
+Run `prpt --show-spec "..."` to print the parsed `ExecutionSpec` (route, target files, risk, memory record), or `prpt preview` for an interactive playground that shows the spec + rewrite per prompt. For the raw model output, set `PROMPTPILOT_V2_RAW_LOG=1` (logs to `~/.promptpilot/v2_slm_raw.jsonl`).
+
+## How do I preview a prompt without running the coding agent?
+
+`prpt preview` (interactive) or `prpt preview "your prompt"` (one-shot) shows the routing spec and the rewrite — or the clarifying question — without forwarding anything downstream.
+
 ## What should I read first?
 
 If you want to try the tool, start with [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart).
