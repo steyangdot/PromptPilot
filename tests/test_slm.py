@@ -655,6 +655,272 @@ class TestSLMOpenAIV2Normalizer:
         assert n._last_scope in ("pinpoint", "localized", "broad", "new")
 
 
+class TestSLMAnthropicV2Normalizer:
+    """v2 JSON-spec normalizer on the Anthropic (Claude Haiku) backend.
+
+    Mirrors the slm-openai-v2 parser-migration guardrails plus the clarify
+    routing headline that only the v2 path can express.
+    """
+
+    def _make_normalizer(self, mock_client):
+        from prpt.normalizers.heuristic import HeuristicNormalizer
+        from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+        n = AnthropicSLMNormalizerV2.__new__(AnthropicSLMNormalizerV2)
+        n._client = mock_client
+        n._heuristic = HeuristicNormalizer()
+        n._content_loader = None
+        n._last_usage = None
+        n._last_context_block = ""  # short-circuit context loading (no classify call)
+        n._last_intent = None
+        n._last_scope = None
+        n._last_spec = None
+        return n
+
+    def _mock_response(self, content: str):
+        return SimpleNamespace(
+            content=[SimpleNamespace(text=content)],
+            usage=SimpleNamespace(input_tokens=50, output_tokens=30),
+        )
+
+    def test_1_valid_json_spec_populates_required_fields(self, repo):
+        """Guardrail #1: valid JSON spec populates NormalizedRequest +
+        _last_intent + _last_scope + the full _last_spec."""
+        client = MagicMock()
+        json_body = (
+            '{"route": "act", "intent": "act", "scope": "pinpoint", '
+            '"needs_history": false, "context_policy": "targeted", '
+            '"target_files": ["api/checkout.py"], "risk": "low", '
+            '"downstream_prompt": "Eliminate the N+1 query in api/checkout.py.", '
+            '"memory_record": "User wants N+1 fix in checkout."}'
+        )
+        client.messages.create.return_value = self._mock_response(json_body)
+
+        n = self._make_normalizer(client)
+        result = n.normalize("make checkout faster", repo)
+
+        assert result.normalized_prompt == "Eliminate the N+1 query in api/checkout.py."
+        assert result.original_prompt == "make checkout faster"
+        assert n._last_intent == "act"
+        assert n._last_scope == "pinpoint"
+        assert n._last_spec is not None
+        assert n._last_spec.target_files == ["api/checkout.py"]
+        assert n._last_spec.memory_record == "User wants N+1 fix in checkout."
+        # Context short-circuited -> only the rewrite call (no pass-1 classify).
+        assert client.messages.create.call_count == 1
+
+    def test_2_clarify_route_carries_question(self, repo):
+        """Headline v2 capability: an underspecified prompt routes clarify and
+        the clarifying question rides in downstream_prompt -> normalized_prompt
+        (which the CLI prints before exiting, instead of running the agent)."""
+        import json
+        question = (
+            "Which area is slow — checkout, payments, or order sync? "
+            "And what is the current vs target latency?"
+        )
+        json_body = json.dumps({
+            "route": "clarify", "intent": "act", "scope": "broad", "risk": "medium",
+            "downstream_prompt": question,
+            "memory_record": "User reported vague slowness; need specifics before acting.",
+        })
+        client = MagicMock()
+        client.messages.create.return_value = self._mock_response(json_body)
+
+        n = self._make_normalizer(client)
+        result = n.normalize("the app is slow, make it faster", repo)
+
+        assert n._last_spec is not None
+        assert n._last_spec.route == "clarify"
+        assert result.normalized_prompt == question
+
+    def test_3_prose_envelope_fallback_produces_equivalent_shape(self, repo):
+        """Guardrail #2: v1 prose envelope still parses (fail-open), no spec."""
+        client = MagicMock()
+        prose = "INTENT: act\nSCOPE: pinpoint\n---\nFix the timeout in BaseClient."
+        client.messages.create.return_value = self._mock_response(prose)
+
+        n = self._make_normalizer(client)
+        result = n.normalize("fix the timeout", repo)
+
+        assert result.normalized_prompt == "Fix the timeout in BaseClient."
+        assert n._last_intent == "act"
+        assert n._last_scope == "pinpoint"
+        assert n._last_spec is None
+
+    def test_4_malformed_json_fails_open_never_crashes(self, repo):
+        """Guardrail #3: truly broken output must not crash or leak downstream."""
+        client = MagicMock()
+        client.messages.create.return_value = self._mock_response(
+            "{this is not valid: json and also no prose envelope"
+        )
+
+        n = self._make_normalizer(client)
+        result = n.normalize("fix the timeout", repo)
+
+        assert "{this is not valid" not in result.normalized_prompt or \
+            result.normalized_prompt == "fix the timeout"
+        assert n._last_intent in ("act", "explain")
+        assert n._last_scope in ("pinpoint", "localized", "broad", "new")
+
+
+class TestNormalizerFactoryV2:
+    """create_normalizer wiring for the v2 normalizers + auto-detect default."""
+
+    def test_create_slm_anthropic_v2_explicit(self):
+        from prpt.normalizers.base import create_normalizer
+        from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+        n = create_normalizer("slm-anthropic-v2", api_key="test-key", load_repo_content=False)
+        assert isinstance(n, AnthropicSLMNormalizerV2)
+
+    def test_auto_detect_slm_prefers_anthropic_v2(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("PROMPTPILOT_JUDGE", raising=False)
+        from prpt.normalizers.base import create_normalizer
+        from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+        n = create_normalizer("slm", load_repo_content=False)
+        assert isinstance(n, AnthropicSLMNormalizerV2)
+
+    def test_auto_detect_slm_prefers_openai_v2_when_only_openai(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("PROMPTPILOT_JUDGE", raising=False)
+        from prpt.normalizers.base import create_normalizer
+        from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
+        n = create_normalizer("slm", load_repo_content=False)
+        assert isinstance(n, OpenAISLMNormalizerV2)
+
+
+class TestSLMSubscriptionV2Normalizer:
+    """v2 JSON-spec normalizer on the subscription (judge subprocess) backend.
+
+    The judge is mocked: it's a callable returning (text, cost, walltime). These
+    cover the same guardrails as the SDK v2 normalizers plus clarify routing,
+    which is the whole point of porting v2 to the subscription default.
+    """
+
+    def _make_normalizer(self, judge_text):
+        from prpt.normalizers.heuristic import HeuristicNormalizer
+        from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+        n = SubscriptionSLMNormalizerV2.__new__(SubscriptionSLMNormalizerV2)
+        n._judge = MagicMock(return_value=(judge_text, 0.0, 1.0))
+        n._heuristic = HeuristicNormalizer()
+        n._content_loader = None
+        n._last_context_block = ""  # short-circuit context loading (no classify call)
+        n._last_intent = None
+        n._last_scope = None
+        n._last_spec = None
+        n._cwd = None
+        n._last_cost_usd = 0.0
+        n._last_walltime_s = 0.0
+        n._last_input_chars = 0
+        n._last_output_chars = 0
+        return n
+
+    def test_1_valid_json_spec_via_judge(self, repo):
+        json_body = (
+            '{"route": "act", "intent": "act", "scope": "pinpoint", '
+            '"downstream_prompt": "Fix the N+1 query in api/checkout.py.", '
+            '"memory_record": "User wants the checkout N+1 fixed."}'
+        )
+        n = self._make_normalizer(json_body)
+        result = n.normalize("make checkout faster", repo)
+        assert result.normalized_prompt == "Fix the N+1 query in api/checkout.py."
+        assert n._last_intent == "act"
+        assert n._last_scope == "pinpoint"
+        assert n._last_spec is not None and n._last_spec.route == "act"
+        assert n._judge.call_count == 1  # only the rewrite call (no classify)
+
+    def test_2_clarify_route_via_judge(self, repo):
+        import json
+        question = "Which layer is slow — frontend, API, or DB?"
+        body = json.dumps({
+            "route": "clarify", "intent": "act", "scope": "broad",
+            "downstream_prompt": question,
+            "memory_record": "Vague perf ask; need the layer.",
+        })
+        n = self._make_normalizer(body)
+        result = n.normalize("the app is slow", repo)
+        assert n._last_spec is not None and n._last_spec.route == "clarify"
+        assert result.normalized_prompt == question
+
+    def test_3_prose_fallback_via_judge(self, repo):
+        prose = "INTENT: act\nSCOPE: localized\n---\nFix the failing auth test."
+        n = self._make_normalizer(prose)
+        result = n.normalize("fix the auth test", repo)
+        assert result.normalized_prompt == "Fix the failing auth test."
+        assert n._last_intent == "act"
+        assert n._last_spec is None
+
+    def test_4_empty_judge_output_fails_open(self, repo):
+        n = self._make_normalizer("")
+        result = n.normalize("fix the auth test", repo)
+        assert result.normalized_prompt == "fix the auth test"
+        assert n._last_intent == "act"
+        assert n._last_spec is None
+
+    def test_5_malformed_json_fails_open(self, repo):
+        n = self._make_normalizer("{broken json and no envelope")
+        result = n.normalize("fix the auth test", repo)
+        assert "{broken json" not in result.normalized_prompt or \
+            result.normalized_prompt == "fix the auth test"
+        assert n._last_intent in ("act", "explain")
+        assert n._last_scope in ("pinpoint", "localized", "broad", "new")
+
+
+class TestSubscriptionV2Factory:
+    """create_normalizer wiring for the subscription v2 path."""
+
+    def test_create_slm_subscription_v2_explicit(self, monkeypatch):
+        fake = MagicMock()
+        fake.name = "anthropic"  # not "max" -> skips the once-per-process ToS warn
+        monkeypatch.setattr(
+            "prpt.normalizers.slm_subscription.get_default_judge", lambda: fake)
+        from prpt.normalizers.base import create_normalizer
+        from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+        n = create_normalizer("slm-subscription-v2", load_repo_content=False)
+        assert isinstance(n, SubscriptionSLMNormalizerV2)
+
+    def test_auto_detect_judge_env_prefers_subscription_v2(self, monkeypatch):
+        fake = MagicMock()
+        fake.name = "anthropic"
+        monkeypatch.setattr(
+            "prpt.normalizers.slm_subscription.get_default_judge", lambda: fake)
+        monkeypatch.setenv("PROMPTPILOT_JUDGE", "max")
+        from prpt.normalizers.base import create_normalizer
+        from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+        n = create_normalizer("slm", load_repo_content=False)
+        assert isinstance(n, SubscriptionSLMNormalizerV2)
+
+
+class TestLogV2Raw:
+    """The PROMPTPILOT_V2_RAW_LOG diagnostic shared by all three v2 backends."""
+
+    def test_writes_record_when_enabled(self, tmp_path, monkeypatch):
+        import json
+        from prpt.core import utils
+        monkeypatch.setenv("PROMPTPILOT_V2_RAW_LOG", "1")
+        monkeypatch.setattr(utils.Path, "home", classmethod(lambda cls: tmp_path))
+
+        utils.log_v2_raw("anthropic-v2", '{"route": "clarify"}', in_tok=12, out_tok=34)
+
+        log = tmp_path / ".promptpilot" / "v2_slm_raw.jsonl"
+        assert log.exists()
+        rec = json.loads(log.read_text(encoding="utf-8").strip())
+        assert rec["backend"] == "anthropic-v2"
+        assert rec["raw"] == '{"route": "clarify"}'
+        assert rec["raw_len"] == len('{"route": "clarify"}')
+        assert rec["in_tok"] == 12 and rec["out_tok"] == 34
+
+    def test_noop_when_disabled(self, tmp_path, monkeypatch):
+        from prpt.core import utils
+        monkeypatch.delenv("PROMPTPILOT_V2_RAW_LOG", raising=False)
+        monkeypatch.setattr(utils.Path, "home", classmethod(lambda cls: tmp_path))
+
+        utils.log_v2_raw("anthropic-v2", "anything")
+
+        assert not (tmp_path / ".promptpilot" / "v2_slm_raw.jsonl").exists()
+
+
 class TestTargetFilesHint:
     """v2 roadmap #5 benchmark hook: build_final_downstream_prompt consumes
     spec.target_files and appends `[likely files: ...]` when the

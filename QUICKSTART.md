@@ -43,6 +43,13 @@ prpt --dry-run "fix the flaky test in payments"   # preview only
 prpt "fix the flaky test in payments"             # auto-detects claude or codex from PATH
 ```
 
+Whatever auth you picked above, the default `slm` normalizer uses the v2 control
+plane (`slm-anthropic-v2` / `slm-openai-v2` for API keys, `slm-subscription-v2`
+for Max OAuth / ChatGPT): a vague prompt like `prpt "make checkout faster"` is
+routed to **`clarify`** — PromptPilot prints one focused question and exits
+instead of guessing, so you refine and re-run. Precise prompts route straight to
+`act`. (See the [demo](README.md#demo) for the full clarify → rewrite flow.)
+
 > **Heads-up on edits:** `prpt "fix ..."` forwards the brief to the agent in one non-interactive pass, and in that mode **neither agent writes files by default** — **Claude Code** *proposes* edits, **Codex** runs *read-only*. To apply changes, add the auto-approve flag: Claude → `--tool-arg=--permission-mode --tool-arg=acceptEdits`; Codex → `--tool-arg=--full-auto`. Or run `prpt install-hook` (see §"Where to look next") to optimize prompts *inside* an interactive Claude Code / Codex session.
 
 Each call records a turn, so follow-ups pick up context automatically:
@@ -98,7 +105,9 @@ Cost: `checkpoint`/`restart` ≈ $0.0001–$0.01 (3–7s). `bootstrap` is regex-
 
 - `prpt --help` — the curated flag set (`--tool`, `--normalizer`, `--dry-run`, `--high-stakes`, ...)
 - `prpt --advanced-help` (or `-H`) — researcher/internal flags hidden from the main help
-- Env knobs (used by the `prpt` CLI): `PROMPTPILOT_JUDGE` (max/codex/anthropic/openai — forces a judge backend), `PROMPTPILOT_LET_SLM_ANSWER=1` (opt into the SLM-answer dialog on explain prompts). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes. Note: `CLAUDE_MODEL` and `USE_MAX_AUTH` appear in the chain-harness scripts under `research/` only — they have no effect on a regular `prpt` invocation.
+- Env knobs (used by the `prpt` CLI): `PROMPTPILOT_JUDGE` (max/codex/anthropic/openai — forces a judge backend), `PROMPTPILOT_LET_SLM_ANSWER=1` (opt into the SLM-answer dialog on explain prompts), `PROMPTPILOT_V2_RAW_LOG=1` (log each v2 SLM raw JSON response to `~/.promptpilot/v2_slm_raw.jsonl`). See [Authentication and Providers](https://github.com/steyangdot/PromptPilot/wiki/Authentication-and-Providers) for provider setup notes.
+- Inspect the v2 routing decision: `prpt --show-spec "..."` prints the parsed `ExecutionSpec` (route, target_files, risk, memory_record) to stderr. The spec is internal — only the rewritten `downstream_prompt` is forwarded to the agent — so this is how you see the JSON.
+- Prompt playground: `prpt preview` opens an interactive loop — type a prompt, press Enter, and see the routing spec (JSON) + the rewrite (or clarifying question), without forwarding anything to a coding agent. Pass a prompt (`prpt preview "fix the flaky test"`) for a one-shot. Note: `CLAUDE_MODEL` and `USE_MAX_AUTH` appear in the chain-harness scripts under `research/` only — they have no effect on a regular `prpt` invocation.
 - [Project Overview](https://github.com/steyangdot/PromptPilot/wiki/Project-Overview) — what PromptPilot is for
 - [SECURITY.md](https://github.com/steyangdot/PromptPilot/blob/main/SECURITY.md) — API key handling
 - `prpt install-hook` — wire into Claude Code (or `prpt install-hook --tool codex` for Codex)

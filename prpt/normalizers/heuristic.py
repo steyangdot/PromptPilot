@@ -57,6 +57,11 @@ class HeuristicNormalizer(Normalizer):
             return TaskType.ROOT_CAUSE_ANALYSIS.value
         if any(k in lower for k in ["fix", "bug", "broken", "timeout", "failing"]):
             return TaskType.BUG_FIX.value
+        if any(k in lower for k in [
+            "optimi", "performance", "latency", "slow", "speed up", "speedup",
+            "faster", "throughput", "bottleneck", "n+1",
+        ]):
+            return TaskType.PERFORMANCE.value
         if any(k in lower for k in ["refactor", "clean up"]):
             return TaskType.REFACTOR.value
         if any(k in lower for k in ["migrate", "migration", "upgrade"]):
@@ -130,7 +135,7 @@ class HeuristicNormalizer(Normalizer):
     def _detect_ambiguities(self, text: str, task_type: str, repo: RepoMetadata) -> List[str]:
         ambiguities: List[str] = []
         lower = text.lower()
-        if task_type in {TaskType.BUG_FIX.value, TaskType.ROOT_CAUSE_ANALYSIS.value} and not self._has_target_subsystem_context(
+        if task_type in {TaskType.BUG_FIX.value, TaskType.ROOT_CAUSE_ANALYSIS.value, TaskType.PERFORMANCE.value} and not self._has_target_subsystem_context(
             lower, repo
         ):
             ambiguities.append("Target subsystem is not clearly specified.")
@@ -149,7 +154,7 @@ class HeuristicNormalizer(Normalizer):
     ) -> List[str]:
         assumptions: List[str] = []
         lower = text.lower()
-        if task_type in {TaskType.BUG_FIX.value, TaskType.ROOT_CAUSE_ANALYSIS.value} and "test" not in lower:
+        if task_type in {TaskType.BUG_FIX.value, TaskType.ROOT_CAUSE_ANALYSIS.value, TaskType.PERFORMANCE.value} and "test" not in lower:
             assumptions.append("The user likely wants suggested tests or verification steps.")
         if task_type == TaskType.BUG_FIX.value:
             assumptions.append("The user likely wants a code-level fix rather than a high-level discussion only.")
@@ -191,6 +196,7 @@ class HeuristicNormalizer(Normalizer):
             TaskType.ROOT_CAUSE_ANALYSIS.value: "Analyze and explain the likely root cause.",
             TaskType.TEST_GENERATION.value: "Generate or update relevant tests.",
             TaskType.REFACTOR.value: "Refactor the relevant code while respecting constraints.",
+            TaskType.PERFORMANCE.value: "Optimize the identified performance bottleneck while preserving behavior.",
             TaskType.MIGRATION.value: "Plan or perform the requested migration safely.",
             TaskType.FEATURE_IMPLEMENTATION.value: "Implement the requested feature.",
             TaskType.CODE_EXPLANATION.value: "Explain the relevant code or behavior clearly.",

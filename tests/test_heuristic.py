@@ -55,6 +55,11 @@ class TestTaskTypeDetection:
         result = normalizer.normalize("migrate the database from postgres 14 to 16", repo)
         assert result.task_type == TaskType.MIGRATION.value
 
+    def test_performance(self, normalizer, repo):
+        result = normalizer.normalize(
+            "optimize the slow checkout endpoint, reduce p95 latency", repo)
+        assert result.task_type == TaskType.PERFORMANCE.value
+
     def test_unknown(self, normalizer, repo):
         result = normalizer.normalize("do the thing with the stuff", repo)
         assert result.task_type == TaskType.UNKNOWN.value

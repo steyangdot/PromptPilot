@@ -66,12 +66,26 @@ _PAYMENTS_REPO = RepoMetadata(
 )
 
 
+_CHECKOUT_REPO = RepoMetadata(
+    cwd="/home/dev/payments-api",
+    branch="main",
+    changed_files=["api/checkout.py", "tests/test_checkout.py"],
+    diff=None,
+    dominant_language="Python",
+    test_framework="pytest",
+)
+
+
 @dataclass
 class Example:
     title: str
     blurb: str
     prompt: str
     repo: RepoMetadata
+    # Optional follow-up the developer would give if PromptPilot routes the
+    # prompt to `clarify`. Only set on the vague->clarify->rewrite showcase; it
+    # is human input (not model output), used by the poster's step-3 panel.
+    answer: Optional[str] = None
 
 
 EXAMPLES: List[Example] = [
@@ -102,7 +116,28 @@ EXAMPLES: List[Example] = [
         ),
         repo=_PAYMENTS_REPO,
     ),
+    Example(
+        title="Vague request -> clarify -> rewrite",
+        blurb="An under-specified ask - PromptPilot (v2) routes 'clarify', asks one "
+              "sharp question instead of guessing, then forwards a precise brief.",
+        prompt="the checkout page is slow, make it faster",
+        repo=_CHECKOUT_REPO,
+        # Representative human reply to the clarify question: it picks the
+        # "database" option the model offers and adds the detail a developer
+        # would actually know — a symptom, not jargon. (Named by category, not
+        # by letter, since the option letters are regenerated on each --live.)
+        answer=(
+            "The database side — api/checkout.py runs a separate query per line "
+            "item, so checkout drags on big carts (p95 is around 3s). Keep the "
+            "public API and behavior unchanged, and add a regression/benchmark test."
+        ),
+    ),
 ]
+
+# The vague->clarify->rewrite showcase (the one example carrying a representative
+# developer `answer`). Used by scripts/make_demo_svg.py as the poster's source so
+# the poster and the CLI demo stay in lockstep.
+CLARIFY_EXAMPLE: Example = EXAMPLES[-1]
 
 
 # ---------------------------------------------------------------------------

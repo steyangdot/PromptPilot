@@ -1,6 +1,6 @@
 # Examples
 
-![PromptPilot demo](../docs/assets/demo.svg)
+![PromptPilot demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief](../docs/assets/demo.svg)
 
 ## Runnable demo — [`demo.py`](demo.py)
 
@@ -24,12 +24,15 @@ task type, confidence, protected spans, hard constraints, ambiguities — is
 computed by PromptPilot's real pipeline against a fixed synthetic repo, so the
 output is deterministic and reproducible wherever you run it.
 
-The three built-in examples walk from a precise request (constraints pinned) to
-an under-specified one (ambiguities flagged) to a mixed refactor (hard vs soft
-constraints separated).
+The four built-in examples walk from a precise request (constraints pinned) to
+an under-specified one (ambiguities flagged), a mixed refactor (hard vs soft
+constraints separated), and a vague request that — under `--slm` with a v2
+backend — PromptPilot routes to `clarify`, asking one sharp question before
+forwarding a precise brief. That last one is the flow pictured in the poster
+above.
 
 <details>
-<summary><b>Sample output</b> (offline heuristic, example 1 of 3 — abridged; run it for the full output)</summary>
+<summary><b>Sample output</b> (offline heuristic, example 1 of 4 — abridged; run it for the full output)</summary>
 
 ```text
   RAW PROMPT

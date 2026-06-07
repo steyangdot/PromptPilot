@@ -1,0 +1,21 @@
+{
+  "normalizer": "AnthropicSLMNormalizerV2",
+  "raw_prompt": "the checkout page is slow, make it faster",
+  "clarify": {
+    "route": "clarify",
+    "question": "What is the primary performance bottleneck on the checkout page?\n\nA) Page load time / asset delivery\nB) API calls / backend latency\nC) Form rendering / JavaScript execution\nD) Database queries\nE) Not sure – need full profiling\n\nAlso: are there any critical user flows or payment integrations we must not break?",
+    "risk": "medium",
+    "memory_record": "User wants to optimize checkout page performance; needs clarification on bottleneck type and risk constraints before proceeding."
+  },
+  "answer": "The database side — api/checkout.py runs a separate query per line item, so checkout drags on big carts (p95 is around 3s). Keep the public API and behavior unchanged, and add a regression/benchmark test.",
+  "rewrite": {
+    "route": "act",
+    "task_type": "performance",
+    "confidence": "high",
+    "target_files": [
+      "api/checkout.py"
+    ],
+    "memory_record": "User wants to optimize api/checkout.py checkout latency caused by N+1 queries per line item; must preserve public API contract and add regression + benchmark tests.",
+    "downstream_prompt": "Optimize api/checkout.py to reduce database query count on large carts. Currently it runs one query per line item, causing p95 latency around 3s. Use batch queries or similar techniques to fetch all line items in one or two queries. Keep the public API signature and checkout behavior unchanged. Add a regression test and benchmark test that verifies the optimization works for large carts (e.g., 50+ items) and doesn't break existing functionality.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
+  }
+}

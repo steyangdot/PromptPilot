@@ -29,6 +29,8 @@ PromptPilot sits before the coding agent and chooses the safest useful handling 
 - `passthrough` when rewriting would risk changing the user's meaning.
 - `act` when the request should be rewritten and sent to the coding agent.
 
+All four routes work on every backend as of v0.3.0 — the v2 JSON-spec normalizer is the auto-selected default for whichever auth you have (`clarify` and `passthrough` previously required the OpenAI-only v2 path).
+
 That routing model is intentionally limited. PromptPilot is not trying to make deep implementation decisions. It is trying to decide how to package the work before the frontier model sees it.
 
 For the detailed route model, see [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) and [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness).

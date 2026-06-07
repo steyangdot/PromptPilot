@@ -32,6 +32,24 @@ Common settings include:
 
 > **Note:** `CLAUDE_MODEL` and `USE_MAX_AUTH` appear in some chain-harness scripts under `research/` but are **not consumed by the `prpt` CLI itself.** Setting them on a normal `prpt` invocation has no effect.
 
+## Normalizers and defaults
+
+The default `slm` normalizer **auto-selects a v2 (JSON `ExecutionSpec`) normalizer to match your auth**:
+
+| Auth present | Normalizer chosen |
+|---|---|
+| `ANTHROPIC_API_KEY` | `slm-anthropic-v2` |
+| `OPENAI_API_KEY` | `slm-openai-v2` |
+| Max OAuth / ChatGPT subscription | `slm-subscription-v2` |
+
+v2 normalizers emit the routing decision (`route` = answer / act / **clarify** / passthrough) alongside the rewrite. The legacy v1 prose normalizers (`slm-anthropic` / `slm-openai` / `slm-subscription`) only emit `act`/`answer`; pick them explicitly with `--normalizer` for pre-v2 behavior. `PROMPTPILOT_JUDGE` is a **separate** setting (the checkpoint/restart judge backend), not the normalizer.
+
+### Inspecting the routing decision
+
+- `prpt preview` — interactive playground: type a prompt, see the routing spec (JSON) + rewrite, nothing forwarded to an agent.
+- `prpt --show-spec "..."` — print the parsed `ExecutionSpec` for one run.
+- `PROMPTPILOT_V2_RAW_LOG=1` — log each raw model JSON response to `~/.promptpilot/v2_slm_raw.jsonl`.
+
 ## Security notes
 
 - Keep API keys in `.env` or your shell environment, not in committed files.

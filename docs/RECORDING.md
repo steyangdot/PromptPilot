@@ -8,15 +8,24 @@ everywhere (including GitHub) and never goes stale. This page covers two things:
 2. Recording an **animated GIF** to replace it (optional, looks great at the top
    of the README).
 
-## 1. Regenerate the static SVG (no recording, no auth)
+## 1. Regenerate the static SVG
 
 ```bash
-python scripts/make_demo_svg.py     # writes docs/assets/demo.svg
+python scripts/make_demo_svg.py            # render from the committed capture (no key, no network)
+python scripts/make_demo_svg.py --live     # re-run the real slm-anthropic-v2 flow, then render
 ```
 
-It runs example 1 through PromptPilot's real pipeline and lays out a terminal
-"poster" as plain SVG (no `<style>`/`<script>` — GitHub strips those from
-`<img>`-embedded SVG). Re-run it whenever the demo's extraction changes.
+The poster shows PromptPilot's `clarify` → `act` flow: a vague request is routed
+to `clarify` (one sharp question), the developer answers, and PromptPilot
+forwards a constraint-pinned brief. Steps 2 and 4 are genuine small-model output
+from `slm-anthropic-v2`. Because that output needs an API key and isn't
+bit-for-bit deterministic, the live run is captured once into
+[`docs/assets/demo_capture.json`](assets/demo_capture.json) (committed) and the
+default build renders from that snapshot — plain SVG with no `<style>`/`<script>`
+(GitHub strips those from `<img>`-embedded SVG), so it rebuilds in CI with no key
+and no network, and never drifts. Use `--live` (with an `ANTHROPIC_API_KEY` /
+`.env`) to refresh the capture after changing the showcase example or the v2
+spec prompt.
 
 ## 2. Record an animated GIF (optional)
 

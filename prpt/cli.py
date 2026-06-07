@@ -18,7 +18,7 @@ from prpt.normalizers.base import (
 from prpt.repo.collector import RepoContextCollector
 from prpt.session import append_turn, clear_session, load_recent_turns, session_path_for
 from prpt.stats import print_stats
-from prpt.ui import print_review, print_token_stats
+from prpt.ui import print_preview, print_review, print_token_stats
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +114,34 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ns.subcommand = "restart"
         return ns
 
+    if raw and raw[0] == "preview":
+        pv_parser = argparse.ArgumentParser(
+            prog="prpt preview",
+            description=(
+                "Type a prompt and press Enter to see the SLM's routing decision "
+                "(the v2 ExecutionSpec JSON) and the rewritten prompt, without "
+                "forwarding anything to a coding agent. Pass a prompt to preview "
+                "once; omit it for an interactive loop (Ctrl-D / blank line to exit)."))
+        pv_parser.add_argument("prompt", nargs="*",
+                               help="Optional prompt; omit for an interactive loop")
+        pv_parser.add_argument(
+            "--normalizer", default="slm",
+            choices=["heuristic", "slm", "slm-anthropic", "slm-anthropic-v2",
+                     "slm-openai", "slm-openai-v2", "slm-subscription", "slm-subscription-v2"],
+            help="SLM backend (default: slm, auto-detect)")
+        pv_parser.add_argument("--api-key", default=None, help="API key for the SLM")
+        pv_parser.add_argument("--cwd", default=os.getcwd(),
+                               help="Working directory for repo context")
+        pv_parser.add_argument("--theme", default="plain", choices=["plain", "dark"],
+                               help="Terminal output theme")
+        pv_parser.add_argument("--high-stakes", action="store_true",
+                               help="Conservative mode (forces low confidence / review)")
+        pv_parser.add_argument("--no-repo-context", action="store_true",
+                               help="Skip loading repo file content into the SLM")
+        ns = pv_parser.parse_args(raw[1:])
+        ns.subcommand = "preview"
+        return ns
+
     # Short-circuit: --advanced-help prints help text including the flags
     # hidden from the normal --help. Implemented before argparse so we can
     # show every flag (argparse SUPPRESS makes them un-printable otherwise).
@@ -130,6 +158,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "  prpt \"fix the flaky payment test\"          # auto-detects claude/codex\n"
             "  prpt --dry-run \"refactor auth, no API changes\"\n"
             "  prpt --tool codex \"add dark mode\"\n"
+            "  prpt preview                               # playground: see routing spec + rewrite\n"
             "  prpt setup                                 # one-time onboarding (post-install)\n"
             "  prpt doctor                                # re-check setup\n"
             "  prpt install-hook                          # wire into Claude Code\n"
@@ -142,7 +171,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("prompt", nargs="*", help="Raw developer prompt")
     parser.add_argument(
         "--normalizer", default="slm",
-        choices=["heuristic", "slm", "slm-anthropic", "slm-openai", "slm-openai-v2", "slm-subscription"],
+        choices=["heuristic", "slm", "slm-anthropic", "slm-anthropic-v2", "slm-openai", "slm-openai-v2", "slm-subscription", "slm-subscription-v2"],
         metavar="{slm,heuristic}",
         help="slm (default; auto-detects an available SLM backend), "
              "heuristic (rule-based, no API/auth needed). "
@@ -169,6 +198,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     # Hidden / advanced flags (kept working, suppressed in --help).
     parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--show-json", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--show-spec", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--compare", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-repo-context", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--gate-session", action="store_true", help=argparse.SUPPRESS)
@@ -192,6 +222,8 @@ onboarding focused. They are stable and supported, just researcher/internal.
 
   --strict              Always review when ambiguity exists.
   --show-json           Print the normalization JSON before the final prompt.
+  --show-spec           Print the parsed v2 ExecutionSpec (the SLM's JSON routing
+                        decision) to stderr. v2 normalizers only.
   --compare             Side-by-side token comparison: raw vs optimized; no exec.
   --no-repo-context     Skip loading repo file contents for the SLM.
   --gate-session        Skip loading prior session turns when the current prompt
@@ -206,18 +238,28 @@ onboarding focused. They are stable and supported, just researcher/internal.
 
 Normalizer aliases (--normalizer):
   slm                   Default. Auto-detects ANTHROPIC_API_KEY, OPENAI_API_KEY,
-                        Max OAuth, codex login - whichever is set.
+                        Max OAuth, codex login - whichever is set. SDK keys use
+                        the v2 (JSON spec + routing) normalizers.
   heuristic             Rule-based, no API/auth needed.
-  slm-anthropic         Force Anthropic SDK normalizer.
-  slm-openai            Force OpenAI SDK normalizer.
-  slm-openai-v2         JSON execution-spec normalizer (experimental).
-  slm-subscription      Max OAuth normalizer (no API key required).
+  slm-anthropic         Force Anthropic SDK normalizer (legacy v1 prose).
+  slm-anthropic-v2      Force Anthropic JSON execution-spec normalizer (routing
+                        + clarify).
+  slm-openai            Force OpenAI SDK normalizer (legacy v1 prose).
+  slm-openai-v2         Force OpenAI JSON execution-spec normalizer (routing +
+                        clarify).
+  slm-subscription      Max OAuth / ChatGPT normalizer, legacy v1 prose (no API
+                        key required).
+  slm-subscription-v2   Max OAuth / ChatGPT normalizer with JSON spec (routing +
+                        clarify); the auto-detect default for subscription auth.
 
 Hidden subcommands and env vars:
   PROMPTPILOT_JUDGE=max|codex|anthropic|openai
                         Force the judge backend (handoff/restart path).
   PROMPTPILOT_LET_SLM_ANSWER=1
                         Same as --let-slm-answer.
+  PROMPTPILOT_V2_RAW_LOG=1
+                        Log each v2 SLM raw JSON response to
+                        ~/.promptpilot/v2_slm_raw.jsonl (debug parse/routing).
   CLAUDE_MODEL=opus|sonnet|haiku
                         Override the Claude model in the chain harness.
   USE_MAX_AUTH=1        Chain harness uses Max OAuth instead of --bare.
@@ -298,8 +340,8 @@ def _install_hook(args: argparse.Namespace) -> int:
 def _resolve_route(normalizer) -> str:
     """Return the routing decision for this normalize() call.
 
-    v2 normalizers (slm-openai-v2) populate `_last_spec.route` with one of
-    {answer, act, clarify, passthrough}. v1 normalizers don't carry a spec;
+    v2 normalizers (slm-anthropic-v2 / slm-openai-v2 / slm-subscription-v2) populate
+    `_last_spec.route` with one of {answer, act, clarify, passthrough}. v1 normalizers don't carry a spec;
     fall back to deriving from intent:
       - intent="explain" -> "answer" (offer SLM direct response)
       - intent="act" or unset -> "act" (forward to agent)
@@ -338,7 +380,7 @@ def _build_assistant_record(normalizer, normalized, modified_files) -> str:
     """Build the assistant session-turn record from spec.memory_record (v2)
     or the SLM rewrite (v1), prefixed with the adapter's modified files.
 
-    v2 normalizers (slm-openai-v2) populate `_last_spec.memory_record` with a
+    v2 normalizers (slm-anthropic-v2 / slm-openai-v2 / slm-subscription-v2) populate `_last_spec.memory_record` with a
     pre-run one-sentence summary of intent + constraints. That's higher-signal
     for future referential turns than the verbose rewritten prompt, so it
     leads when present. v1 normalizers don't carry a spec; fall back to the
@@ -376,6 +418,76 @@ def _log_kwargs(args: argparse.Namespace, repo, raw_prompt, final_prompt, exit_c
         dry_run=args.dry_run, pass_through=args.pass_through,
         normalized=normalized, validation=validation, token_stats=token_stats,
     )
+
+
+def _cmd_preview(args) -> int:
+    """`prpt preview`: send each prompt to the SLM on Enter and print the v2
+    ExecutionSpec (JSON) + the rewrite — a playground that never forwards to a
+    coding agent. Single-shot if a prompt is given; otherwise loops until EOF.
+    """
+    from prpt.core.spec import spec_to_dict
+
+    repo = RepoContextCollector().collect(args.cwd)
+    try:
+        normalizer = create_normalizer(
+            args.normalizer, api_key=args.api_key,
+            load_repo_content=not args.no_repo_context,
+        )
+    except (ImportError, RuntimeError) as exc:
+        if args.normalizer == "slm":
+            write_stderr(
+                "[promptpilot] preview needs an SLM backend ({0}). Set "
+                "ANTHROPIC_API_KEY / OPENAI_API_KEY, or run "
+                "`claude auth login --claudeai`.".format(exc))
+            return 1
+        write_stderr("Error: {0}".format(exc))
+        return 1
+
+    one_shot = bool(args.prompt)
+    if not one_shot:
+        write_stderr(
+            "PromptPilot preview — type a prompt, press Enter to see the routing "
+            "spec (JSON) + rewrite. Each line hits the SLM (~1-2s). Ctrl-D or a "
+            "blank line exits. Nothing is forwarded to a coding agent.\n"
+        )
+
+    while True:
+        if one_shot:
+            line = " ".join(args.prompt).strip()
+        else:
+            try:
+                line = input("prpt> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+        if not line:
+            break
+
+        write_stderr("[promptpilot] routing…")
+        try:
+            norm = normalizer.normalize(line, repo, high_stakes=args.high_stakes)
+        except Exception as exc:  # never crash the loop on one bad turn
+            write_stderr("[promptpilot] normalize failed: {0}".format(exc))
+            if one_shot:
+                return 1
+            continue
+
+        route = _resolve_route(normalizer)
+        spec = getattr(normalizer, "_last_spec", None)
+        print_preview(
+            route=route, task_type=norm.task_type, confidence=norm.confidence,
+            spec_dict=spec_to_dict(spec) if spec is not None else None,
+            rewrite_text=norm.normalized_prompt, theme=args.theme,
+        )
+
+        # Each preview turn is independent: drop cached repo context so the next
+        # prompt re-runs fresh rather than reusing the first turn's context.
+        if hasattr(normalizer, "_last_context_block"):
+            normalizer._last_context_block = None
+
+        if one_shot:
+            break
+    return 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -434,6 +546,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   c=info["cost_usd"], w=info["walltime_s"],
                   u=info["user_msg_chars"], a=info["assistant_msg_chars"]))
         return 0
+    if args.subcommand == "preview":
+        return _cmd_preview(args)
 
     # Prompt
     raw_prompt = " ".join(args.prompt).strip() if args.prompt else ""
@@ -551,6 +665,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.show_json:
         print(json.dumps(asdict(normalized), indent=2))
         print()
+
+    # --show-spec: print the parsed v2 ExecutionSpec (the JSON routing decision
+    # the SLM emitted) to stderr. The spec drives routing internally and is
+    # never forwarded to the coding agent verbatim, so this is the way to see
+    # it. Only v2 normalizers carry `_last_spec`.
+    if args.show_spec:
+        spec = getattr(normalizer, "_last_spec", None)
+        if spec is not None:
+            from prpt.core.spec import spec_to_dict
+            write_stderr("[promptpilot] ExecutionSpec (v2):")
+            write_stderr(json.dumps(spec_to_dict(spec), indent=2, ensure_ascii=False))
+        else:
+            write_stderr(
+                "[promptpilot] --show-spec: no ExecutionSpec available "
+                "(v1 normalizer, or the v2 JSON parse fell back to the prose envelope)."
+            )
 
     # route=clarify: SLM judged the prompt ambiguous. Print the clarifying
     # question and exit so the user can refine and re-run. --auto and

@@ -270,23 +270,40 @@ def create_normalizer(
         from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
         return OpenAISLMNormalizerV2(api_key=api_key, load_repo_content=load_repo_content)
 
+    if selected == "slm-anthropic-v2":
+        from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+        return AnthropicSLMNormalizerV2(api_key=api_key, load_repo_content=load_repo_content)
+
     if selected == "slm-subscription":
         from prpt.normalizers.slm_subscription import SubscriptionSLMNormalizer
         return SubscriptionSLMNormalizer(load_repo_content=load_repo_content)
+
+    if selected == "slm-subscription-v2":
+        from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+        return SubscriptionSLMNormalizerV2(load_repo_content=load_repo_content)
 
     if selected == "slm":
         # Auto-detect normalizer backend.
         #
         # Priority:
-        #   1. Explicit PROMPTPILOT_JUDGE -> subscription path (user already chose)
-        #   2. ANTHROPIC_API_KEY      -> slm-anthropic (faster, prompt caching)
-        #   3. OPENAI_API_KEY         -> slm-openai
-        #   4. Max OAuth logged in    -> slm-subscription (no API charges)
+        #   1. Explicit PROMPTPILOT_JUDGE -> slm-subscription-v2 (user already chose)
+        #   2. ANTHROPIC_API_KEY      -> slm-anthropic-v2 (JSON spec + routing)
+        #   3. OPENAI_API_KEY         -> slm-openai-v2
+        #   4. Max OAuth logged in    -> slm-subscription-v2 (no API charges)
+        #
+        # Every auto-detected path now defaults to a v2 (JSON ExecutionSpec)
+        # normalizer: v2 is a strict superset of v1 — it falls back to the v1
+        # prose parser on non-JSON output and populates the same
+        # NormalizedRequest fields — and it adds the routing signal
+        # (answer/act/clarify/passthrough) that powers the clarify gate, on the
+        # subscription default as well as the SDK keys. Pin the legacy prose
+        # path with `--normalizer slm-anthropic` / `slm-openai` /
+        # `slm-subscription` if you need pre-v2 behavior.
         #
         # The subscription path is a fallback rather than the top choice here
         # because the SDK paths run faster and use prompt caching. If a user
         # wants subscription routing as the primary, they can pass
-        # `--normalizer slm-subscription` explicitly OR set PROMPTPILOT_JUDGE=max.
+        # `--normalizer slm-subscription-v2` explicitly OR set PROMPTPILOT_JUDGE=max.
         # See slm_subscription.py docstring for the compliance posture.
         anthropic_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         openai_key = api_key or os.environ.get("OPENAI_API_KEY")
@@ -294,30 +311,30 @@ def create_normalizer(
 
         if explicit_judge in ("max", "codex", "anthropic", "openai"):
             try:
-                from prpt.normalizers.slm_subscription import SubscriptionSLMNormalizer
-                return SubscriptionSLMNormalizer(load_repo_content=load_repo_content)
+                from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+                return SubscriptionSLMNormalizerV2(load_repo_content=load_repo_content)
             except (ImportError, RuntimeError):
                 pass
 
         if anthropic_key:
             try:
-                from prpt.normalizers.slm_anthropic import SLMNormalizer
-                return SLMNormalizer(api_key=anthropic_key, load_repo_content=load_repo_content)
+                from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+                return AnthropicSLMNormalizerV2(api_key=anthropic_key, load_repo_content=load_repo_content)
             except ImportError:
                 pass
 
         if openai_key:
             try:
-                from prpt.normalizers.slm_openai import OpenAISLMNormalizer
-                return OpenAISLMNormalizer(api_key=openai_key, load_repo_content=load_repo_content)
+                from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
+                return OpenAISLMNormalizerV2(api_key=openai_key, load_repo_content=load_repo_content)
             except ImportError:
                 pass
 
         # No API keys -- fall through to subscription (Max OAuth). Succeeds if
         # `claude auth login --claudeai` has been run.
         try:
-            from prpt.normalizers.slm_subscription import SubscriptionSLMNormalizer
-            return SubscriptionSLMNormalizer(load_repo_content=load_repo_content)
+            from prpt.normalizers.slm_subscription_v2 import SubscriptionSLMNormalizerV2
+            return SubscriptionSLMNormalizerV2(load_repo_content=load_repo_content)
         except (ImportError, RuntimeError):
             pass
 
@@ -329,5 +346,5 @@ def create_normalizer(
         )
 
     raise ValueError(
-        "Unsupported normalizer: '{0}'. Choose from: heuristic, slm, slm-anthropic, slm-openai, slm-openai-v2, slm-subscription".format(name)
+        "Unsupported normalizer: '{0}'. Choose from: heuristic, slm, slm-anthropic, slm-anthropic-v2, slm-openai, slm-openai-v2, slm-subscription, slm-subscription-v2".format(name)
     )

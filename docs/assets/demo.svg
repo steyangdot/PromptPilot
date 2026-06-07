@@ -1,27 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="707" height="580" viewBox="0 0 707 580" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14">
-<rect x="0" y="0" width="707" height="580" rx="8" fill="#0d1117" stroke="#30363d"/>
-<rect x="0" y="0" width="707" height="34" rx="8" fill="#161b22"/>
-<rect x="0" y="24" width="707" height="10" fill="#161b22"/>
-<circle cx="20" cy="17" r="6" fill="#ff7b72"/>
-<circle cx="40" cy="17" r="6" fill="#e3b341"/>
-<circle cx="60" cy="17" r="6" fill="#7ee787"/>
-<text x="353" y="22" fill="#8b949e" text-anchor="middle">prpt — PromptPilot demo</text>
-<text x="22" y="56"><tspan fill="#7ee787" xml:space="preserve">$ </tspan><tspan fill="#c9d1d9" xml:space="preserve">python examples/demo.py</tspan></text>
-<text x="22" y="102"><tspan fill="#56d4dd" xml:space="preserve">RAW PROMPT</tspan></text>
-<text x="22" y="125"><tspan fill="#8b949e" xml:space="preserve">  the OrderSyncWorker keeps timing out under load and dropping events. find</tspan></text>
-<text x="22" y="148"><tspan fill="#8b949e" xml:space="preserve">  the root cause and fix the timeout. do not change the public API, keep the</tspan></text>
-<text x="22" y="171"><tspan fill="#8b949e" xml:space="preserve">  DB schema backward compatible, and ship a minimal patch with a regression</tspan></text>
-<text x="22" y="194"><tspan fill="#8b949e" xml:space="preserve">  test in tests/test_worker.py.</tspan></text>
-<text x="22" y="240"><tspan fill="#56d4dd" xml:space="preserve">PROMPTPILOT  </tspan><tspan fill="#8b949e" xml:space="preserve">route=</tspan><tspan fill="#d2a8ff" xml:space="preserve">act</tspan><tspan fill="#8b949e" xml:space="preserve">  task=</tspan><tspan fill="#d2a8ff" xml:space="preserve">root_cause_analysis</tspan><tspan fill="#8b949e" xml:space="preserve">  confidence=</tspan><tspan fill="#d2a8ff" xml:space="preserve">high</tspan></text>
-<text x="22" y="286"><tspan fill="#56d4dd" xml:space="preserve">EXTRACTED</tspan></text>
-<text x="22" y="309"><tspan fill="#8b949e" xml:space="preserve">  protected spans   </tspan><tspan fill="#c9d1d9" xml:space="preserve">minimal patch</tspan></text>
-<text x="22" y="332"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#c9d1d9" xml:space="preserve">backward compatible</tspan></text>
-<text x="22" y="355"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#c9d1d9" xml:space="preserve">root cause</tspan></text>
-<text x="22" y="378"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#c9d1d9" xml:space="preserve">OrderSyncWorker</tspan></text>
-<text x="22" y="401"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#8b949e" xml:space="preserve">(+3 more)</tspan></text>
-<text x="22" y="424"><tspan fill="#8b949e" xml:space="preserve">  hard constraints  </tspan><tspan fill="#c9d1d9" xml:space="preserve">fix the timeout. do not change the public API</tspan></text>
-<text x="22" y="447"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#c9d1d9" xml:space="preserve">keep the DB schema backward compatible</tspan></text>
-<text x="22" y="470"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#c9d1d9" xml:space="preserve">ship a minimal patch with a regression test in tests/te...</tspan></text>
-<text x="22" y="493"><tspan fill="#8b949e" xml:space="preserve">                    </tspan><tspan fill="#8b949e" xml:space="preserve">(+2 more)</tspan></text>
-<text x="22" y="539"><tspan fill="#7ee787" xml:space="preserve">&gt; structured prompt forwarded to the coding agent </tspan><tspan fill="#8b949e" xml:space="preserve">(constraints pinned first)</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1036" viewBox="0 0 1000 1036">
+<rect x="0" y="0" width="1000" height="1036" rx="24" fill="#0d1117"/>
+<defs><linearGradient id="hero" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#1d4ed8" stop-opacity="0.33"/><stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.20"/><stop offset="1" stop-color="#14b8a6" stop-opacity="0.16"/></linearGradient></defs>
+<rect x="0" y="0" width="1000" height="1036" rx="24" fill="url(#hero)"/>
+<text x="28" y="44" fill="#c9d1d9" font-size="26" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="800">PromptPilot visual demo</text>
+<text x="28" y="72" fill="#8b949e" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif">A vague ask becomes a precise brief — it asks one sharp question first, instead of burning an agent run on a guess.</text>
+<rect x="852" y="30" width="120" height="24" rx="12" fill="#7ee787" fill-opacity="0.14" stroke="#7ee787" stroke-opacity="0.55"/>
+<text x="912" y="46" fill="#7ee787" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700" text-anchor="middle">real SLM</text>
+<rect x="706" y="30" width="134" height="24" rx="12" fill="#58a6ff" fill-opacity="0.14" stroke="#58a6ff" stroke-opacity="0.55"/>
+<text x="773" y="46" fill="#58a6ff" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700" text-anchor="middle">slm-anthropic-v2</text>
+<rect x="88" y="104" width="884" height="84" rx="14" fill="#161b22" stroke="#30363d"/>
+<rect x="88" y="104" width="5" height="84" rx="2.5" fill="#58a6ff"/>
+<circle cx="52" cy="128" r="14" fill="#58a6ff" fill-opacity="0.16" stroke="#58a6ff" stroke-opacity="0.7"/>
+<text x="52" y="133" fill="#58a6ff" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="800" text-anchor="middle">1</text>
+<text x="106" y="130" fill="#c9d1d9" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700">You type</text>
+<text x="106" y="152" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">the checkout page is slow, make it faster</tspan></text>
+<line x1="52" y1="192" x2="52" y2="218" stroke="#6e7681" stroke-width="2"/>
+<path d="M 47 211 L 52 218 L 57 211" fill="none" stroke="#6e7681" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="88" y="214" fill="#8b949e" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif">PromptPilot routes the request</text>
+<rect x="88" y="222" width="884" height="248" rx="14" fill="#161b22" stroke="#30363d"/>
+<rect x="88" y="222" width="5" height="248" rx="2.5" fill="#e3b341"/>
+<circle cx="52" cy="246" r="14" fill="#e3b341" fill-opacity="0.16" stroke="#e3b341" stroke-opacity="0.7"/>
+<text x="52" y="251" fill="#e3b341" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="800" text-anchor="middle">2</text>
+<text x="106" y="248" fill="#c9d1d9" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700">PromptPilot  ·  asks instead of guessing</text>
+<rect x="868" y="233" width="86" height="24" rx="12" fill="#e3b341" fill-opacity="0.14" stroke="#e3b341" stroke-opacity="0.55"/>
+<text x="911" y="249" fill="#e3b341" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700" text-anchor="middle">route=clarify</text>
+<text x="106" y="270" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">What is the primary performance bottleneck on the checkout page?</tspan></text>
+<text x="106" y="308" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#56d4dd" xml:space="preserve">  A) </tspan><tspan fill="#c9d1d9" xml:space="preserve">Page load time / asset delivery</tspan></text>
+<text x="106" y="330" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#56d4dd" xml:space="preserve">  B) </tspan><tspan fill="#c9d1d9" xml:space="preserve">API calls / backend latency</tspan></text>
+<text x="106" y="352" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#56d4dd" xml:space="preserve">  C) </tspan><tspan fill="#c9d1d9" xml:space="preserve">Form rendering / JavaScript execution</tspan></text>
+<text x="106" y="374" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#56d4dd" xml:space="preserve">  D) </tspan><tspan fill="#c9d1d9" xml:space="preserve">Database queries</tspan></text>
+<text x="106" y="396" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#56d4dd" xml:space="preserve">  E) </tspan><tspan fill="#c9d1d9" xml:space="preserve">Not sure – need full profiling</tspan></text>
+<text x="106" y="434" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#8b949e" xml:space="preserve">Also: are there any critical user flows or payment integrations we must not break?</tspan></text>
+<line x1="52" y1="474" x2="52" y2="500" stroke="#6e7681" stroke-width="2"/>
+<path d="M 47 493 L 52 500 L 57 493" fill="none" stroke="#6e7681" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="88" y="496" fill="#8b949e" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif">you answer in one line</text>
+<rect x="88" y="504" width="884" height="128" rx="14" fill="#161b22" stroke="#30363d"/>
+<rect x="88" y="504" width="5" height="128" rx="2.5" fill="#58a6ff"/>
+<circle cx="52" cy="528" r="14" fill="#58a6ff" fill-opacity="0.16" stroke="#58a6ff" stroke-opacity="0.7"/>
+<text x="52" y="533" fill="#58a6ff" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="800" text-anchor="middle">3</text>
+<text x="106" y="530" fill="#c9d1d9" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700">You answer</text>
+<text x="106" y="552" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">The database side — api/checkout.py runs a separate query per line item, so checkout drags</tspan></text>
+<text x="106" y="574" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">on big carts (p95 is around 3s). Keep the public API and behavior unchanged, and add a</tspan></text>
+<text x="106" y="596" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">regression/benchmark test.</tspan></text>
+<line x1="52" y1="636" x2="52" y2="662" stroke="#6e7681" stroke-width="2"/>
+<path d="M 47 655 L 52 662 L 57 655" fill="none" stroke="#6e7681" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="88" y="658" fill="#8b949e" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif">PromptPilot routes the request</text>
+<rect x="88" y="666" width="884" height="276" rx="14" fill="#161b22" stroke="#30363d"/>
+<rect x="88" y="666" width="5" height="276" rx="2.5" fill="#7ee787"/>
+<circle cx="52" cy="690" r="14" fill="#7ee787" fill-opacity="0.16" stroke="#7ee787" stroke-opacity="0.7"/>
+<text x="52" y="695" fill="#7ee787" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="800" text-anchor="middle">4</text>
+<text x="106" y="692" fill="#c9d1d9" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700">PromptPilot  ·  forwards a precise brief to the coding agent</text>
+<rect x="868" y="677" width="86" height="24" rx="12" fill="#7ee787" fill-opacity="0.14" stroke="#7ee787" stroke-opacity="0.55"/>
+<text x="911" y="693" fill="#7ee787" font-size="12" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif" font-weight="700" text-anchor="middle">route=act</text>
+<text x="106" y="714" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#8b949e" xml:space="preserve">task=</tspan><tspan fill="#d2a8ff" xml:space="preserve">performance</tspan><tspan fill="#8b949e" xml:space="preserve">   confidence=</tspan><tspan fill="#d2a8ff" xml:space="preserve">high</tspan></text>
+<text x="106" y="752" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">Optimize api/checkout.py to reduce database query count on large carts. Currently it runs</tspan></text>
+<text x="106" y="774" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">one query per line item, causing p95 latency around 3s. Use batch queries or similar</tspan></text>
+<text x="106" y="796" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">techniques to fetch all line items in one or two queries. Keep the public API signature and</tspan></text>
+<text x="106" y="818" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">checkout behavior unchanged. Add a regression test and benchmark test that verifies the</tspan></text>
+<text x="106" y="840" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">optimization works for large carts (e.g., 50+ items) and doesn't break existing</tspan></text>
+<text x="106" y="862" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#c9d1d9" xml:space="preserve">functionality.</tspan></text>
+<text x="106" y="884" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#8b949e" xml:space="preserve">[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py,</tspan></text>
+<text x="106" y="906" fill="#c9d1d9" font-size="14" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"><tspan fill="#8b949e" xml:space="preserve">tests/test_checkout.py]</tspan></text>
+<rect x="88" y="964" width="884" height="44" rx="14" fill="#052e2b" fill-opacity="0.85" stroke="#7ee787" stroke-opacity="0.45"/>
+<text x="108" y="991" fill="#c9d1d9" font-size="14" font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif"><tspan fill="#7ee787" xml:space="preserve">✓ </tspan><tspan fill="#c9d1d9" xml:space="preserve">A vague ask earns one sharp question — not a wrong guess — then a constraint-pinned brief, forwarded to the agent once.</tspan></text>
 </svg>

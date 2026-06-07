@@ -14,54 +14,17 @@ Failure discipline (per the v2 roadmap parser-migration guardrails):
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 
-from prpt.core.spec import ExecutionSpec, parse_spec_json
+from prpt.core.spec import SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json
 from prpt.core.types import RepoMetadata
-from prpt.core.utils import write_stderr
+from prpt.core.utils import log_v2_raw, write_stderr
 from prpt.normalizers.slm_openai import OpenAISLMNormalizer
 
-
-_SYSTEM_JSON_SPEC = (
-    "You are a prompt optimizer for AI coding assistants.\n\n"
-    "Given a developer's raw coding task prompt (and optional repository "
-    "context), output a single JSON object describing both how to route the "
-    "request and the rewritten prompt to send downstream.\n\n"
-    "Schema (emit JSON only -- no preamble, no fences, no commentary):\n"
-    "{\n"
-    '  "route":           "answer | act | clarify | passthrough",\n'
-    '  "intent":          "explain | act",\n'
-    '  "scope":           "pinpoint | localized | broad | new",\n'
-    '  "needs_history":   true | false,\n'
-    '  "context_policy":  "none | tree | diff | changed | targeted | full",\n'
-    '  "target_files":    ["path/one.py", "path/two.py"],\n'
-    '  "risk":            "low | medium | high",\n'
-    '  "downstream_prompt": "<the rewritten prompt to send to the downstream coding agent>",\n'
-    '  "memory_record":   "<one short sentence summarizing intent + constraints for future turns>"\n'
-    "}\n\n"
-    "Field guidance:\n"
-    "- route: pick 'answer' if you can fully answer from context (explanations); "
-    "'act' if a code change is needed; 'clarify' if the prompt is underspecified "
-    "and asking the user is cheaper than guessing; 'passthrough' if rewriting "
-    "is risky (highly specific, already-precise prompts).\n"
-    "- intent: 'explain' for understanding questions, 'act' for code changes.\n"
-    "- scope: surgical (pinpoint) -> 50%+ of a file (broad) -> new files (new).\n"
-    "- context_policy: how much repo context the downstream agent needs to do "
-    "the job. Default 'targeted' (specific files only).\n"
-    "- target_files: relative paths the downstream agent will likely need.\n"
-    "- risk: 'high' if change touches public API, security, schemas, or large "
-    "blast radius.\n"
-    "- downstream_prompt: the actual rewritten prompt -- precise, unambiguous, "
-    "preserves identifiers and hard constraints exactly. No commentary.\n"
-    "- memory_record: a single sentence describing what the user wanted and "
-    "what constraints applied, for future referential turns.\n\n"
-    "Rules:\n"
-    "- Output ONE valid JSON object and nothing else.\n"
-    "- Never invent requirements not present in the original.\n"
-    "- Preserve identifiers, file names, technical terms verbatim.\n"
-    "- Keep hard constraints verbatim (e.g. 'do not touch X')."
-)
+# Backend-agnostic v2 system prompt now lives in prpt.core.spec so the OpenAI and
+# Anthropic v2 normalizers can't drift apart. Kept here as a module alias for
+# backward compatibility with existing imports/tests.
+_SYSTEM_JSON_SPEC = SYSTEM_JSON_SPEC
 
 
 class OpenAISLMNormalizerV2(OpenAISLMNormalizer):
@@ -117,29 +80,16 @@ class OpenAISLMNormalizerV2(OpenAISLMNormalizer):
             }
             raw = response.choices[0].message.content or ""
 
-            # TEMP diagnostic: when PROMPTPILOT_V2_RAW_LOG=1, capture every
-            # call's user_content + raw response + finish_reason so failed
-            # turns can be inspected post-hoc. Safe to leave on (best-effort,
-            # no exceptions surface). Remove after v2 stabilizes.
-            if os.environ.get("PROMPTPILOT_V2_RAW_LOG") == "1":
-                import json as _json, time as _time
-                from pathlib import Path as _Path
-                try:
-                    p = _Path.home() / ".promptpilot" / "v2_slm_raw.jsonl"
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    with p.open("a", encoding="utf-8") as fh:
-                        fh.write(_json.dumps({
-                            "ts": _time.time(),
-                            "user_content_len": len(user_content),
-                            "user_content_tail": user_content[-1500:],
-                            "raw": raw,
-                            "raw_len": len(raw),
-                            "finish_reason": response.choices[0].finish_reason,
-                            "in_tok": response.usage.prompt_tokens,
-                            "out_tok": response.usage.completion_tokens,
-                        }) + "\n")
-                except Exception:
-                    pass
+            # When PROMPTPILOT_V2_RAW_LOG=1, capture the literal model response
+            # (the JSON ExecutionSpec) for post-hoc inspection of routing / parse
+            # behavior. Shared helper -> all three v2 backends log the same way.
+            log_v2_raw(
+                "openai-v2", raw,
+                user_content_tail=user_content[-1500:],
+                finish_reason=getattr(response.choices[0], "finish_reason", None),
+                in_tok=response.usage.prompt_tokens,
+                out_tok=response.usage.completion_tokens,
+            )
 
             # Primary parser: JSON spec
             spec = parse_spec_json(raw)

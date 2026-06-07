@@ -182,6 +182,123 @@ class TestMainFlow:
         output = capsys.readouterr().out
         assert '"task_type"' in output
 
+    def test_show_spec_prints_execution_spec(self, monkeypatch, tmp_path, capsys):
+        """--show-spec prints the parsed v2 ExecutionSpec JSON to stderr."""
+        from prpt.core.spec import ExecutionSpec
+
+        class FakeNormalizer:
+            _last_intent = "act"
+            _last_scope = "localized"
+            _last_spec = ExecutionSpec(
+                route="act", intent="act", scope="localized",
+                target_files=["api/checkout.py"], risk="medium",
+                downstream_prompt="Fix the N+1 query in api/checkout.py.",
+                memory_record="N+1 fix in checkout.",
+            )
+
+            def normalize(self, prompt, repo, high_stakes=False):
+                return NormalizedRequest(
+                    original_prompt=prompt, task_type="bug_fix", objective="Fix N+1",
+                    explicit_context=[], hard_constraints=[], soft_preferences=[],
+                    requested_output=[], protected_spans=[], ambiguities=[],
+                    assumptions=[], omissions=[], confidence="medium",
+                    needs_review=False,
+                    rewrite_mode=RewriteMode.EXTRACT_PLUS_LIGHT_REWRITE.value,
+                    normalized_prompt="Fix the N+1 query in api/checkout.py.",
+                )
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: FakeNormalizer())
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+
+        exit_code = main([
+            "--cwd", str(tmp_path), "--normalizer", "slm",
+            "--dry-run", "--show-spec", "make checkout faster",
+        ])
+        assert exit_code == 0
+        err = capsys.readouterr().err
+        assert "ExecutionSpec" in err
+        assert '"route": "act"' in err
+        assert "api/checkout.py" in err
+
+    def test_show_spec_no_spec_on_v1(self, capsys):
+        """On a v1 path (heuristic), --show-spec prints a clear no-spec note."""
+        exit_code = main([
+            "--dry-run", "--show-spec", "--normalizer", "heuristic",
+            "fix the timeout bug in payments",
+        ])
+        assert exit_code == 0
+        err = capsys.readouterr().err
+        assert "no ExecutionSpec available" in err
+
+    def _fake_v2_normalizer(self, route, downstream, task="bug_fix"):
+        from prpt.core.spec import ExecutionSpec
+
+        class FakeNormalizer:
+            _last_intent = "act"
+            _last_scope = "localized"
+            _last_context_block = None
+            _last_spec = ExecutionSpec(
+                route=route, intent="act", scope="localized",
+                target_files=["api/checkout.py"], risk="medium",
+                downstream_prompt=downstream, memory_record="preview test.",
+            )
+
+            def normalize(self, prompt, repo, high_stakes=False):
+                return NormalizedRequest(
+                    original_prompt=prompt, task_type=task, objective="obj",
+                    explicit_context=[], hard_constraints=[], soft_preferences=[],
+                    requested_output=[], protected_spans=[], ambiguities=[],
+                    assumptions=[], omissions=[], confidence="medium",
+                    needs_review=False,
+                    rewrite_mode=RewriteMode.EXTRACT_PLUS_LIGHT_REWRITE.value,
+                    normalized_prompt=downstream,
+                )
+
+        return FakeNormalizer()
+
+    def test_preview_single_shot(self, monkeypatch, tmp_path, capsys):
+        """`prpt preview "<prompt>"` prints the ExecutionSpec JSON + rewrite once."""
+        norm = self._fake_v2_normalizer("act", "Fix the N+1 query in api/checkout.py.")
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: norm)
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+
+        exit_code = main(["preview", "--cwd", str(tmp_path), "make checkout faster"])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert "ExecutionSpec (JSON)" in out
+        assert '"route": "act"' in out
+        assert "Fix the N+1 query in api/checkout.py." in out
+        assert "Rewritten prompt" in out
+
+    def test_preview_interactive_loop(self, monkeypatch, tmp_path, capsys):
+        """`prpt preview` with no arg loops, reading prompts until a blank line."""
+        norm = self._fake_v2_normalizer("clarify", "Which part is slow?", task="unknown")
+
+        class FakeCollector:
+            def collect(self, cwd):
+                return RepoMetadata(cwd=str(tmp_path), branch="main")
+
+        monkeypatch.setattr("prpt.cli.create_normalizer", lambda *a, **k: norm)
+        monkeypatch.setattr("prpt.cli.RepoContextCollector", lambda: FakeCollector())
+        inputs = iter(["the app is slow", ""])  # one prompt, then blank -> exit
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+        exit_code = main(["preview", "--cwd", str(tmp_path)])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert '"route": "clarify"' in out
+        assert "Clarifying question:" in out
+        assert "Which part is slow?" in out
+
     def test_dry_run_dark_theme(self, capsys):
         exit_code = main(["--dry-run", "--theme", "dark", "fix the timeout bug in payments"])
         assert exit_code == 0
