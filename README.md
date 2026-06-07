@@ -16,6 +16,21 @@ The SLM manages the workflow; the frontier model still writes and debugs the cod
 
 > **Measured (hybrid mode, one 15-turn chain):** ~24k input tokens of SLM work directed ~12.66M input tokens of agent work — the control layer was **~0.2%** of the input footprint, and the bounded session ran the same work on **~7.6× fewer** input tokens than the tool's native `--resume`. Single workload, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
 
+## Demo
+
+![PromptPilot visual demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief to the coding agent](docs/assets/demo.svg)
+
+*Above: a real `slm-anthropic-v2` run. A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a one-line answer it routes **`act`** and forwards a precise, constraint-pinned brief. Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
+
+Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live routing + rewrite pictured above. The `clarify` route needs a v2 SLM backend, which the default `slm` now auto-selects for whichever auth you have — `slm-anthropic-v2` / `slm-openai-v2` (API key) or `slm-subscription-v2` (Max OAuth / ChatGPT):
+
+```bash
+python examples/demo.py          # offline heuristic — zero setup
+python examples/demo.py --slm    # live routing + rewrite (needs an API key)
+```
+
+Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.
+
 ## How it works
 
 ```mermaid
@@ -106,21 +121,6 @@ prpt restart                              # collapse a heavy session -> handoff.
 > **Applying edits:** `prpt "..."` forwards the brief to the agent in a single non-interactive pass, and in that mode **neither agent writes files by default** — **Claude Code** *proposes* edits (pending approval), **Codex** runs in a *read-only sandbox*. To let them apply changes, add the agent's auto-approve flag: Claude → `--tool-arg=--permission-mode --tool-arg=acceptEdits`; Codex → `--tool-arg=--full-auto`. Or use `prpt install-hook` (below) to run the optimization *inside* an interactive Claude Code / Codex session where you approve changes as usual. `--dry-run` only prints the brief.
 
 `prpt doctor` re-runs setup checks; `prpt install-hook` wires prompt/tool hooks into Claude Code (or Codex via `prpt install-hook --tool codex`). Full flag set: `prpt --help` (or `prpt --advanced-help` for researcher/internal flags). New here? → **[QUICKSTART.md](QUICKSTART.md)**.
-
-## Demo
-
-![PromptPilot visual demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief to the coding agent](docs/assets/demo.svg)
-
-*Above: a real `slm-anthropic-v2` run. A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a one-line answer it routes **`act`** and forwards a precise, constraint-pinned brief. Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
-
-Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live routing + rewrite pictured above. The `clarify` route needs a v2 SLM backend, which the default `slm` now auto-selects for whichever auth you have — `slm-anthropic-v2` / `slm-openai-v2` (API key) or `slm-subscription-v2` (Max OAuth / ChatGPT):
-
-```bash
-python examples/demo.py          # offline heuristic — zero setup
-python examples/demo.py --slm    # live routing + rewrite (needs an API key)
-```
-
-Sample output, the live-SLM run, and every flag are in the **[demo walkthrough → examples/README.md](examples/README.md)**.
 
 ## Docs
 
