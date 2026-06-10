@@ -12,7 +12,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# research/ so `import chain_test_v2` resolves; repo root so its `from prpt...`
+# imports resolve WITHOUT requiring an editable install / PYTHONPATH=. (PR #31 review).
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 import chain_test_v2 as C  # noqa: E402
 
 
