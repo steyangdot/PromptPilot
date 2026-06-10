@@ -55,6 +55,46 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
+
+def _normalize_compaction_env() -> None:
+    """Pin Claude Code context-management to DEFAULT config for headline runs.
+
+    The Claude desktop app injects ``DISABLE_MICROCOMPACT=1`` into the env of
+    every child process it spawns (it is *not* a persistent registry/profile
+    var). That turns OFF microcompaction — the incremental trim of old tool
+    results — which lets the native ``claude --resume`` arms (BUILTIN/STACKED)
+    accumulate more per-turn context before the big auto-compact fires. Measuring
+    against that non-default baseline biases the gap in PromptPilot's favour, the
+    same class of error as the raised-``model_context_window`` 2.36M artifact.
+
+    Since every downstream subprocess (prpt -> claude/codex) inherits this
+    process's ``os.environ``, popping the var here once, before any child spawns,
+    propagates the clean default to the whole tree.
+
+    Escape hatch: set ``PROMPTPILOT_KEEP_MICROCOMPACT_OFF=1`` to leave it as-is
+    for the Open-item-#6 *contrast* run that documents microcompaction's effect.
+    """
+    incoming = os.environ.get("DISABLE_MICROCOMPACT")
+    if os.environ.get("PROMPTPILOT_KEEP_MICROCOMPACT_OFF") == "1":
+        sys.stderr.write(
+            "[env] PROMPTPILOT_KEEP_MICROCOMPACT_OFF=1 -> leaving "
+            "DISABLE_MICROCOMPACT={0!r} (NON-default contrast run)\n".format(incoming)
+        )
+        return
+    if incoming is not None:
+        os.environ.pop("DISABLE_MICROCOMPACT", None)
+        sys.stderr.write(
+            "[env] removed DISABLE_MICROCOMPACT (was {0!r}) -> microcompaction ON "
+            "(default config)\n".format(incoming)
+        )
+    else:
+        sys.stderr.write(
+            "[env] DISABLE_MICROCOMPACT not set -> microcompaction ON (default config)\n"
+        )
+
+
+_normalize_compaction_env()
+
 # Force UTF-8 stdout on Windows
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -759,7 +799,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     Run all turns of `chain` once. variant ∈ {"no_session", "with_session"}.
     Returns per-turn result dicts.
     """
-    assert variant in ("no_session", "with_session", "raw", "builtin", "stacked", "gated_session")
+    assert variant in ("no_session", "with_session", "raw", "builtin", "stacked", "slm_native", "gated_session")
     # Print the resolved model up front so wrong-model invocations are visible
     # on the first turn rather than after the rolled-up analysis. (FIX_PLAN P1 #3)
     if tool == "claude-code":
@@ -778,7 +818,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     reset_repo(HTTPX_DIR)
 
     # Track claude-code built-in session ID across turns for variants that use it
-    uses_builtin = variant in ("builtin", "stacked")
+    uses_builtin = variant in ("builtin", "stacked", "slm_native")
     builtin_session_id: str | None = None
 
     results = []
@@ -803,6 +843,15 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         elif variant == "stacked":
             # Arm C: promptpilot session + built-in session (stacked memory).
             prepared = prepare_with_session(raw, HTTPX_DIR, tool)
+        elif variant == "slm_native":
+            # Isolation arm ("STACKED" in the handoff/memory vocabulary): SLM
+            # rewrite WITHOUT a PromptPilot bounded session + the tool's NATIVE
+            # resume for continuity. WITH_SESSION vs slm_native = pure
+            # bounded-vs-native session-mechanism effect, holding the SLM rewrite
+            # constant. Distinct from `stacked`, which layers BOTH mechanisms.
+            # No record_to_session() below (line gating list) — continuity comes
+            # from native resume, not an in-prompt bounded summary.
+            prepared = prepare_no_session(raw, HTTPX_DIR, tool)
         elif variant == "gated_session":
             # Item #3: promptpilot session, but skip load_recent_turns() on
             # non-referential prompts (Haiku classifier).
@@ -869,6 +918,17 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         if variant == "gated_session":
             slm_cost += 0.00017
 
+        # Cost + uncached instrumentation (2026-06-07 session re-test). The gross
+        # `input_tokens` is ~95% cached re-reads of the transcript, so it overstates
+        # the real per-turn context cost. Record UNCACHED input (the real
+        # incremental context the model paid full price for) and a cache-aware
+        # per-turn tool cost. claude_cost() uses claude-code's self-reported
+        # total_cost_usd (real, model-accurate even on Max OAuth); codex_cost() is a
+        # NOTIONAL o4-mini proxy — gpt-5.5 rates are not available locally, so do not
+        # treat codex $ as authoritative (report codex in uncached TOKENS instead).
+        uncached_input = usage["input_tokens"] - usage.get("cached_tokens", 0)
+        downstream_cost = claude_cost(usage) if tool == "claude-code" else codex_cost(usage)
+
         # Capture which model was requested vs which model claude-code actually
         # used. Default changed sonnet -> opus 2026-05-16; this catches the
         # "I forgot to set CLAUDE_MODEL=sonnet and accidentally burned opus
@@ -891,7 +951,10 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "prompt_chars": len(prepared["optimized"]),
             "wall_t": wall_t,
             "usage": usage,
+            "uncached_input": uncached_input,
             "slm_cost": slm_cost,
+            "downstream_cost": downstream_cost,
+            "total_cost": downstream_cost + slm_cost,
             "score": score,
             "model_resolved": model_resolved,
             "model_used": model_used,
@@ -928,6 +991,14 @@ def aggregate_runs(runs: list[list[dict]]) -> list[dict]:
         in_toks = [pr["usage"]["input_tokens"] for pr in per_run]
         out_toks = [pr["usage"]["output_tokens"] for pr in per_run]
         wall = [pr["wall_t"] for pr in per_run]
+        # Uncached input + cost (2026-06-07 re-test). Back-compat: older run files
+        # predate these per-turn keys, so fall back to deriving them from `usage`.
+        uncached = [pr.get("uncached_input",
+                           pr["usage"]["input_tokens"] - pr["usage"].get("cached_tokens", 0))
+                    for pr in per_run]
+        cached = [pr["usage"].get("cached_tokens", 0) for pr in per_run]
+        total_cost = [pr.get("total_cost", pr.get("downstream_cost", 0.0) + pr.get("slm_cost", 0.0))
+                      for pr in per_run]
         aggregated.append({
             "turn": per_run[0]["turn"],
             "raw": per_run[0]["raw"],
@@ -938,9 +1009,12 @@ def aggregate_runs(runs: list[list[dict]]) -> list[dict]:
             "bailed_rate": statistics.mean(bailed_vals),
             "tool_calls_mean": statistics.mean(tool_calls),
             "tool_calls_stdev": statistics.stdev(tool_calls) if len(tool_calls) > 1 else 0.0,
-            "input_tokens_mean": statistics.mean(in_toks),
+            "input_tokens_mean": statistics.mean(in_toks),        # GROSS (≈95% cached) — contrast only
+            "uncached_input_mean": statistics.mean(uncached),     # real incremental context (primary)
+            "cached_input_mean": statistics.mean(cached),
             "output_tokens_mean": statistics.mean(out_toks),
             "output_tokens_stdev": statistics.stdev(out_toks) if len(out_toks) > 1 else 0.0,
+            "total_cost_mean": statistics.mean(total_cost),       # cache-aware $/turn (claude real; codex notional)
             "wall_t_mean": statistics.mean(wall),
         })
     return aggregated
@@ -1080,7 +1154,9 @@ def save_run(out_dir: Path, variant: str, run_idx: int, results: list[dict]) -> 
 def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  chain_id: str, tool: str, n_runs: int,
                  gated_agg: list[dict] | None = None,
-                 builtin_agg: list[dict] | None = None) -> None:
+                 builtin_agg: list[dict] | None = None,
+                 slm_native_agg: list[dict] | None = None,
+                 stacked_agg: list[dict] | None = None) -> None:
     summary = {
         "chain": chain_id,
         "tool": tool,
@@ -1092,6 +1168,10 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
         summary["gated_session_agg"] = gated_agg
     if builtin_agg is not None:
         summary["builtin_session_agg"] = builtin_agg
+    if slm_native_agg is not None:
+        summary["slm_native_agg"] = slm_native_agg
+    if stacked_agg is not None:
+        summary["stacked_agg"] = stacked_agg
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
@@ -1144,6 +1224,8 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                    skip_no_session: bool = False,
                    include_builtin: bool = False,
                    skip_with_session: bool = False,
+                   include_slm_native: bool = False,
+                   include_stacked: bool = False,
                    ) -> tuple[list[dict] | None, list[dict] | None, list[dict] | None]:
     """Run N passes of NO_SESSION (unless `skip_no_session`) + N of WITH_SESSION
     (+ optionally GATED_SESSION when `include_gated=True`, + optionally the
@@ -1159,6 +1241,8 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     with_runs: list = []
     gated_runs: list = []
     builtin_runs: list = []
+    slm_native_runs: list = []
+    stacked_runs: list = []
     quota_hit = False
 
     def _agg_complete(runs):
@@ -1193,24 +1277,34 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 save_run(out_dir, "gated_session", r, results)
                 gated_runs.append(results)
 
-        if include_builtin:
-            # BUILTIN = the downstream tool's NATIVE session (claude --resume /
-            # codex exec resume), with RAW prompts (no SLM rewrite, no
-            # PromptPilot session). The runners gate native resume on
-            # USE_BUILTIN_SESSION=1, so set it for this arm and restore after.
-            print("\n--- BUILTIN (native {0} session) ({1} runs) ---".format(tool, n_runs))
+        # Native-resume arms (builtin / slm_native / stacked) all gate native
+        # resume on USE_BUILTIN_SESSION=1, so set it for the arm and restore
+        # after. Differ only in prompt prep (see run_chain_once):
+        #   builtin    = RAW prompt        + native resume
+        #   slm_native = SLM rewrite       + native resume   (handoff "STACKED")
+        #   stacked    = SLM rewrite+bounded session + native resume (double mem)
+        def _run_native_arm(variant_label: str, runs_acc: list) -> None:
+            print("\n--- {0} (native {1} session) ({2} runs) ---".format(
+                variant_label.upper(), tool, n_runs))
             prev = os.environ.get("USE_BUILTIN_SESSION")
             os.environ["USE_BUILTIN_SESSION"] = "1"
             try:
                 for r in range(1, n_runs + 1):
-                    results = run_chain_once(chain, tool, "builtin", r, out_dir)
-                    save_run(out_dir, "builtin", r, results)
-                    builtin_runs.append(results)
+                    results = run_chain_once(chain, tool, variant_label, r, out_dir)
+                    save_run(out_dir, variant_label, r, results)
+                    runs_acc.append(results)
             finally:
                 if prev is None:
                     os.environ.pop("USE_BUILTIN_SESSION", None)
                 else:
                     os.environ["USE_BUILTIN_SESSION"] = prev
+
+        if include_builtin:
+            _run_native_arm("builtin", builtin_runs)
+        if include_slm_native:
+            _run_native_arm("slm_native", slm_native_runs)
+        if include_stacked:
+            _run_native_arm("stacked", stacked_runs)
     except QuotaExhausted as e:
         quota_hit = True
         print("\n" + "!" * 72)
@@ -1223,12 +1317,17 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     with_agg = _agg_complete(with_runs)
     gated_agg = _agg_complete(gated_runs) if include_gated else None
     builtin_agg = _agg_complete(builtin_runs) if include_builtin else None
+    slm_native_agg = _agg_complete(slm_native_runs) if include_slm_native else None
+    stacked_agg = _agg_complete(stacked_runs) if include_stacked else None
     save_summary(out_dir, no_agg, with_agg, chain["id"], tool, n_runs,
-                 gated_agg=gated_agg, builtin_agg=builtin_agg)
+                 gated_agg=gated_agg, builtin_agg=builtin_agg,
+                 slm_native_agg=slm_native_agg, stacked_agg=stacked_agg)
     if quota_hit:
         print("\n[saved] arms completed: " + ", ".join(
             name for name, agg in [("no", no_agg), ("with", with_agg),
-                                    ("gated", gated_agg), ("builtin", builtin_agg)]
+                                    ("gated", gated_agg), ("builtin", builtin_agg),
+                                    ("slm_native", slm_native_agg),
+                                    ("stacked", stacked_agg)]
             if agg is not None) or "(none)")
     return no_agg, with_agg, gated_agg
 
@@ -1274,6 +1373,20 @@ def main() -> None:
              "--include-builtin to run ONLY the native BUILTIN arm and reuse a "
              "prior WITH_SESSION result from another out-dir for the comparison "
              "(saves quota when WITH was already measured).",
+    )
+    parser.add_argument(
+        "--include-slm-native", action="store_true",
+        help="Also run the slm_native ISOLATION arm — SLM rewrite + the tool's "
+             "NATIVE resume, with NO PromptPilot bounded session. This is the "
+             "'STACKED' arm in the handoff/memory vocabulary: WITH_SESSION vs "
+             "slm_native isolates the bounded-vs-native session mechanism while "
+             "holding the SLM rewrite constant. Sets USE_BUILTIN_SESSION=1.",
+    )
+    parser.add_argument(
+        "--include-stacked", action="store_true",
+        help="Also run the stacked DOUBLE-MEMORY arm — SLM rewrite + PromptPilot "
+             "bounded session + native resume layered together. Distinct from "
+             "--include-slm-native. Sets USE_BUILTIN_SESSION=1.",
     )
     args = parser.parse_args()
 
@@ -1344,10 +1457,12 @@ def main() -> None:
                 continue
 
             print("\n" + "=" * 60)
-            print("Running {0} with {1} ({2} runs){3}{4}{5}{6}".format(
+            print("Running {0} with {1} ({2} runs){3}{4}{5}{6}{7}{8}".format(
                 chain["id"], tool, args.runs,
                 " [+gated]" if args.include_gated else "",
                 " [+builtin]" if args.include_builtin else "",
+                " [+slm_native]" if args.include_slm_native else "",
+                " [+stacked]" if args.include_stacked else "",
                 " [no-NO]" if args.skip_no_session else "",
                 " [no-WITH]" if args.skip_with_session else ""))
             no_agg, with_agg, gated_agg = run_chain_full(
@@ -1356,6 +1471,8 @@ def main() -> None:
                 skip_no_session=args.skip_no_session,
                 include_builtin=args.include_builtin,
                 skip_with_session=args.skip_with_session,
+                include_slm_native=args.include_slm_native,
+                include_stacked=args.include_stacked,
             )
             if with_agg is None:
                 # Quota abort before WITH_SESSION completed — nothing to chart.
