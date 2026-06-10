@@ -705,26 +705,47 @@ def _quota_exhausted(out_path: Path, tool: str) -> bool:
 
     codex emits JSONL with `{"type":"turn.failed","error":{"message":"...usage
     limit..."}}` (and a matching `{"type":"error",...}`). claude-code surfaces
-    rate/usage limits in its JSON `result`/`error` text. Match conservatively
-    on the well-known phrases so a normal run is never falsely aborted.
+    rate/usage limits in its JSON `result`/`error` text.
+
+    IMPORTANT (2026-06-09 false-positive fix): for codex we now scope the match to
+    an actual `turn.failed`/`error` EVENT's own message — NOT a substring anywhere
+    in the file. On timeout/retry-themed chains the AGENT's own output legitimately
+    contains "try again", "rate limit", "retry-after", etc.; the old whole-file
+    `"turn.failed" in low and any(sig in low)` check fired on that prose and aborted
+    healthy runs (observed throughout the 2026-06 seeded-bug runs). We also restrict
+    to usage-limit-specific phrasing and drop the over-broad bare "rate limit"/"quota"
+    substrings. Fail-open: an unrecognised cap phrasing yields a recorded 0-turn
+    rather than a false abort — the safer failure mode.
     """
-    SIGNATURES = ("usage limit", "rate limit", "quota", "exceeded your",
-                  "purchase more credits", "try again at")
+    QUOTA_PHRASES = ("usage limit", "quota exceeded", "exceeded your",
+                     "purchase more credits", "try again at", "upgrade to pro")
     try:
         text = Path(out_path).read_text(encoding="utf-8", errors="replace")
     except Exception:
         return False
-    low = text.lower()
+
     if tool == "codex":
-        # Only treat as quota-hit when a turn actually FAILED with the phrase,
-        # not when the agent merely mentions "rate limit" in prose.
-        if "turn.failed" in low and any(s in low for s in SIGNATURES):
-            return True
-        if '"type": "error"' in low and "usage limit" in low:
-            return True
+        # Only a turn.failed / error EVENT's message counts — never the agent's
+        # item.completed / agent_message prose.
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            if ev.get("type") not in ("turn.failed", "error"):
+                continue
+            err = ev.get("error")
+            msg = (err.get("message") if isinstance(err, dict) else None) or ev.get("message") or ""
+            if any(p in str(msg).lower() for p in QUOTA_PHRASES):
+                return True
         return False
-    # claude-code / generic
-    return any(s in low for s in ("usage limit", "rate_limit_error",
+
+    # claude-code / generic: single JSON object; check its result/error text.
+    low = text.lower()
+    return any(p in low for p in ("usage limit", "rate_limit_error",
                                   "exceeded your", "quota exceeded"))
 
 
