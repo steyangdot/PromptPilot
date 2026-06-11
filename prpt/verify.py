@@ -10,9 +10,12 @@ Design constraints (from the re-test + the L1 critique):
     and can't hallucinate a pass/fail. (Distinct from the scrapped SLM-opinion evaluator.)
   * SAFETY: only ever run an ALLOW-LISTED command template keyed by the detected
     test_framework. We never execute an arbitrary discovered script, and test targets are
-    validated to be existing files under cwd (and never flag-like) before being passed.
-  * Compliance-neutral: this runs the *repo's own* test runner locally; it touches no model,
-    no OAuth token, no network.
+    validated to be existing files genuinely under cwd (and never flag-like) before being passed.
+  * v1 runs PYTEST only. Other detected frameworks (jest/vitest/mocha/.NET/Java) are skipped,
+    not guessed — running them via npx could hit the network/install and a missing local runner
+    would masquerade as a test failure. JS support is a follow-up (local .bin + integration tests).
+  * Compliance-neutral: runs the *repo's own* local test runner; touches no model, no OAuth token,
+    and (pytest path) no network.
 
 This module is pure of prpt's run flow — cli.py wires it in around adapter.run(); the harness
 reuses run_verify() as one half of the end-state verifier (lever 6e).
@@ -87,13 +90,19 @@ def _is_test_file(rel_path: str) -> bool:
 
 
 def _safe_target(rel_path: str, cwd: str) -> bool:
-    """A target must be an existing file under cwd and not flag-like (no leading '-')."""
+    """A target must be an existing file genuinely UNDER cwd and not flag-like (no '-').
+
+    Containment is checked with relative_to (raises if outside), not str.startswith — the
+    latter would accept a sibling sharing a name prefix (e.g. `repo_evil` next to `repo`).
+    """
     if not rel_path or rel_path.startswith("-"):
         return False
     try:
-        full = (Path(cwd) / rel_path).resolve()
-        return full.is_file() and str(full).startswith(str(Path(cwd).resolve()))
-    except Exception:
+        base = Path(cwd).resolve()
+        full = (base / rel_path).resolve()
+        full.relative_to(base)   # ValueError if `full` is not under `base`
+        return full.is_file()
+    except (ValueError, OSError):
         return False
 
 
@@ -130,13 +139,11 @@ def build_verify_command(framework: Optional[str], targets: List[str],
         # faster red path AND a cleaner single-failure retry prompt.
         base = [sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"]
         return base + (targets if not full_suite else [])
-    if fw in ("jest", "vitest"):
-        # `npx <runner> --run <targets>` (vitest) / `npx jest <targets>` — best-effort.
-        run_flag = ["--run"] if fw == "vitest" else []
-        return ["npx", fw] + run_flag + (targets if not full_suite else [])
-    if fw == "mocha":
-        return ["npx", "mocha"] + (targets if not full_suite else [])
-    return None  # xunit/nunit/junit (.NET/Java) — out of scope for the first cut
+    # JS (jest/vitest/mocha) and .NET/Java (xunit/nunit/junit) are DETECTED but not run in v1:
+    # an `npx` invocation can hit the network / try to install, and a missing local runner would
+    # look like a test FAILURE rather than a skip. Until that's done safely (local node_modules/
+    # .bin detection + integration tests), pytest is the only runnable gate. Skip, never guess.
+    return None
 
 
 def _compress(stdout: str, stderr: str) -> str:
@@ -145,21 +152,45 @@ def _compress(stdout: str, stderr: str) -> str:
     return "\n".join(lines[-_OUTPUT_TAIL_LINES:])
 
 
+def _untracked_files(cwd: str) -> List[str]:
+    """New files the agent created that git doesn't track yet (e.g. a brand-new test).
+
+    The shell adapter's last_modified_files comes from `git diff` (tracked changes only), so
+    without this a turn like "add a unit test for that fix" creates tests/test_foo.py as an
+    UNTRACKED file and the gate would see no changed files and skip — exactly the case the
+    gate must catch. (capture_end_state in the harness already collects these the same way.)
+    """
+    try:
+        p = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"],
+                           cwd=cwd, capture_output=True, text=True, timeout=20)
+        return [f.strip() for f in (p.stdout or "").splitlines() if f.strip()]
+    except Exception:
+        return []
+
+
 def run_verify(repo: RepoMetadata, changed_files: List[str], *,
                timeout_s: int = VERIFY_TIMEOUT_S, full_suite: bool = False) -> VerifyResult:
     """Run the allow-listed verify command for `repo`, scoped to `changed_files`.
 
-    Returns a VerifyResult; `ran=False` (with skipped_reason) when there is no supported
-    framework or nothing to scope — a skip is NOT a failure (the gate only retries on a real
-    red run, never on "couldn't verify").
+    `changed_files` (tracked edits from the adapter) is augmented with untracked new files so
+    a freshly-created test is verified. Returns a VerifyResult; `ran=False` (with skipped_reason)
+    when there is no supported framework or nothing to scope — a skip is NOT a failure (the gate
+    only retries on a real red run, never on "couldn't verify").
     """
-    targets = discover_verify_targets(repo, changed_files)
+    changed = list(changed_files or [])
+    for f in _untracked_files(repo.cwd):
+        if f not in changed:
+            changed.append(f)
+    targets = discover_verify_targets(repo, changed)
     cmd = build_verify_command(repo.test_framework, targets, full_suite)
     if cmd is None:
-        reason = ("no test_framework detected" if not repo.test_framework
-                  else "framework '{0}' not supported".format(repo.test_framework)
-                  if repo.test_framework.lower() not in ("pytest", "jest", "vitest", "mocha")
-                  else "no changed test targets to scope (use full_suite to run all)")
+        if not repo.test_framework:
+            reason = "no test_framework detected"
+        elif repo.test_framework.lower() != "pytest":
+            reason = "framework '{0}' not supported yet (pytest-only gate in v1)".format(
+                repo.test_framework)
+        else:
+            reason = "no changed test targets to scope (use full_suite to run all)"
         return VerifyResult(ran=False, skipped_reason=reason, targets=targets)
 
     t0 = time.time()
@@ -170,7 +201,7 @@ def run_verify(repo: RepoMetadata, changed_files: List[str], *,
         tail = _compress(proc.stdout, proc.stderr)
     except subprocess.TimeoutExpired:
         rc, tail = 124, "VERIFY_TIMEOUT after {0}s".format(timeout_s)
-    except FileNotFoundError as e:  # runner not installed (e.g. npx absent)
+    except FileNotFoundError as e:  # test runner binary missing -> skip, not a failure
         return VerifyResult(ran=False, command=cmd, targets=targets,
                             skipped_reason="runner unavailable: {0}".format(e))
     dur = time.time() - t0

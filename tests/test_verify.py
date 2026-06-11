@@ -6,6 +6,8 @@ verify) must never look like a FAILURE, or the gate would burn retries on un-ver
 changes. Plus target-discovery / command-allow-list / path-safety unit checks.
 """
 import importlib.util
+import shutil
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -68,6 +70,19 @@ def test_safe_target_rejects_flaglike_missing_and_escape(tmp_path):
     assert not _safe_target("../escape.py", str(tmp_path))  # outside cwd
 
 
+def test_safe_target_rejects_sibling_with_shared_prefix(tmp_path):
+    # `repo` and `repo_evil` share a string prefix: a file in repo_evil must NOT count as
+    # under repo. The old str.startswith containment check would have accepted it.
+    repo = tmp_path / "repo"
+    (repo / "tests").mkdir(parents=True)
+    _write(repo, "tests/test_a.py", "def test_a():\n    assert True\n")
+    evil = tmp_path / "repo_evil"
+    evil.mkdir()
+    (evil / "test_x.py").write_text("x = 1\n", encoding="utf-8")
+    assert _safe_target("tests/test_a.py", str(repo))
+    assert not _safe_target("../repo_evil/test_x.py", str(repo))
+
+
 def test_build_command_allow_list():
     assert build_verify_command("junit", ["x"], False) is None       # unsupported
     assert build_verify_command(None, ["x"], False) is None          # no framework
@@ -78,6 +93,10 @@ def test_build_command_allow_list():
     assert "tests/test_foo.py" in cmd
     full = build_verify_command("pytest", [], True)                  # full suite, no targets ok
     assert full and "tests/test_foo.py" not in full
+    # v1 is pytest-only: JS runners are detected but NOT run (no npx network/install risk).
+    assert build_verify_command("jest", ["a.test.js"], False) is None
+    assert build_verify_command("vitest", ["a.test.ts"], False) is None
+    assert build_verify_command("mocha", ["a.spec.js"], False) is None
 
 
 def test_should_verify_gates_on_intent_not_scope():
@@ -128,6 +147,18 @@ def test_skip_when_no_changed_targets(tmp_path):
     _write(tmp_path, "src/foo.py", "x = 1\n")  # changed source, no test pair
     r = run_verify(_repo(tmp_path, ["src/foo.py"]), ["src/foo.py"])
     assert not r.ran and "no changed test targets" in (r.skipped_reason or "")
+
+
+@pytest.mark.skipif(not (HAS_PYTEST and shutil.which("git")), reason="git + pytest required")
+def test_untracked_new_test_is_discovered_and_run(tmp_path):
+    # "add a unit test" creates an UNTRACKED file -> git diff (the adapter's source) sees
+    # nothing, so changed_files is empty. The gate must still find + run it via ls-files.
+    def g(*a):
+        subprocess.run(["git", *a], cwd=tmp_path, capture_output=True)
+    g("init", "-q"); g("config", "user.email", "t@t.t"); g("config", "user.name", "t")
+    _write(tmp_path, "tests/test_timeout_new.py", "def test_t():\n    assert True\n")  # never added
+    r = run_verify(_repo(tmp_path, []), [])  # adapter reported NO changed files
+    assert r.ran and r.passed and "tests/test_timeout_new.py" in r.targets
 
 
 @pytest.mark.skipif(not HAS_PYTEST, reason="pytest runner unavailable")
