@@ -88,6 +88,26 @@ def _linenum(line: str):
     return None
 
 
+def _pytest_exercises_timeout(cmd_lc: str, changed_test_basenames: list) -> bool:
+    """True iff a pytest command actually RUNS the timeout regression (not unrelated/excluded).
+
+    A `-k EXPRESSION` restricts which tests run, so when present it is decisive: trust it only when the
+    expression POSITIVELY selects a timeout test, never when it excludes one (`-k 'not timeout'` still
+    contains the word 'timeout' but skips the regression -- codex bot, PR #34). Without `-k`, a timeout
+    file/path/name target -- or re-running a just-modified test file -- runs the whole selection incl.
+    the new test. Together with the named-PASS evidence this closes both the unrelated-green (PR #33)
+    and the -k-exclusion (PR #34) holes. (`--deselect`/`--ignore` of the timeout test is a residual edge
+    not covered here; the verbose named-PASS path remains the immune positive signal.)
+    """
+    if 'pytest' not in cmd_lc:
+        return False
+    km = re.search(r"-k[\s=]+(?:'([^']*)'|\"([^\"]*)\"|(\S+))", cmd_lc)
+    if km:
+        kexpr = km.group(1) or km.group(2) or km.group(3) or ''
+        return ('timeout' in kexpr) and not re.search(r'not\s+\S*timeout', kexpr)
+    return ('timeout' in cmd_lc) or any(b and b in cmd_lc for b in changed_test_basenames)
+
+
 def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     """Mine evidence for one run's end state from its t1..t5 transcripts."""
     test_changes = []           # (turn, kind, path)
@@ -119,11 +139,12 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                 out = _cmd_output(it)
                 cmd_lc = str(it.get('command', '') or '').lower()
                 is_pytest = 'pytest' in cmd_lc
-                # does this pytest invocation actually exercise the timeout regression? -- it names a
-                # timeout test (path / -k), or re-runs a test file this run already modified (where the
-                # new timeout test lives). Guards against crediting an UNRELATED green run (codex bot, PR #33).
-                cmd_exercises_timeout = is_pytest and (
-                    'timeout' in cmd_lc or any(tc[2].lower() in cmd_lc for tc in test_changes))
+                # does this pytest invocation actually RUN the timeout regression? A -k filter restricts
+                # which tests run, so it is judged on whether it POSITIVELY selects timeout, not on the
+                # raw command string -- `-k 'not timeout'` mentions 'timeout' but EXCLUDES the regression
+                # (codex bot, PR #34). Without -k, a timeout file/path/name target runs the whole selection.
+                cmd_exercises_timeout = _pytest_exercises_timeout(
+                    cmd_lc, [tc[2].lower() for tc in test_changes])
                 cmd_green = False
                 hunk_site = None  # current git-diff hunk's transport, parsed from @@ headers
                 for ln in out.splitlines():

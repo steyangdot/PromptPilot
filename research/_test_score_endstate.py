@@ -142,6 +142,25 @@ def main():
          _cmd("5 passed in 1.2s", command="pytest tests/test_unrelated_smoke.py")],
         exp_sync="FIXED", exp_async="FIXED", exp_score=0.75))
 
+    # 7. Both fixed; a GREEN run on the timeout FILE but with `-k 'not timeout'` -> the regression is
+    #    EXCLUDED, so no test credit -> 0.75. The command string contains 'timeout' (file + the word in
+    #    the -k expr) yet skips the test (codex-bot PR #34: honor -k exclusions).
+    results.append(_run_case(
+        "both fixed but green run is -k 'not timeout' (excludes regression) -> 0.75",
+        [_cmd(_sync_hunk() + _async_hunk()),
+         _file_change("C:/projects/httpx/tests/test_timeouts.py"),
+         _cmd("3 passed in 0.6s", command="pytest tests/test_timeouts.py -k 'not timeout'")],
+        exp_sync="FIXED", exp_async="FIXED", exp_score=0.75))
+
+    # 8. Both fixed; a green run with `-k timeout` POSITIVELY selects the regression -> 1.0 (the -k
+    #    handling must not over-reject a legitimate positive selection).
+    results.append(_run_case(
+        "both fixed + green -k 'timeout' (positively selects regression) -> 1.0",
+        [_cmd(_sync_hunk() + _async_hunk()),
+         _file_change("C:/projects/httpx/tests/test_timeouts.py"),
+         _cmd("2 passed in 0.5s", command="pytest tests/test_timeouts.py -k 'timeout'")],
+        exp_sync="FIXED", exp_async="FIXED", exp_score=1.0))
+
     print("\nRESULT:", "ALL PASS" if all(results) else "FAIL")
     sys.exit(0 if all(results) else 1)
 
