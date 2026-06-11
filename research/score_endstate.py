@@ -280,6 +280,94 @@ def endstate_score(r: dict):
     return score, conf
 
 
+def score_captured_endstate(es: dict, arm: str = '', run: int = 0) -> dict:
+    """Score a CAPTURED end-state artifact (git diff + live timeout-pytest) produced by
+    chain_test_v2.capture_end_state — the GOLD-STANDARD, tool-agnostic alternative to
+    transcript mining (identical for claude-code and codex; this is the claude generalization).
+
+    Key difference from the miner: the captured diff is the COMPLETE working-tree delta vs the
+    seeded-bug fixture, so a transport with NO diff hunk is UNCHANGED = still buggy = BUG, never
+    UNKNOWN — absence of evidence here IS evidence, because the base is known-buggy on both sites.
+    Returns an extract_run-shaped dict so endstate_score() maps it unchanged.
+    """
+    diff = es.get('diff', '') or ''
+    cur_default = False
+    hunk_site = None
+    fix = {'sync': False, 'async': False}   # saw +FIX (forward) or -BUG (bug removed) in this site
+    bug = {'sync': False, 'async': False}   # saw +BUG (residual/re-added bug) in this site
+    for ln in diff.splitlines():
+        if ln.startswith('+++ ') or ln.startswith('--- '):
+            cur_default = ln.replace('\\', '/').rstrip().endswith('default.py')
+            hunk_site = None
+            continue
+        if not cur_default:
+            continue
+        m = HUNK_RE.match(ln)
+        if m:
+            c = int(m.group(1))
+            hunk_site = ('sync' if SYNC_LINE_LO <= c <= SYNC_LINE_HI
+                         else 'async' if ASYNC_LINE_LO <= c <= ASYNC_LINE_HI else None)
+            continue
+        if hunk_site is None or not (ln[:1] in ('+', '-')):
+            continue
+        cls = _classify_ext_line(ln)
+        if cls is None:
+            continue
+        if ln[0] == '+' and cls == 'FIX':
+            fix[hunk_site] = True
+        elif ln[0] == '-' and cls == 'BUG':
+            fix[hunk_site] = True          # removing the seeded bug line is a fix
+        elif ln[0] == '+' and cls == 'BUG':
+            bug[hunk_site] = True          # bug present/re-added in the final tree
+
+    def verdict(site):
+        return 'FIXED' if (fix[site] and not bug[site]) else 'BUG'
+
+    sync_v, async_v = verdict('sync'), verdict('async')
+
+    # tests: a timeout regression test exists (new or modified) AND the live -k timeout run was green
+    tf = {Path(f).name for f in es.get('new_files', []) if f.lower().endswith('.py') and 'test' in f.lower()}
+    for ln in diff.splitlines():
+        if ln.startswith('+++ ') and 'test' in ln.lower() and ln.rstrip().endswith('.py'):
+            tf.add(Path(ln[4:].strip()).name)
+    test_files = sorted(tf)
+    tests_pass = bool(es.get('pytest_passed'))     # real run, -k timeout, rc == 0
+    has_pytest = 'pytest_rc' in es
+    last_pytest = None
+    if has_pytest:
+        tail = (es.get('pytest_tail', '') or '').splitlines()
+        last_pytest = (0, 1 if tests_pass else 0, 0 if tests_pass else 1, 0, tail[-1] if tail else '')
+
+    return {
+        'arm': arm, 'run': run, 'turns_present': 1,
+        'sync': sync_v, 'async': async_v,
+        'sync_state': 'captured', 'async_state': 'captured',
+        'diff_says_fixed': fix['sync'] or fix['async'],
+        'test_files': test_files, 'any_test_written': bool(test_files),
+        'tests_pass': tests_pass,
+        'timeout_test_evidence': 'live-pytest-green' if tests_pass else (
+            'no-timeout-test' if es.get('pytest_no_match') else
+            ('live-pytest-fail' if has_pytest else 'none')),
+        'last_pytest': last_pytest,
+        'n_fix_obs': sum(fix.values()), 'n_diff_obs': len(diff.splitlines()),
+        'n_pytest': 1 if has_pytest else 0,
+        'final_msg': '', '_fix_obs_tail': [], '_diff_obs_tail': [],
+        'source': 'captured',
+    }
+
+
+def _score_run(out_dir: Path, arm: str, run: int) -> tuple[dict, str]:
+    """Prefer a captured end-state artifact (gold) when present; else mine the transcript."""
+    es_path = out_dir / 'endstate_{0}_run{1}.json'.format(arm, run)
+    if es_path.exists():
+        try:
+            es = json.loads(es_path.read_text(encoding='utf-8'))
+            return score_captured_endstate(es, arm, run), 'captured'
+        except Exception:
+            pass
+    return extract_run(out_dir, arm, run), 'mined'
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     out_base = Path(args[0]) if args else Path(
@@ -301,15 +389,16 @@ def main():
         print(f'  run | sync   async  | test_files                          pytest        | end  conf | evidence')
         scored = []
         for run in runs:
-            r = extract_run(out_dir, arm, run)
+            r, source = _score_run(out_dir, arm, run)
             score, conf = endstate_score(r)
             scored.append(score)
             lp = r['last_pytest']
             lpstr = (f"{lp[1]}p/{lp[2]}f[{r['timeout_test_evidence']}]" if lp else '-')
             tf = ','.join(r['test_files'])[:34] or '(none)'
             sc = '----' if score is None else f'{score:.2f}'
+            src = 'GOLD' if source == 'captured' else 'mine'
             print(f"   {run}  | {r['sync']:<6} {r['async']:<6}| {tf:<28} {lpstr:<26}| {sc} {conf:<4}| "
-                  f"fixobs={r['n_fix_obs']} diffobs={r['n_diff_obs']} diff_fixed={r['diff_says_fixed']}")
+                  f"{src} fixobs={r['n_fix_obs']} diffobs={r['n_diff_obs']} diff_fixed={r['diff_says_fixed']}")
         clean = [s for s in scored if s is not None]
         arm_scores[arm] = clean
         if clean:
