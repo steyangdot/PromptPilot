@@ -194,8 +194,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                              "of forwarding to the coding agent (interactive). Also enabled via "
                              "PROMPTPILOT_LET_SLM_ANSWER=1.")
     parser.add_argument("--verbose", action="store_true", help="Verbose stderr logging")
+    parser.add_argument("--verify", action="store_true",
+                        help="After the agent edits, run the repo's tests on the changed files; "
+                             "on failure, feed the specific failure back as one targeted retry. "
+                             "Also enabled via PROMPTPILOT_VERIFY=1.")
+    parser.add_argument("--verify-retries", type=int, default=None,
+                        help="Max verify-fail retries (default: PROMPTPILOT_VERIFY_RETRIES or 1).")
 
     # Hidden / advanced flags (kept working, suppressed in --help).
+    parser.add_argument("--verify-full-suite", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--strict", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--show-json", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--show-spec", action="store_true", help=argparse.SUPPRESS)
@@ -409,7 +416,7 @@ def _build_assistant_record(normalizer, normalized, modified_files) -> str:
 
 
 def _log_kwargs(args: argparse.Namespace, repo, raw_prompt, final_prompt, exit_code, mode,
-                normalized=None, validation=None, token_stats=None) -> dict:
+                normalized=None, validation=None, token_stats=None, verify=None) -> dict:
     """Build kwargs dict for maybe_log_run."""
     return dict(
         mode=mode, tool=args.tool, normalizer=args.normalizer, cwd=args.cwd,
@@ -417,6 +424,7 @@ def _log_kwargs(args: argparse.Namespace, repo, raw_prompt, final_prompt, exit_c
         exit_code=exit_code, auto=args.auto, strict=args.strict,
         dry_run=args.dry_run, pass_through=args.pass_through,
         normalized=normalized, validation=validation, token_stats=token_stats,
+        verify=verify.to_log() if verify is not None else None,
     )
 
 
@@ -897,6 +905,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         token_stats.actual_total_cost_usd = actual_cost
         print_token_stats(token_stats, theme=args.theme)
 
+    # Verify-gate (OPTIMIZATION_LEVERS Lever #1): run the repo's tests on the changed
+    # files; on a REAL failure feed it back as one targeted, SLM-bypassed retry. A skip
+    # (no framework / nothing to scope) is never treated as a failure. Best-effort: a
+    # verify-gate error must never crash a run that already produced edits.
+    verify_result = None
+    verify_requested = getattr(args, "verify", False) or os.environ.get("PROMPTPILOT_VERIFY") == "1"
+    if verify_requested:
+        from prpt.verify import run_gate, should_verify, resolve_exit_code
+        # Gate on INTENT, not scope: verify every act turn (incl. broad refactors — high
+        # blast radius is exactly where it matters); skip non-editing routes (answer/
+        # clarify/passthrough produce no edits to verify).
+        if should_verify(route, verify_requested):
+            try:
+                verify_result, retry_exit = run_gate(
+                    adapter, args, repo,
+                    retries=getattr(args, "verify_retries", None),
+                    full_suite=getattr(args, "verify_full_suite", False),
+                    log=write_stderr)
+                # A failed verification is authoritative: surface it as a nonzero exit so
+                # CI / scripts / the harness can gate on it even if the agent exited 0.
+                exit_code = resolve_exit_code(exit_code, retry_exit, verify_result)
+            except Exception as e:  # pragma: no cover - defensive
+                write_stderr("[promptpilot] verify-gate error (non-fatal): {0}".format(e))
+
     append_turn(args.cwd, "user", raw_prompt)
     # Assistant turn records (a) which files the downstream tool actually
     # modified (ground truth from the adapter) and (b) a short summary of
@@ -907,7 +939,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _build_assistant_record(normalizer, normalized, modified))
     maybe_log_run(args.log_file, args.log_runs,
                   **_log_kwargs(args, repo, raw_prompt, final_prompt, exit_code, "wrapped",
-                                normalized, validation, token_stats))
+                                normalized, validation, token_stats, verify=verify_result))
     return exit_code
 
 
