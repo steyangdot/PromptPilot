@@ -1151,6 +1151,23 @@ def save_run(out_dir: Path, variant: str, run_idx: int, results: list[dict]) -> 
     path.write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
 
 
+def load_run(out_dir: Path, variant: str, run_idx: int) -> list[dict] | None:
+    """Load a previously-saved per-run result, or None if absent.
+
+    Enables cross-quota-window resume on codex: a fully-completed run is loaded
+    from disk instead of re-executed, so a window that only permits ~3-4 runs
+    still makes forward progress instead of redoing run 1 every time. The data
+    is identical to a single-sitting run (same arms / N / fixture / scoring).
+    """
+    path = out_dir / "{0}_run{1}.json".format(variant, run_idx)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
 def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  chain_id: str, tool: str, n_runs: int,
                  gated_agg: list[dict] | None = None,
@@ -1266,6 +1283,11 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
         else:
             print("\n--- WITH_SESSION ({0} runs) ---".format(n_runs))
             for r in range(1, n_runs + 1):
+                cached = load_run(out_dir, "with_session", r)
+                if cached is not None:
+                    print("  [resume] with_session run {0} already complete -> load".format(r))
+                    with_runs.append(cached)
+                    continue
                 results = run_chain_once(chain, tool, "with_session", r, out_dir)
                 save_run(out_dir, "with_session", r, results)
                 with_runs.append(results)
@@ -1290,6 +1312,11 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
             os.environ["USE_BUILTIN_SESSION"] = "1"
             try:
                 for r in range(1, n_runs + 1):
+                    cached = load_run(out_dir, variant_label, r)
+                    if cached is not None:
+                        print("  [resume] {0} run {1} already complete -> load".format(variant_label, r))
+                        runs_acc.append(cached)
+                        continue
                     results = run_chain_once(chain, tool, variant_label, r, out_dir)
                     save_run(out_dir, variant_label, r, results)
                     runs_acc.append(results)
