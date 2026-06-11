@@ -95,6 +95,7 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     diff_obs = []               # (turn, '+'/'-', BUG/FIX, snippet) from git diff hunks
     pytest_obs = []             # (turn, passed, failed, errored, line)
     timeout_pytest = []         # (turn, line) pytest lines naming a timeout test
+    timeout_test_passed = []    # (turn) green pytest run that actually exercised the timeout regression
     final_msg = ''
     turns_present = 0
 
@@ -116,6 +117,14 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                         test_changes.append((t, ch.get('kind'), p.split('/')[-1]))
             elif itype == 'command_execution':
                 out = _cmd_output(it)
+                cmd_lc = str(it.get('command', '') or '').lower()
+                is_pytest = 'pytest' in cmd_lc
+                # does this pytest invocation actually exercise the timeout regression? -- it names a
+                # timeout test (path / -k), or re-runs a test file this run already modified (where the
+                # new timeout test lives). Guards against crediting an UNRELATED green run (codex bot, PR #33).
+                cmd_exercises_timeout = is_pytest and (
+                    'timeout' in cmd_lc or any(tc[2].lower() in cmd_lc for tc in test_changes))
+                cmd_green = False
                 hunk_site = None  # current git-diff hunk's transport, parsed from @@ headers
                 for ln in out.splitlines():
                     low = ln
@@ -152,9 +161,14 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                         failed = int(m.group(2)) if m.group(2) else 0
                         errored = int(m.group(3)) if m.group(3) else 0
                         pytest_obs.append((t, passed, failed, errored, ln.strip()[:120]))
-                    # a pytest line that names a timeout test passing
+                        if passed > 0 and failed == 0 and errored == 0:
+                            cmd_green = True
+                    # a pytest line that names a timeout test passing (verbose-mode evidence)
                     if TIMEOUT_TEST_HINT.search(ln) and 'PASS' in ln.upper():
                         timeout_pytest.append((t, ln.strip()[:120]))
+                # a GREEN pytest run that actually exercised the timeout regression counts as test-pass
+                if cmd_exercises_timeout and cmd_green:
+                    timeout_test_passed.append(t)
             elif itype == 'agent_message':
                 txt = it.get('text') or it.get('content') or ''
                 if isinstance(txt, str) and txt.strip():
@@ -202,9 +216,12 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     # tests
     test_files = sorted({tc[2] for tc in test_changes})
     any_test_written = len(test_files) > 0
-    pytest_pass = [p for p in pytest_obs if p[1] > 0 and p[2] == 0 and p[3] == 0]
+    pytest_pass = [p for p in pytest_obs if p[1] > 0 and p[2] == 0 and p[3] == 0]  # any all-green (contrast)
     last_pytest = pytest_obs[-1] if pytest_obs else None
-    tests_pass = bool(pytest_pass)
+    # tests_pass requires evidence the TIMEOUT regression specifically passed: a green pytest run that
+    # exercised it (targeted by name/-k, or re-ran the changed test file), or a verbose PASSED line
+    # naming a timeout test. A generic all-green summary is NOT sufficient (codex bot, PR #33).
+    tests_pass = bool(timeout_test_passed) or bool(timeout_pytest)
 
     return {
         'arm': arm, 'run': run, 'turns_present': turns_present,
@@ -213,6 +230,8 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
         'diff_says_fixed': diff_says_fixed,
         'test_files': test_files, 'any_test_written': any_test_written,
         'tests_pass': tests_pass,
+        'timeout_test_evidence': 'targeted-green' if timeout_test_passed else (
+            'named-PASS' if timeout_pytest else 'none'),
         'last_pytest': last_pytest,
         'n_fix_obs': len(fix_obs), 'n_diff_obs': len(diff_obs), 'n_pytest': len(pytest_obs),
         'final_msg': final_msg[:240],
@@ -265,10 +284,10 @@ def main():
             score, conf = endstate_score(r)
             scored.append(score)
             lp = r['last_pytest']
-            lpstr = (f"{lp[1]}p/{lp[2]}f" if lp else '-')
+            lpstr = (f"{lp[1]}p/{lp[2]}f[{r['timeout_test_evidence']}]" if lp else '-')
             tf = ','.join(r['test_files'])[:34] or '(none)'
             sc = '----' if score is None else f'{score:.2f}'
-            print(f"   {run}  | {r['sync']:<6} {r['async']:<6}| {tf:<34} {lpstr:<13}| {sc} {conf:<4}| "
+            print(f"   {run}  | {r['sync']:<6} {r['async']:<6}| {tf:<28} {lpstr:<26}| {sc} {conf:<4}| "
                   f"fixobs={r['n_fix_obs']} diffobs={r['n_diff_obs']} diff_fixed={r['diff_says_fixed']}")
         clean = [s for s in scored if s is not None]
         arm_scores[arm] = clean
