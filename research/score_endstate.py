@@ -49,6 +49,7 @@ SYNC_LINE_LO, SYNC_LINE_HI = 230, 300
 ASYNC_LINE_LO, ASYNC_LINE_HI = 360, 420
 PYTEST_RE = re.compile(r'(\d+)\s+passed|(\d+)\s+failed|(\d+)\s+error')
 TIMEOUT_TEST_HINT = re.compile(r'timeout', re.I)
+HUNK_RE = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)')      # git-diff hunk header -> new-file start line
 
 
 def _iter_events(path: Path):
@@ -115,8 +116,15 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                         test_changes.append((t, ch.get('kind'), p.split('/')[-1]))
             elif itype == 'command_execution':
                 out = _cmd_output(it)
+                hunk_site = None  # current git-diff hunk's transport, parsed from @@ headers
                 for ln in out.splitlines():
                     low = ln
+                    # track git-diff hunk header so +/- lines can be attributed to a transport
+                    hm = HUNK_RE.match(ln.lstrip())
+                    if hm:
+                        c = int(hm.group(1))
+                        hunk_site = ('sync' if SYNC_LINE_LO <= c <= SYNC_LINE_HI
+                                     else 'async' if ASYNC_LINE_LO <= c <= ASYNC_LINE_HI else None)
                     # fix-site observations from rg / cat / Get-Content (have default.py + extensions=)
                     if 'default.py' in low and EXT_LINE.search(low):
                         cls = _classify_ext_line(low)
@@ -129,12 +137,14 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                                 elif ASYNC_LINE_LO <= n <= ASYNC_LINE_HI:
                                     site = 'async'
                             fix_obs.append((t, site, cls, n, 'cmd', low.strip()[:160]))
-                    # git diff +/- lines touching extensions=
+                    # git diff +/- lines touching extensions=, ATTRIBUTED to the current hunk's
+                    # transport (sync ~244 / async ~388). A global, unattributed diff signal would let
+                    # a one-transport fix falsely credit BOTH sites (codex bot review, PR #33).
                     s = ln.lstrip()
                     if (s.startswith('+') or s.startswith('-')) and EXT_LINE.search(ln) and 'request.extensions' in ln:
                         cls = _classify_ext_line(ln)
                         if cls:
-                            diff_obs.append((t, s[0], cls, ln.strip()[:160]))
+                            diff_obs.append((t, hunk_site, s[0], cls, ln.strip()[:160]))
                     # pytest result lines
                     m = PYTEST_RE.search(ln)
                     if m and ('passed' in ln or 'failed' in ln or 'error' in ln):
@@ -152,37 +162,42 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
         if last_agent_msg:
             final_msg = last_agent_msg  # keep the latest turn's last message
 
-    # ---- adjudicate each sub-goal: LATEST evidence wins across rg/cat + git diff ----
-    # git diff is the authoritative working-tree-vs-clean-base delta: a '+extensions=request.extensions'
-    # hunk means the fix is applied to the tree at that turn. rg/cat with a line number attribute to a
-    # site (sync ~247, async ~391). A stale EARLY rg showing the BUG (the agent's initial exploration)
-    # must NOT override a LATER diff/rg showing the fix -- that was the v1 scorer bug. We therefore compare
-    # the latest fix-evidence turn against the latest bug-evidence turn per site.
-    def site_turns(site):
-        bug_t = max([o[0] for o in fix_obs if o[1] == site and o[2] == 'BUG'], default=-1)
-        fix_t = max([o[0] for o in fix_obs if o[1] == site and o[2] == 'FIX'], default=-1)
-        return bug_t, fix_t
+    # ---- adjudicate per transport: latest fix-evidence vs latest bug-evidence, PER SITE ----
+    # ALL evidence is site-attributed: rg/cat by line number (sync ~247, async ~391); git-diff +/- by
+    # hunk @@ range. A site is FIXED only with its OWN positive fix evidence -- a fix to the OTHER
+    # transport cannot credit it. This closes the global-diff false-FIXED hole the codex bot flagged on
+    # PR #33: previously a one-transport fix (one '+extensions=request.extensions' line, indistinguishable
+    # between the two identical bug sites) credited BOTH sites and masked a partial fix.
+    # Fix evidence for a site: rg/cat shows the forwarded form in range, OR a diff hunk in range ADDS the
+    # forward (+FIX) or REMOVES the bug (-BUG). Bug evidence: rg/cat shows the bug in range, OR a diff
+    # hunk in range ADDS the bug (+BUG). A stale early rg-BUG cannot override a later fix (latest wins).
+    def site_fix_turn(site):
+        ts = [o[0] for o in fix_obs if o[1] == site and o[2] == 'FIX']
+        ts += [d[0] for d in diff_obs if d[1] == site and d[2] == '+' and d[3] == 'FIX']
+        ts += [d[0] for d in diff_obs if d[1] == site and d[2] == '-' and d[3] == 'BUG']
+        return max(ts, default=-1)
 
-    # git-diff FIX line = '+extensions=request.extensions' (the bug-removing edit, applied to the tree).
-    # Not site-attributed (hunks lack line numbers here) -> treated as a global fix-applied signal.
-    diff_fix_turn = max([d[0] for d in diff_obs if d[1] == '+' and d[2] == 'FIX'], default=-1)
-    diff_bug_readd_turn = max([d[0] for d in diff_obs if d[1] == '+' and d[2] == 'BUG'], default=-1)
-    diff_says_fixed = diff_fix_turn >= 0
+    def site_bug_turn(site):
+        ts = [o[0] for o in fix_obs if o[1] == site and o[2] == 'BUG']
+        ts += [d[0] for d in diff_obs if d[1] == site and d[2] == '+' and d[3] == 'BUG']
+        return max(ts, default=-1)
 
     def verdict(site):
-        bug_t, fix_t = site_turns(site)
-        best_fix = max(fix_t, diff_fix_turn)            # latest fix evidence (rg/cat at this site, or diff)
-        latest_bug = max(bug_t, diff_bug_readd_turn)    # latest bug evidence
-        if best_fix >= 0 and best_fix >= latest_bug:
+        fix_t = site_fix_turn(site)
+        bug_t = site_bug_turn(site)
+        if fix_t >= 0 and fix_t >= bug_t:
             return 'FIXED'
-        if latest_bug > best_fix:
+        if bug_t > fix_t:
             return 'BUG'
-        return 'UNKNOWN'                                 # no evidence either way
+        return 'UNKNOWN'   # no site-attributed evidence either way -> conservative (scores None)
 
     sync_v = verdict('sync')
     async_v = verdict('async')
-    sync_state = 'bug@{0}/fix@{1}'.format(*site_turns('sync'))
-    async_state = 'bug@{0}/fix@{1}'.format(*site_turns('async'))
+    diff_says_fixed = any(d[1] in ('sync', 'async')
+                          and ((d[2] == '+' and d[3] == 'FIX') or (d[2] == '-' and d[3] == 'BUG'))
+                          for d in diff_obs)
+    sync_state = 'bug@{0}/fix@{1}'.format(site_bug_turn('sync'), site_fix_turn('sync'))
+    async_state = 'bug@{0}/fix@{1}'.format(site_bug_turn('async'), site_fix_turn('async'))
 
     # tests
     test_files = sorted({tc[2] for tc in test_changes})
