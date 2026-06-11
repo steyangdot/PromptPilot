@@ -17,7 +17,11 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)                       # research/ (for agentic_variety_test)
+sys.path.insert(0, os.path.dirname(_HERE))      # repo root — agentic_variety_test imports
+                                                # the top-level `prpt` package, so a clean
+                                                # checkout (prpt not pip-installed) needs it
 from agentic_variety_test import (  # noqa: E402
     parse_usage_claude, parse_usage, claude_cost, codex_cost,
 )
