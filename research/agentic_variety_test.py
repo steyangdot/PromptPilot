@@ -247,19 +247,23 @@ def parse_usage_claude(json_path: Path) -> dict:
     try:
         data = json.loads(json_path.read_text(encoding="utf-8"))
     except Exception:
-        return {"input_tokens": 0, "cached_tokens": 0, "output_tokens": 0,
-                "tool_calls": 0, "agent_messages": 0, "events": 0}
+        return {"input_tokens": 0, "cached_tokens": 0, "uncached_tokens": 0,
+                "output_tokens": 0, "tool_calls": 0, "agent_messages": 0, "events": 0}
     usage = data.get("usage", {})
-    # input_tokens in Claude Code JSON = uncached new input
-    # cache_read_input_tokens = tokens served from cache
-    # cache_creation_input_tokens = tokens written to cache (billed as input)
-    input_tok = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0)
+    # Claude Code JSON usage fields:
+    #   input_tokens                 = new tokens NOT served from cache (full input price)
+    #   cache_creation_input_tokens  = new tokens written to cache (billed as input, ~2x on 1h)
+    #   cache_read_input_tokens      = tokens served from cache (~0.1x)
+    # UNCACHED (the cost-relevant headline) = input_tokens + cache_creation (everything billed at
+    # ~full input price); GROSS = uncached + cache_read (~95% cache_read — overstates real cost).
+    uncached_tok = usage.get("input_tokens", 0) + usage.get("cache_creation_input_tokens", 0)
     cached_tok = usage.get("cache_read_input_tokens", 0)
     output_tok = usage.get("output_tokens", 0)
     num_turns = data.get("num_turns", 0)
     return {
-        "input_tokens": input_tok + cached_tok,   # total input (same basis as Codex)
-        "cached_tokens": cached_tok,
+        "input_tokens": uncached_tok + cached_tok,   # GROSS total input (same basis as Codex)
+        "cached_tokens": cached_tok,                  # cache_read only
+        "uncached_tokens": uncached_tok,              # input + cache_creation — the headline metric
         "output_tokens": output_tok,
         "tool_calls": num_turns,
         "agent_messages": num_turns,
@@ -292,9 +296,14 @@ def parse_usage(jsonl_path: Path) -> dict:
             if item.get("type") == "agent_message":
                 agent_messages += 1
 
+    # Codex turn.completed usage: input_tokens = total prompt tokens (incl. cached),
+    # cached_input_tokens = the cached subset. UNCACHED = total - cached.
+    in_tok = usage.get("input_tokens", 0)
+    cached_tok = usage.get("cached_input_tokens", 0)
     return {
-        "input_tokens": usage.get("input_tokens", 0),
-        "cached_tokens": usage.get("cached_input_tokens", 0),
+        "input_tokens": in_tok,                       # GROSS total input (incl. cached)
+        "cached_tokens": cached_tok,
+        "uncached_tokens": in_tok - cached_tok,       # the headline metric
         "output_tokens": usage.get("output_tokens", 0),
         "tool_calls": tool_calls,
         "agent_messages": agent_messages,
@@ -308,7 +317,7 @@ def parse_usage(jsonl_path: Path) -> dict:
 
 def codex_cost(u: dict) -> float:
     """o4-mini pricing: $1.10/M input, $4.40/M output (cached: $0.275/M)."""
-    uncached_in = u["input_tokens"] - u["cached_tokens"]
+    uncached_in = u.get("uncached_tokens", u["input_tokens"] - u["cached_tokens"])
     return (
         uncached_in * 1.10 / 1_000_000
         + u["cached_tokens"] * 0.275 / 1_000_000
@@ -321,7 +330,7 @@ def claude_cost(u: dict) -> float:
     if u.get("total_cost_usd"):
         return u["total_cost_usd"]
     # Fallback: Sonnet pricing $3/M input, $15/M output, $0.30/M cached
-    uncached_in = u["input_tokens"] - u["cached_tokens"]
+    uncached_in = u.get("uncached_tokens", u["input_tokens"] - u["cached_tokens"])
     return (
         uncached_in * 3.00 / 1_000_000
         + u["cached_tokens"] * 0.30 / 1_000_000

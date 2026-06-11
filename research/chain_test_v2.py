@@ -926,7 +926,10 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # total_cost_usd (real, model-accurate even on Max OAuth); codex_cost() is a
         # NOTIONAL o4-mini proxy — gpt-5.5 rates are not available locally, so do not
         # treat codex $ as authoritative (report codex in uncached TOKENS instead).
-        uncached_input = usage["input_tokens"] - usage.get("cached_tokens", 0)
+        # Canonical uncached now comes from the parser (parse_usage_*); fall back to the
+        # gross-minus-cached formula for older records that predate the uncached_tokens field.
+        uncached_input = usage.get("uncached_tokens",
+                                   usage["input_tokens"] - usage.get("cached_tokens", 0))
         downstream_cost = claude_cost(usage) if tool == "claude-code" else codex_cost(usage)
 
         # Capture which model was requested vs which model claude-code actually
