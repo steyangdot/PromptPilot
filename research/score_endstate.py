@@ -88,6 +88,26 @@ def _linenum(line: str):
     return None
 
 
+def _pytest_exercises_timeout(cmd_lc: str, changed_test_basenames: list) -> bool:
+    """True iff a pytest command actually RUNS the timeout regression (not unrelated/excluded).
+
+    A `-k EXPRESSION` restricts which tests run, so when present it is decisive: trust it only when the
+    expression POSITIVELY selects a timeout test, never when it excludes one (`-k 'not timeout'` still
+    contains the word 'timeout' but skips the regression -- codex bot, PR #34). Without `-k`, a timeout
+    file/path/name target -- or re-running a just-modified test file -- runs the whole selection incl.
+    the new test. Together with the named-PASS evidence this closes both the unrelated-green (PR #33)
+    and the -k-exclusion (PR #34) holes. (`--deselect`/`--ignore` of the timeout test is a residual edge
+    not covered here; the verbose named-PASS path remains the immune positive signal.)
+    """
+    if 'pytest' not in cmd_lc:
+        return False
+    km = re.search(r"-k[\s=]+(?:'([^']*)'|\"([^\"]*)\"|(\S+))", cmd_lc)
+    if km:
+        kexpr = km.group(1) or km.group(2) or km.group(3) or ''
+        return ('timeout' in kexpr) and not re.search(r'not\s+\S*timeout', kexpr)
+    return ('timeout' in cmd_lc) or any(b and b in cmd_lc for b in changed_test_basenames)
+
+
 def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     """Mine evidence for one run's end state from its t1..t5 transcripts."""
     test_changes = []           # (turn, kind, path)
@@ -95,6 +115,7 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     diff_obs = []               # (turn, '+'/'-', BUG/FIX, snippet) from git diff hunks
     pytest_obs = []             # (turn, passed, failed, errored, line)
     timeout_pytest = []         # (turn, line) pytest lines naming a timeout test
+    timeout_test_passed = []    # (turn) green pytest run that actually exercised the timeout regression
     final_msg = ''
     turns_present = 0
 
@@ -116,6 +137,15 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                         test_changes.append((t, ch.get('kind'), p.split('/')[-1]))
             elif itype == 'command_execution':
                 out = _cmd_output(it)
+                cmd_lc = str(it.get('command', '') or '').lower()
+                is_pytest = 'pytest' in cmd_lc
+                # does this pytest invocation actually RUN the timeout regression? A -k filter restricts
+                # which tests run, so it is judged on whether it POSITIVELY selects timeout, not on the
+                # raw command string -- `-k 'not timeout'` mentions 'timeout' but EXCLUDES the regression
+                # (codex bot, PR #34). Without -k, a timeout file/path/name target runs the whole selection.
+                cmd_exercises_timeout = _pytest_exercises_timeout(
+                    cmd_lc, [tc[2].lower() for tc in test_changes])
+                cmd_green = False
                 hunk_site = None  # current git-diff hunk's transport, parsed from @@ headers
                 for ln in out.splitlines():
                     low = ln
@@ -152,9 +182,14 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
                         failed = int(m.group(2)) if m.group(2) else 0
                         errored = int(m.group(3)) if m.group(3) else 0
                         pytest_obs.append((t, passed, failed, errored, ln.strip()[:120]))
-                    # a pytest line that names a timeout test passing
+                        if passed > 0 and failed == 0 and errored == 0:
+                            cmd_green = True
+                    # a pytest line that names a timeout test passing (verbose-mode evidence)
                     if TIMEOUT_TEST_HINT.search(ln) and 'PASS' in ln.upper():
                         timeout_pytest.append((t, ln.strip()[:120]))
+                # a GREEN pytest run that actually exercised the timeout regression counts as test-pass
+                if cmd_exercises_timeout and cmd_green:
+                    timeout_test_passed.append(t)
             elif itype == 'agent_message':
                 txt = it.get('text') or it.get('content') or ''
                 if isinstance(txt, str) and txt.strip():
@@ -202,9 +237,12 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
     # tests
     test_files = sorted({tc[2] for tc in test_changes})
     any_test_written = len(test_files) > 0
-    pytest_pass = [p for p in pytest_obs if p[1] > 0 and p[2] == 0 and p[3] == 0]
+    pytest_pass = [p for p in pytest_obs if p[1] > 0 and p[2] == 0 and p[3] == 0]  # any all-green (contrast)
     last_pytest = pytest_obs[-1] if pytest_obs else None
-    tests_pass = bool(pytest_pass)
+    # tests_pass requires evidence the TIMEOUT regression specifically passed: a green pytest run that
+    # exercised it (targeted by name/-k, or re-ran the changed test file), or a verbose PASSED line
+    # naming a timeout test. A generic all-green summary is NOT sufficient (codex bot, PR #33).
+    tests_pass = bool(timeout_test_passed) or bool(timeout_pytest)
 
     return {
         'arm': arm, 'run': run, 'turns_present': turns_present,
@@ -213,6 +251,8 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
         'diff_says_fixed': diff_says_fixed,
         'test_files': test_files, 'any_test_written': any_test_written,
         'tests_pass': tests_pass,
+        'timeout_test_evidence': 'targeted-green' if timeout_test_passed else (
+            'named-PASS' if timeout_pytest else 'none'),
         'last_pytest': last_pytest,
         'n_fix_obs': len(fix_obs), 'n_diff_obs': len(diff_obs), 'n_pytest': len(pytest_obs),
         'final_msg': final_msg[:240],
@@ -265,10 +305,10 @@ def main():
             score, conf = endstate_score(r)
             scored.append(score)
             lp = r['last_pytest']
-            lpstr = (f"{lp[1]}p/{lp[2]}f" if lp else '-')
+            lpstr = (f"{lp[1]}p/{lp[2]}f[{r['timeout_test_evidence']}]" if lp else '-')
             tf = ','.join(r['test_files'])[:34] or '(none)'
             sc = '----' if score is None else f'{score:.2f}'
-            print(f"   {run}  | {r['sync']:<6} {r['async']:<6}| {tf:<34} {lpstr:<13}| {sc} {conf:<4}| "
+            print(f"   {run}  | {r['sync']:<6} {r['async']:<6}| {tf:<28} {lpstr:<26}| {sc} {conf:<4}| "
                   f"fixobs={r['n_fix_obs']} diffobs={r['n_diff_obs']} diff_fixed={r['diff_says_fixed']}")
         clean = [s for s in scored if s is not None]
         arm_scores[arm] = clean

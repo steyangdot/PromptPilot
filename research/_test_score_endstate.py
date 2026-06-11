@@ -19,9 +19,10 @@ BUG = '            extensions={k: v for k, v in request.extensions.items() if k 
 FIX = '            extensions=request.extensions,'
 
 
-def _cmd(output: str) -> str:
+def _cmd(output: str, command: str = "") -> str:
     return json.dumps({"type": "item.completed",
-                       "item": {"type": "command_execution", "aggregated_output": output}})
+                       "item": {"type": "command_execution", "command": command,
+                                "aggregated_output": output}})
 
 
 def _file_change(path: str, kind: str = "update") -> str:
@@ -104,12 +105,13 @@ def main():
         exp_sync="FIXED", exp_async="FIXED", exp_score=1.0))
 
     # 3. Stale early rg-BUG then a later fix hunk -> latest wins, FIXED (no regression of v1 fix).
+    #    Test credit via a TARGETED green pytest run (command names the timeout file).
     results.append(_run_case(
-        "stale rg-BUG then fix hunk -> FIXED",
+        "stale rg-BUG then fix hunk + targeted green pytest -> FIXED 1.0",
         [_cmd("httpx/_transports/default.py:247:" + BUG + "\nhttpx/_transports/default.py:391:" + BUG),
          _cmd(_sync_hunk() + _async_hunk()),
          _file_change("C:/projects/httpx/tests/test_timeouts.py"),
-         _cmd("2 passed in 0.5s")],
+         _cmd("2 passed in 0.5s", command="pytest tests/test_timeouts.py")],
         exp_sync="FIXED", exp_async="FIXED", exp_score=1.0))
 
     # 4. RE-ADD direction (cross-turn latest-wins): sync+async fixed at T1, then a LATER turn (T3)
@@ -129,6 +131,35 @@ def main():
         {1: [_file_change("httpx/_transports/default.py", "update"),
              _cmd("edited the transport, no diff shown")]},
         exp_sync="UNKNOWN", exp_async="UNKNOWN", exp_score=None))
+
+    # 6. Both transports fixed, but the ONLY green pytest is UNRELATED (different file, no -k/name
+    #    match) -> test credit WITHHELD -> 0.75, not 1.0. The codex-bot PR #33 P2 finding: a generic
+    #    all-green summary must not grant timeout-regression credit.
+    results.append(_run_case(
+        "both fixed but only an UNRELATED green pytest -> 0.75 (no test credit)",
+        [_cmd(_sync_hunk() + _async_hunk()),
+         _file_change("C:/projects/httpx/tests/test_timeouts.py"),
+         _cmd("5 passed in 1.2s", command="pytest tests/test_unrelated_smoke.py")],
+        exp_sync="FIXED", exp_async="FIXED", exp_score=0.75))
+
+    # 7. Both fixed; a GREEN run on the timeout FILE but with `-k 'not timeout'` -> the regression is
+    #    EXCLUDED, so no test credit -> 0.75. The command string contains 'timeout' (file + the word in
+    #    the -k expr) yet skips the test (codex-bot PR #34: honor -k exclusions).
+    results.append(_run_case(
+        "both fixed but green run is -k 'not timeout' (excludes regression) -> 0.75",
+        [_cmd(_sync_hunk() + _async_hunk()),
+         _file_change("C:/projects/httpx/tests/test_timeouts.py"),
+         _cmd("3 passed in 0.6s", command="pytest tests/test_timeouts.py -k 'not timeout'")],
+        exp_sync="FIXED", exp_async="FIXED", exp_score=0.75))
+
+    # 8. Both fixed; a green run with `-k timeout` POSITIVELY selects the regression -> 1.0 (the -k
+    #    handling must not over-reject a legitimate positive selection).
+    results.append(_run_case(
+        "both fixed + green -k 'timeout' (positively selects regression) -> 1.0",
+        [_cmd(_sync_hunk() + _async_hunk()),
+         _file_change("C:/projects/httpx/tests/test_timeouts.py"),
+         _cmd("2 passed in 0.5s", command="pytest tests/test_timeouts.py -k 'timeout'")],
+        exp_sync="FIXED", exp_async="FIXED", exp_score=1.0))
 
     print("\nRESULT:", "ALL PASS" if all(results) else "FAIL")
     sys.exit(0 if all(results) else 1)
