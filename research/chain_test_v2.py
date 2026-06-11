@@ -462,6 +462,66 @@ def reset_repo(cwd: str) -> None:
     print("  [git] reset to HEAD")
 
 
+def _run_timeout_pytest(cwd: str, timeout_s: int = 180) -> dict:
+    """Run the timeout-targeted regression against the LIVE working tree.
+
+    `-k timeout` positively selects the seeded-bug regression (same spirit as the
+    end-state scorer's _pytest_exercises_timeout guard: trust a green run only when
+    it actually exercises a timeout test). pytest return codes:
+      0 = selected tests passed   1 = failures   5 = no test matched `-k timeout`
+    Bounded by a hard timeout so a wedged/hanging tree can't stall the harness.
+    """
+    cmd = [sys.executable, "-m", "pytest", "-k", "timeout", "-q",
+           "--no-header", "-p", "no:cacheprovider"]
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
+        out = (p.stdout or "") + (p.stderr or "")
+        rc = p.returncode
+    except subprocess.TimeoutExpired:
+        out, rc = "PYTEST_TIMEOUT", 124
+    except Exception as e:  # pragma: no cover - environment-dependent
+        out, rc = "PYTEST_ERROR: {0}".format(e), 125
+    return {
+        "pytest_cmd": " ".join(cmd),
+        "pytest_rc": rc,
+        "pytest_passed": rc == 0,          # 0 = a selected timeout test ran green
+        "pytest_no_match": rc == 5,        # 5 = no timeout test in the tree
+        "pytest_tail": "\n".join(out.splitlines()[-20:]),
+    }
+
+
+def capture_end_state(cwd: str, out_dir: Path, variant: str, run_idx: int,
+                      run_pytest: bool = True) -> dict:
+    """Capture the repo END STATE after a run, BEFORE it is reset.
+
+    Writes endstate_{variant}_run{run_idx}.json holding the GOLD-STANDARD,
+    tool-agnostic signal that transcript-mining only approximates:
+      - diff      : `git diff HEAD` — the run's actual edits vs the committed fixture
+      - new_files : untracked files the run created (e.g. a new regression test)
+      - pytest_*  : a real timeout-targeted pytest run against the live tree
+                    (apply-then-verify; the same artifact scores claude and codex
+                     identically, so this is the claude-code generalization of the
+                     codex-only evidence miner).
+
+    Must be called while the working tree still holds the run's edits — i.e. at the
+    end of run_chain_once, before the next run's reset_repo() wipes them.
+    """
+    es = {"variant": variant, "run": run_idx, "captured": True}
+    diff = subprocess.run(["git", "diff", "HEAD"], cwd=cwd, capture_output=True, text=True)
+    es["diff"] = diff.stdout or ""
+    new = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"],
+                         cwd=cwd, capture_output=True, text=True)
+    es["new_files"] = [f.strip() for f in (new.stdout or "").splitlines() if f.strip()]
+    if run_pytest:
+        es.update(_run_timeout_pytest(cwd))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "endstate_{0}_run{1}.json".format(variant, run_idx)
+    path.write_text(json.dumps(es, indent=2), encoding="utf-8")
+    print("  [endstate] captured -> {0} (diff {1}B, pytest rc={2})".format(
+        path.name, len(es["diff"]), es.get("pytest_rc", "skip")))
+    return es
+
+
 def hash_file(cwd: str, rel_path: str) -> str | None:
     """SHA256 of a file's contents, or None if it doesn't exist."""
     p = Path(cwd) / rel_path
@@ -968,6 +1028,17 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                   i=usage["input_tokens"], o=usage["output_tokens"],
                   b="Y" if score["bailed"] else "N",
                   c=len(score["changed"])))
+
+    # Capture the gold-standard end-state (diff + live timeout-pytest) while the
+    # working tree still holds this run's edits — the next run's reset_repo() wipes
+    # them. Best-effort: a capture failure must never lose the run's scored results.
+    # Opt out with CAPTURE_END_STATE=0 (e.g. when the verify pytest is too slow).
+    if os.environ.get("CAPTURE_END_STATE", "1") != "0":
+        try:
+            run_pytest = os.environ.get("CAPTURE_END_STATE_PYTEST", "1") != "0"
+            capture_end_state(HTTPX_DIR, out_dir, variant, run_idx, run_pytest=run_pytest)
+        except Exception as e:  # pragma: no cover - defensive
+            print("  [endstate] capture failed (non-fatal): {0}".format(e))
 
     clear_session(HTTPX_DIR)
     return results
