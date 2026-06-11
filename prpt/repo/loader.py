@@ -14,6 +14,38 @@ from prpt.core.types import RepoMetadata
 from prpt.core.utils import run_command
 
 
+def find_test_pair(rel_path: str, cwd: str) -> "str | None":
+    """Given a source file, return its existing test file path (repo-relative), or None.
+
+    Module-level so the verify-gate (prpt.verify) and the context loader share ONE
+    test-pairing rule instead of two that can drift. Pure (no I/O beyond is_file).
+    """
+    p = Path(rel_path)
+    stem = p.stem
+    suffix = p.suffix
+    parent = p.parent
+    candidates = [
+        "test_{stem}{suffix}".format(stem=stem, suffix=suffix),
+        "{stem}_test{suffix}".format(stem=stem, suffix=suffix),
+        "test_{stem}.py".format(stem=stem),
+        "{stem}_test.py".format(stem=stem),
+    ]
+    test_dirs = [
+        parent,                        # same dir: src/foo.py -> src/test_foo.py
+        Path("tests") / parent,        # tests/src/test_foo.py
+        Path("tests"),                 # tests/test_foo.py
+        Path("test"),                  # test/test_foo.py
+        Path("spec"),                  # spec/test_foo.py (JS/Ruby style)
+    ]
+    base = Path(cwd)
+    for test_dir in test_dirs:
+        for name in candidates:
+            candidate = test_dir / name
+            if (base / candidate).is_file():
+                return str(candidate).replace("\\", "/")
+    return None
+
+
 # Words too generic to use as search terms
 _STOP_WORDS: Set[str] = {
     "the", "a", "an", "and", "or", "in", "on", "at", "to", "for",
@@ -561,36 +593,12 @@ class RepoContentLoader:
     # ------------------------------------------------------------------
 
     def _find_test_pair(self, rel_path: str, cwd: str) -> str | None:
-        """Given a source file, return its test file path if it exists."""
-        p = Path(rel_path)
-        stem = p.stem
-        suffix = p.suffix
-        parent = p.parent
+        """Given a source file, return its test file path if it exists.
 
-        # Candidate test file names
-        candidates = [
-            "test_{stem}{suffix}".format(stem=stem, suffix=suffix),
-            "{stem}_test{suffix}".format(stem=stem, suffix=suffix),
-            "test_{stem}.py".format(stem=stem),
-            "{stem}_test.py".format(stem=stem),
-        ]
-
-        # Candidate test directories (alongside or under tests/)
-        test_dirs = [
-            parent,                        # same dir: src/foo.py -> src/test_foo.py
-            Path("tests") / parent,        # tests/src/test_foo.py
-            Path("tests"),                 # tests/test_foo.py
-            Path("test"),                  # test/test_foo.py
-            Path("spec"),                  # spec/test_foo.py (JS/Ruby style)
-        ]
-
-        base = Path(cwd)
-        for test_dir in test_dirs:
-            for name in candidates:
-                candidate = test_dir / name
-                if (base / candidate).is_file():
-                    return str(candidate).replace("\\", "/")
-        return None
+        Delegates to the module-level find_test_pair so the verify-gate and the
+        context loader share one rule. Kept as a method for existing call sites.
+        """
+        return find_test_pair(rel_path, cwd)
 
     def _pair_test_files(self, rel_paths: List[str], cwd: str, loaded: Set[str]) -> List[str]:
         """Return test file paths for each source file, skipping already-loaded ones."""

@@ -125,6 +125,7 @@ def build_log_event(
     normalized: Optional[NormalizedRequest] = None,
     validation: Optional[ValidationResult] = None,
     token_stats: Optional[TokenStats] = None,
+    verify: Optional[dict] = None,
 ) -> dict:
     event: dict = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -151,6 +152,8 @@ def build_log_event(
         event["validation"] = asdict(validation)
     if token_stats is not None:
         event["token_stats"] = asdict(token_stats)
+    if verify is not None:
+        event["verify"] = verify
     return event
 
 
