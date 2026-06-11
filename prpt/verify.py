@@ -216,6 +216,21 @@ def run_gate(adapter, args, repo: RepoMetadata, *, retries: Optional[int] = None
     return result, last_exit
 
 
+def resolve_exit_code(agent_exit: Optional[int], retry_exit: Optional[int],
+                      result: Optional[VerifyResult]) -> int:
+    """Final CLI exit code after the verify-gate.
+
+    A FAILED verification (ran and not passed) is authoritative: surface it as nonzero so
+    CI / scripts / the measurement harness can gate on the verify result, even when the
+    agent's own process exited 0 (it ran fine, it just didn't make the tests pass). A SKIP
+    (ran is False) or a PASS leaves the code as the agent's / last-retry's exit.
+    """
+    code = retry_exit if retry_exit is not None else (agent_exit or 0)
+    if result is not None and result.ran and not result.passed:
+        return result.returncode or 1
+    return code
+
+
 def build_retry_prompt(result: VerifyResult, changed_files: List[str]) -> str:
     """A targeted, SLM-free follow-up turn quoting the specific failure.
 

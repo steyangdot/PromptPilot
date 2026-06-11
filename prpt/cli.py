@@ -912,7 +912,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     verify_result = None
     verify_requested = getattr(args, "verify", False) or os.environ.get("PROMPTPILOT_VERIFY") == "1"
     if verify_requested:
-        from prpt.verify import run_gate, should_verify
+        from prpt.verify import run_gate, should_verify, resolve_exit_code
         # Gate on INTENT, not scope: verify every act turn (incl. broad refactors — high
         # blast radius is exactly where it matters); skip non-editing routes (answer/
         # clarify/passthrough produce no edits to verify).
@@ -923,8 +923,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     retries=getattr(args, "verify_retries", None),
                     full_suite=getattr(args, "verify_full_suite", False),
                     log=write_stderr)
-                if retry_exit is not None:
-                    exit_code = retry_exit
+                # A failed verification is authoritative: surface it as a nonzero exit so
+                # CI / scripts / the harness can gate on it even if the agent exited 0.
+                exit_code = resolve_exit_code(exit_code, retry_exit, verify_result)
             except Exception as e:  # pragma: no cover - defensive
                 write_stderr("[promptpilot] verify-gate error (non-fatal): {0}".format(e))
 

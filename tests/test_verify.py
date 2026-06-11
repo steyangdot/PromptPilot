@@ -15,7 +15,8 @@ import pytest
 from prpt.core.types import RepoMetadata
 from prpt.verify import (
     run_verify, run_gate, build_verify_command, discover_verify_targets,
-    build_retry_prompt, should_verify, _safe_target, _is_test_file,
+    build_retry_prompt, should_verify, resolve_exit_code, VerifyResult,
+    _safe_target, _is_test_file,
 )
 
 HAS_PYTEST = importlib.util.find_spec("pytest") is not None
@@ -191,6 +192,28 @@ def test_gate_skip_never_retries(tmp_path):
     fa = _FakeAdapter(["src/foo.py"])
     result, retry_exit = run_gate(fa, None, _repo(tmp_path, ["src/foo.py"], fw=None), retries=3)
     assert fa.calls == 0 and not result.ran and retry_exit is None
+
+
+def test_resolve_exit_code_failed_verify_overrides_zero_agent_exit():
+    # THE BUG (codex P1, PR #36): agent + last retry both exit 0 as processes, but tests
+    # still fail -> exit must be NONZERO so CI/scripts/harness can gate on the verify result.
+    failed = VerifyResult(ran=True, passed=False, returncode=1)
+    assert resolve_exit_code(0, 0, failed) == 1
+    assert resolve_exit_code(0, None, failed) == 1     # failed on first try, no retry ran
+    # timeout (rc 124) is still surfaced as nonzero
+    assert resolve_exit_code(0, 0, VerifyResult(ran=True, passed=False, returncode=124)) == 124
+
+
+def test_resolve_exit_code_pass_and_skip_preserve_exit():
+    passed = VerifyResult(ran=True, passed=True, returncode=0)
+    assert resolve_exit_code(0, None, passed) == 0
+    assert resolve_exit_code(0, 0, passed) == 0
+    skipped = VerifyResult(ran=False, skipped_reason="no framework")
+    assert resolve_exit_code(0, None, skipped) == 0       # skip is not a failure
+    assert resolve_exit_code(3, None, skipped) == 3       # preserves a real agent failure
+    assert resolve_exit_code(0, None, None) == 0          # gate didn't run
+    # a crashed retry is preserved when verify itself passed
+    assert resolve_exit_code(0, 2, passed) == 2
 
 
 def test_log_schema_accepts_verify_field(tmp_path):
