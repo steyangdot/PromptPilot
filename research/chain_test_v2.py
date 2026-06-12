@@ -42,6 +42,12 @@ import time
 from pathlib import Path
 
 
+# Make THIS worktree's prpt win over any editable install (`pip install -e` in another
+# checkout, whose prpt can lag this branch and lack prpt.verify) — and do it BEFORE the
+# first prpt import below, or a stale prpt gets cached in sys.modules and the harness
+# crashes when run from a worktree (ModuleNotFoundError: prpt.verify).
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from prpt.core.dotenv import load_dotenv as _load_dotenv_impl
 
 
@@ -465,16 +471,26 @@ def reset_repo(cwd: str) -> None:
     print("  [git] reset to HEAD")
 
 
+# The `-k` expression for the end-state regression. Default EXCLUDES httpx's
+# `test_write_timeout` (asyncio+trio): it asserts a 1e-6s write timeout RAISES, but on a
+# fast loopback the write completes first, so it fails non-deterministically REGARDLESS of
+# the seeded bug or the fix — leaving it in caps every arm at 0.75. Validated 2026-06-11:
+# the remaining timeout tests still catch the seeded bug (buggy tree -> 2 fail; fixed -> 0).
+# Override per repo/experiment via PROMPTPILOT_ENDSTATE_PYTEST_K.
+_ENDSTATE_PYTEST_K = os.environ.get("PROMPTPILOT_ENDSTATE_PYTEST_K", "timeout and not write_timeout")
+
+
 def _run_timeout_pytest(cwd: str, timeout_s: int = 180) -> dict:
     """Run the timeout-targeted regression against the LIVE working tree.
 
-    `-k timeout` positively selects the seeded-bug regression (same spirit as the
-    end-state scorer's _pytest_exercises_timeout guard: trust a green run only when
-    it actually exercises a timeout test). pytest return codes:
-      0 = selected tests passed   1 = failures   5 = no test matched `-k timeout`
-    Bounded by a hard timeout so a wedged/hanging tree can't stall the harness.
+    `-k <_ENDSTATE_PYTEST_K>` positively selects the seeded-bug regression while excluding
+    the env-flaky write_timeout tests (trust a green run only when it actually exercises a
+    timeout test). pytest return codes:
+      0 = selected tests passed   1 = failures   5 = no test matched the -k expr
+    Bounded by a hard timeout so a wedged/hanging tree (the bug makes timeout tests hang)
+    can't stall the harness.
     """
-    cmd = [sys.executable, "-m", "pytest", "-k", "timeout", "-q",
+    cmd = [sys.executable, "-m", "pytest", "-k", _ENDSTATE_PYTEST_K, "-q",
            "--no-header", "-p", "no:cacheprovider"]
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
