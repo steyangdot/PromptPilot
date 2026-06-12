@@ -71,6 +71,7 @@ def main() -> None:
     print("=" * 80)
 
     done = 0
+    failed = []
     with claude_subprocess_session("session_isolation"):
         for r in range(1, args.runs + 1):
             for variant in ARMS:                       # interleaved A,B,C per run index
@@ -88,16 +89,28 @@ def main() -> None:
                 except h.QuotaExhausted as e:
                     print("\n[abort] {0}\nResume after the quota window resets — runs are kept.".format(e))
                     raise SystemExit(2)
+                except Exception:
+                    # L2 (2026-06-11): one bad arm-run must NOT kill the experiment — log
+                    # the traceback (visible now that logging is unbuffered) and move on.
+                    # The run isn't saved, so a supervisor restart / next invocation retries it.
+                    import traceback
+                    print("\n[arm-run FAILED] {0} run {1} — continuing:".format(variant, r))
+                    traceback.print_exc(file=sys.stdout)
+                    failed.append((variant, r))
+                    continue
                 finally:
                     os.environ.pop("USE_BUILTIN_SESSION", None)
                 h.save_run(out_dir, variant, r, results)
                 done += 1
 
     ob = out_dir.parent.parent
-    print("\nDone ({0} arm-runs).".format(done))
+    print("\nDone ({0} arm-runs complete, {1} failed{2}).".format(
+        done, len(failed), ": " + str(failed) if failed else ""))
     print("  python research/score_endstate.py {0} --tool={1} "
           "--arms with_session,slm_native,builtin".format(ob, args.tool))
     print("  python research/analyze_uncached_cost.py {0} --tool {1}".format(ob, args.tool))
+    # exit 0 only when everything is saved -> the supervisor uses this to decide on a relaunch
+    raise SystemExit(0 if done >= args.runs * len(ARMS) else 3)
 
 
 if __name__ == "__main__":

@@ -31,19 +31,27 @@ CREATE_NO_WINDOW = 0x08000000
 env = dict(os.environ,
            PROMPTPILOT_OUT_DIR=OUT,
            CLAUDE_MODEL="claude-opus-4-8",
-           CLAUDE_TIMEOUT_SEC="1800")
+           CLAUDE_TIMEOUT_SEC="1800",
+           # PYTHONIOENCODING=utf-8 makes sys.stdout already-utf8, so chain_test_v2's
+           # import-time TextIOWrapper rewrap (line ~106) — which silently DISCARDED -u and
+           # block-buffered all progress (lost on every hard kill) — never triggers.
+           PYTHONIOENCODING="utf-8",
+           PYTHONUNBUFFERED="1")
 
 log = open(os.path.join(OUT, "runner.log"), "a", encoding="utf-8", buffering=1)
-log.write("\n[detach_run] launching DETACHED harness (no console; survives app close)\n")
+log.write("\n[detach_run] launching DETACHED supervisor (no console; restarts the runner on death)\n")
 log.flush()
 
+# Spawn the SUPERVISOR (which loops the resume-aware runner) rather than the runner directly:
+# any single death self-heals. NOTE (measured 2026-06-11): these flags remove the CONSOLE but
+# do NOT escape Claude-Code job objects — run me from a Task-Scheduler .cmd (outside the app's
+# job/tree) for true isolation; from inside the app this is still job-killable.
 proc = subprocess.Popen(
-    [sys.executable, "-u", "research/session_isolation_experiment.py",
-     "--runs", "5", "--tool", "claude-code", "--normalizer", "slm-openai"],
+    [sys.executable, "-u", "research/supervise_isolation.py"],
     cwd=str(ROOT), env=env,
     stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
     creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
     close_fds=True,
 )
-print("detached harness pid:", proc.pid)
-print("monitor:", os.path.join(OUT, "runner.log"))
+print("detached supervisor pid:", proc.pid)
+print("monitor:", os.path.join(OUT, "runner.log"), "and supervisor.log")
