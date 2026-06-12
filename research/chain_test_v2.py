@@ -103,7 +103,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
 from prpt.repo.collector import RepoContextCollector
+from prpt.core.types import RepoMetadata
 from prpt.session import append_turn, clear_session, load_recent_turns
+# Imported by name (not call-site) so the gate loop is unit-testable via monkeypatch.
+from prpt.verify import run_verify as _verify_run, build_retry_prompt as _verify_retry_prompt
 
 from agentic_variety_test import (
     _ext, _parse_one, _run_one,
@@ -853,13 +856,73 @@ def _quota_exhausted(out_path: Path, tool: str) -> bool:
 # Single-chain runners (one full pass through all turns)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Verify-gate measurement arm (OPTIMIZATION_LEVERS Lever #1)
+# ---------------------------------------------------------------------------
+
+def _git_changed_for_gate(cwd: str) -> list[str]:
+    """Tracked files changed vs HEAD (run_verify augments these with untracked new files)."""
+    try:
+        p = subprocess.run(["git", "diff", "--name-only", "HEAD"], cwd=cwd,
+                           capture_output=True, text=True, timeout=20)
+        return [f.strip() for f in (p.stdout or "").splitlines() if f.strip()]
+    except Exception:
+        return []
+
+
+def _gate_merge_usage(usage: dict, retry_usage: dict, tool: str) -> None:
+    """Charge a retry's tokens to the turn — the honest cost of the gate (incl. uncached)."""
+    for k in ("input_tokens", "output_tokens", "cached_tokens", "uncached_tokens", "tool_calls"):
+        usage[k] = usage.get(k, 0) + retry_usage.get(k, 0)
+    if tool == "claude-code" and retry_usage.get("total_cost_usd"):
+        usage["total_cost_usd"] = usage.get("total_cost_usd", 0.0) + retry_usage["total_cost_usd"]
+
+
+def run_verify_gate_turn(tool: str, out_dir: Path, run_idx: int, turn: int, ext: str,
+                         usage: dict, max_retries: int = 1) -> dict:
+    """After an agent turn, run the verify-gate: test the changed files; on a real failure
+    do up to `max_retries` SLM-bypassed retries (re-invoke the agent with the failure) and
+    MERGE the retry tokens into `usage`. Returns gate metadata for the run record.
+
+    Uses the SHIPPED prpt.verify code (run_verify / build_retry_prompt) so the measurement
+    reflects the real gate, and charges retry tokens to the arm so cost is counted honestly.
+    """
+    repo = RepoMetadata(cwd=HTTPX_DIR, test_framework="pytest")
+    changed = _git_changed_for_gate(HTTPX_DIR)
+    result = _verify_run(repo, changed)
+    retries = 0
+    retry_tokens = {"input_tokens": 0, "output_tokens": 0, "uncached_tokens": 0, "tool_calls": 0}
+    while result.ran and not result.passed and retries < max_retries:
+        retries += 1
+        print("    [gate] verify FAILED (rc={0}); retry {1}/{2}...".format(
+            result.returncode, retries, max_retries))
+        rpath = out_dir / "run{0}_with_gate_t{1}_retry{2}{3}".format(run_idx, turn, retries, ext)
+        _run_one(_verify_retry_prompt(result, changed), rpath, HTTPX_DIR, tool, session_id=None)
+        if _quota_exhausted(rpath, tool):
+            raise QuotaExhausted("quota hit during gate retry at run{0}/T{1}".format(run_idx, turn))
+        ru = _parse_one(rpath, tool)
+        for k in retry_tokens:
+            retry_tokens[k] += ru.get(k, 0)
+        _gate_merge_usage(usage, ru, tool)
+        changed = _git_changed_for_gate(HTTPX_DIR)
+        result = _verify_run(repo, changed)
+    status = ("pass" if result.passed else "fail") if result.ran else "skip"
+    print("    [gate] {0} (retries={1}, retry_uncached={2:,})".format(
+        status, retries, retry_tokens["uncached_tokens"]))
+    return {
+        "verify_ran": result.ran, "verify_passed": result.passed,
+        "verify_rc": result.returncode, "verify_skipped": result.skipped_reason,
+        "retries": retries, "retry_tokens": retry_tokens,
+    }
+
+
 def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                    out_dir: Path) -> list[dict]:
     """
-    Run all turns of `chain` once. variant ∈ {"no_session", "with_session"}.
+    Run all turns of `chain` once. variant ∈ {"no_session", "with_session", "with_gate", ...}.
     Returns per-turn result dicts.
     """
-    assert variant in ("no_session", "with_session", "raw", "builtin", "stacked", "slm_native", "gated_session")
+    assert variant in ("no_session", "with_session", "with_gate", "raw", "builtin", "stacked", "slm_native", "gated_session")
     # Print the resolved model up front so wrong-model invocations are visible
     # on the first turn rather than after the rolled-up analysis. (FIX_PLAN P1 #3)
     if tool == "claude-code":
@@ -916,6 +979,10 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             # Item #3: promptpilot session, but skip load_recent_turns() on
             # non-referential prompts (Haiku classifier).
             prepared = prepare_gated_session(raw, HTTPX_DIR, tool)
+        elif variant == "with_gate":
+            # Lever #1: WITH_SESSION + the verify-gate (an add-on, not a different prep).
+            # Isolates the gate's effect vs with_session.
+            prepared = prepare_with_session(raw, HTTPX_DIR, tool)
         else:
             prepared = prepare_with_session(raw, HTTPX_DIR, tool)
 
@@ -966,11 +1033,19 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             except Exception:
                 pass
 
-        # Score this turn
+        # Verify-gate arm: test the changed files; on a real failure do a capped,
+        # SLM-bypassed retry and charge its tokens into `usage` (so the uncached/cost
+        # computed below include the gate's cost). End-state success is scored separately
+        # via capture_end_state — the per-turn score below is non-verdict.
+        gate_meta = None
+        if variant == "with_gate":
+            gate_meta = run_verify_gate_turn(tool, out_dir, run_idx, i, ext, usage)
+
+        # Score this turn (per-turn diff; non-verdict — the verdict is end-state)
         score = score_turn(turn_def, before, before_globs, HTTPX_DIR, usage)
 
         # Record to promptpilot session for variants that use it
-        if variant in ("with_session", "stacked", "gated_session"):
+        if variant in ("with_session", "with_gate", "stacked", "gated_session"):
             record_to_session(HTTPX_DIR, raw, prepared)
 
         slm_cost = 0.0 if variant in ("raw", "builtin") else slm_cost_estimate(raw, prepared["grounded"])
@@ -1019,6 +1094,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "downstream_cost": downstream_cost,
             "total_cost": downstream_cost + slm_cost,
             "score": score,
+            "gate": gate_meta,
             "model_resolved": model_resolved,
             "model_used": model_used,
         })

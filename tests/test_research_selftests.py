@@ -19,6 +19,7 @@ SELF_TESTS = [
     "_test_usage_parser.py",
     "_test_score_endstate.py",
     "_test_endstate_capture.py",
+    "_test_gate_arm.py",
 ]
 
 

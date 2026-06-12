@@ -30,10 +30,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from agentic_variety_test import claude_cost, codex_cost  # noqa: E402
 
-ARMS = ["no_session", "with_session", "slm_native", "stacked", "builtin", "gated_session"]
+ARMS = ["no_session", "with_session", "with_gate", "slm_native", "stacked", "builtin", "gated_session"]
 ARM_LABEL = {
     "no_session": "NO_SESSION (rewrite, no session)",
     "with_session": "WITH_SESSION (rewrite + bounded)",
+    "with_gate": "WITH_GATE (rewrite + bounded + verify-gate)",
     "slm_native": "slm_native (rewrite + native)",
     "stacked": "stacked (rewrite+bounded+native)",
     "builtin": "BUILTIN (raw + native)",
@@ -116,6 +117,8 @@ def analyze_chain(run_dir: Path, tool: str, chain_id: str) -> None:
             return by[a][key] / by[b][key]
         return None
     pairs = [
+        ("WITH_GATE vs WITH (verify-gate cost vs bounded, rewrite+session held constant)",
+         "with_gate", "with_session"),
         ("WITH vs slm_native (bounded vs native, rewrite held constant)", "with_session", "slm_native"),
         ("WITH vs BUILTIN (full product vs raw+native)", "with_session", "builtin"),
         ("slm_native vs BUILTIN (rewrite effect, native held constant)", "slm_native", "builtin"),
