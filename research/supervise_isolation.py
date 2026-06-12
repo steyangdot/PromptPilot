@@ -45,7 +45,12 @@ def main() -> int:
     for attempt in range(1, MAX_RESTARTS + 2):
         say("attempt {0}: launching runner".format(attempt))
         t0 = time.time()
-        rc = subprocess.call(runner, cwd=str(ROOT))
+        # Pass handles EXPLICITLY: with a console-less parent, an inheriting child gets NO
+        # std handles -> Python sets sys.stdout/err to None -> prints AND tracebacks silently
+        # vanish (observed 2026-06-12). Explicit handles route the runner's output (incl. the
+        # L2 failure tracebacks) into harness.log alongside the supervisor's lines.
+        rc = subprocess.call(runner, cwd=str(ROOT), stdout=sys.stdout, stderr=sys.stderr,
+                             stdin=subprocess.DEVNULL)
         dt = (time.time() - t0) / 60
         if rc == 0:
             say("runner finished COMPLETE after {0:.1f} min — done.".format(dt))

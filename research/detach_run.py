@@ -38,7 +38,10 @@ env = dict(os.environ,
            PYTHONIOENCODING="utf-8",
            PYTHONUNBUFFERED="1")
 
-log = open(os.path.join(OUT, "runner.log"), "a", encoding="utf-8", buffering=1)
+# NOT runner.log: the Task-Scheduler .cmd holds runner.log open via its own >> redirect
+# while detach_run runs, and Windows denies a second writer (PermissionError). The
+# supervisor+runner output gets its own file.
+log = open(os.path.join(OUT, "harness.log"), "a", encoding="utf-8", buffering=1)
 log.write("\n[detach_run] launching DETACHED supervisor (no console; restarts the runner on death)\n")
 log.flush()
 
