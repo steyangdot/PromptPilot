@@ -18,7 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent          # the gate-measure worktree
-OUT = r"B:\LLM\_session_retest_2026-06-07\claude_isolation"
+# Read from env so the codex .cmd can route to a separate out dir (was hardcoded to claude).
+OUT = os.environ.get("PROMPTPILOT_OUT_DIR", r"B:\LLM\_session_retest_2026-06-07\claude_isolation")
 os.makedirs(OUT, exist_ok=True)
 
 if os.name != "nt":
@@ -32,6 +33,7 @@ env = dict(os.environ,
            PROMPTPILOT_OUT_DIR=OUT,
            CLAUDE_MODEL="claude-opus-4-8",
            CLAUDE_TIMEOUT_SEC="1800",
+           CODEX_TIMEOUT_SEC=os.environ.get("CODEX_TIMEOUT_SEC", "600"),  # codex turns (xhigh/high are slow)
            # PYTHONIOENCODING=utf-8 makes sys.stdout already-utf8, so chain_test_v2's
            # import-time TextIOWrapper rewrap (line ~106) — which silently DISCARDED -u and
            # block-buffered all progress (lost on every hard kill) — never triggers.

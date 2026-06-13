@@ -39,8 +39,10 @@ def say(msg: str) -> None:
 
 
 def main() -> int:
+    tool = os.environ.get("PROMPTPILOT_ISO_TOOL", "claude-code")
+    norm = os.environ.get("PROMPTPILOT_ISO_NORMALIZER", "slm-openai")
     runner = [sys.executable, "-u", "research/session_isolation_experiment.py",
-              "--runs", "5", "--tool", "claude-code", "--normalizer", "slm-openai"]
+              "--runs", "5", "--tool", tool, "--normalizer", norm]
     say("starting (max restarts: {0}; runner: {1})".format(MAX_RESTARTS, " ".join(runner[1:])))
     for attempt in range(1, MAX_RESTARTS + 2):
         say("attempt {0}: launching runner".format(attempt))
