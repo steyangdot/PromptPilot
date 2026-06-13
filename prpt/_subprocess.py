@@ -60,44 +60,65 @@ def safe_run(*args, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(*args, **kwargs)
 
 
-def reap_claude_orphans() -> int:
-    """Kill claude.exe processes whose parent process no longer exists.
-
-    Orphans accumulate when a harness run crashes or is Ctrl-C'd while a
-    claude.exe subprocess is in flight: the child continues running, retries
-    API calls indefinitely, and competes for the API key's concurrent-request
-    quota. ~10+ orphans can exhaust Windows process handles and crash the OS.
-
-    Windows-only; no-op on other platforms. Returns the number of processes
-    killed (best effort).
+def _is_harness_agent_cmdline(cmdline: str) -> bool:
+    """True ONLY for the harness's non-interactive `claude -p` agents — never the user's
+    interactive Claude Code app. `-p`/`--print` is the defining discriminator: the harness
+    runs `claude -p --output-format json ...`; the interactive app never uses `-p`.
+    Fail-safe: an empty/unknown command line returns False (never killed).
     """
-    if os.name != "nt":
+    if not cmdline:
+        return False
+    cl = " " + cmdline.lower().replace("\t", " ") + " "
+    return " -p " in cl or " --print " in cl
+
+
+def reap_claude_orphans() -> int:
+    """Kill ORPHANED harness `claude -p` agents only — never the interactive Claude Code app.
+
+    Orphans accumulate when a harness run crashes/Ctrl-C's while a claude.exe child is in
+    flight: it keeps retrying API calls, competes for quota, and ~10+ can exhaust Windows
+    process handles.
+
+    SAFETY (rewritten 2026-06-11 after this killed a live run AND risked crashing the app):
+    the previous version killed ANY claude.exe whose parent had exited, via `taskkill /F /T`
+    (whole process TREE). But the user's Claude Code *application* is also claude.exe, and a
+    background harness launched from it runs INSIDE that app's process tree — so the tree-kill
+    cascaded into the running experiment and would crash the app. This version
+      (a) kills ONLY processes whose command line is a `claude -p` agent (the app is
+          interactive, never -p) — see _is_harness_agent_cmdline;
+      (b) drops `/T`, so a kill can never cascade into a tree;
+      (c) is a no-op when PROMPTPILOT_REAP_ORPHANS=0.
+    Windows-only. Returns the number killed (best effort).
+    """
+    if os.name != "nt" or os.environ.get("PROMPTPILOT_REAP_ORPHANS", "1") == "0":
         return 0
     try:
-        # List all claude.exe PIDs with their parent PIDs
+        # /format:list (not csv): command lines contain commas, which corrupt CSV columns.
         proc = safe_run(
             ["wmic", "process", "where", "Name='claude.exe'",
-             "get", "ProcessId,ParentProcessId", "/format:csv"],
+             "get", "CommandLine,ParentProcessId,ProcessId", "/format:list"],
             capture_output=True, text=True, timeout=30,
         )
         if proc.returncode != 0:
             return 0
-        claude_pairs: list[tuple[int, int]] = []
-        for line in proc.stdout.splitlines():
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) < 3:
+        # Parse blank-line-separated key=value records.
+        records: list[dict] = []
+        cur: dict = {}
+        for raw in proc.stdout.splitlines():
+            line = raw.strip()
+            if not line:
+                if cur:
+                    records.append(cur)
+                    cur = {}
                 continue
-            try:
-                ppid = int(parts[1])
-                pid = int(parts[2])
-                claude_pairs.append((pid, ppid))
-            except (ValueError, IndexError):
-                continue
-
-        if not claude_pairs:
+            if "=" in line:
+                k, v = line.split("=", 1)
+                cur[k.strip()] = v.strip()
+        if cur:
+            records.append(cur)
+        if not records:
             return 0
 
-        # List all live PIDs to detect orphans
         live_proc = safe_run(
             ["wmic", "process", "get", "ProcessId", "/format:csv"],
             capture_output=True, text=True, timeout=30,
@@ -115,17 +136,23 @@ def reap_claude_orphans() -> int:
                 continue
 
         killed = 0
-        for pid, ppid in claude_pairs:
-            if ppid not in live_pids:
-                # Orphan — kill the process tree rooted at this claude.exe
-                try:
-                    safe_run(
-                        ["taskkill", "/F", "/T", "/PID", str(pid)],
-                        capture_output=True, timeout=10,
-                    )
-                    killed += 1
-                except Exception:
-                    pass
+        for rec in records:
+            try:
+                pid = int(rec.get("ProcessId", ""))
+                ppid = int(rec.get("ParentProcessId", ""))
+            except (ValueError, TypeError):
+                continue
+            if ppid in live_pids:
+                continue  # not an orphan
+            if not _is_harness_agent_cmdline(rec.get("CommandLine", "")):
+                continue  # interactive app / unknown command line -> NEVER kill
+            try:
+                # NO /T: kill only this orphan agent; it cannot cascade into a tree.
+                safe_run(["taskkill", "/F", "/PID", str(pid)],
+                         capture_output=True, timeout=10)
+                killed += 1
+            except Exception:
+                pass
         return killed
     except Exception:
         return 0
