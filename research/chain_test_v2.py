@@ -118,6 +118,8 @@ from agentic_variety_test import (
     _ext, _parse_one, _run_one,
     claude_cost, codex_cost, slm_cost_estimate,
     reap_claude_orphans,
+    CLAUDE_TIMEOUT_SEC, CODEX_TIMEOUT_SEC,
+    turn_timed_out,
 )
 
 HTTPX_DIR = os.environ.get("PROMPTPILOT_TEST_REPO", "C:/projects/httpx")
@@ -1004,8 +1006,9 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
 
         # Run downstream tool
         out_path = out_dir / "run{0}_{1}_t{2}{3}".format(run_idx, variant, i, ext)
-        wall_t, _ = _run_one(prepared["optimized"], out_path, HTTPX_DIR, tool,
-                             session_id=builtin_session_id if uses_builtin else None)
+        wall_t, rc = _run_one(prepared["optimized"], out_path, HTTPX_DIR, tool,
+                              session_id=builtin_session_id if uses_builtin else None)
+        timed_out = (rc == 124)
 
         # Quota guard: if the tool rejected this turn for a usage/quota limit,
         # abort the whole run NOW rather than recording this turn (and every
@@ -1057,8 +1060,12 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         if variant == "with_gate":
             gate_meta = run_verify_gate_turn(tool, out_dir, run_idx, i, ext, usage)
 
-        # Score this turn (per-turn diff; non-verdict — the verdict is end-state)
+        # Score this turn. A timed-out turn still earns file-hash success from
+        # the edits it landed before the kill, but its tokens/cost were censored
+        # to ~0 — so annotate the score as `censored` (the raw success is left
+        # intact for consumers like score_endstate; aggregation excludes it).
         score = score_turn(turn_def, before, before_globs, HTTPX_DIR, usage)
+        score["censored"] = timed_out
 
         # Record to promptpilot session for variants that use it
         if variant in ("with_session", "with_gate", "stacked", "gated_session"):
@@ -1089,8 +1096,17 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # quota" failure mode (inverse of the original wrong-model failure)
         # immediately on turn 1, not after the rolled-up analysis.
         # See FIX_PLAN.md P1 #3.
-        model_resolved = os.environ.get("CLAUDE_MODEL", "opus")
-        model_used = _extract_primary_model(out_path) if tool == "claude-code" else None
+        if tool == "claude-code":
+            model_resolved = os.environ.get("CLAUDE_MODEL", "opus")
+            model_used = _extract_primary_model(out_path)
+        else:
+            # codex: CLAUDE_MODEL is irrelevant and codex JSONL carries no model
+            # field, so record the requested CODEX_MODEL (passed to run_codex via
+            # -m) or an explicit sentinel — NOT the Claude "opus"/"sonnet" string.
+            # Stamping a Claude model onto codex made codex model-equality
+            # unauditable and could fool the cross-arm model guard.
+            model_resolved = os.environ.get("CODEX_MODEL", "codex-default")
+            model_used = None
 
         results.append({
             "turn": i,
@@ -1104,6 +1120,10 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "gate_skipped": prepared.get("gate_skipped", False),
             "prompt_chars": len(prepared["optimized"]),
             "wall_t": wall_t,
+            "rc": rc,
+            "timed_out": timed_out,
+            "timeout_cap_sec": (CLAUDE_TIMEOUT_SEC if tool == "claude-code"
+                                else CODEX_TIMEOUT_SEC),
             "usage": usage,
             "uncached_input": uncached_input,
             "slm_cost": slm_cost,
@@ -1140,17 +1160,34 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
 # Aggregation across N runs
 # ---------------------------------------------------------------------------
 
-def aggregate_runs(runs: list[list[dict]]) -> list[dict]:
+def aggregate_runs(runs: list[list[dict]], tool: str) -> list[dict]:
     """
     Average per-turn metrics across N runs of the same chain+variant.
     Each `runs[k]` is a list of per-turn dicts.
+
+    Timed-out turns (wall-clock cap hit, tokens censored to ~0 while still
+    earning file-hash success) are EXCLUDED from every mean and COUNTED in
+    `timed_out_count`, so a $0/0-token turn can't bank free success or deflate
+    the arm's uncached total. `n_runs` is the count of NON-censored runs (the
+    real denominator). If every run timed out for a turn, the turn is emitted
+    with n_runs=0 / all_timed_out=True and zeroed means (no statistics.mean([])).
     """
     if not runs:
         return []
     n_turns = len(runs[0])
     aggregated = []
+
+    def _mean(xs):
+        return statistics.mean(xs) if xs else 0.0
+
+    def _stdev(xs):
+        return statistics.stdev(xs) if len(xs) > 1 else 0.0
+
     for i in range(n_turns):
-        per_run = [r[i] for r in runs]
+        all_run = [r[i] for r in runs]
+        per_run = [pr for pr in all_run if not turn_timed_out(pr, tool)]
+        timed_out_count = len(all_run) - len(per_run)
+
         success_vals = [pr["score"]["success"] for pr in per_run]
         bailed_vals = [1 if pr["score"]["bailed"] else 0 for pr in per_run]
         tool_calls = [pr["usage"]["tool_calls"] for pr in per_run]
@@ -1166,22 +1203,24 @@ def aggregate_runs(runs: list[list[dict]]) -> list[dict]:
         total_cost = [pr.get("total_cost", pr.get("downstream_cost", 0.0) + pr.get("slm_cost", 0.0))
                       for pr in per_run]
         aggregated.append({
-            "turn": per_run[0]["turn"],
-            "raw": per_run[0]["raw"],
-            "expected_action": per_run[0]["expected_action"],
-            "had_history": per_run[0]["had_history"],
+            "turn": all_run[0]["turn"],
+            "raw": all_run[0]["raw"],
+            "expected_action": all_run[0]["expected_action"],
+            "had_history": all_run[0]["had_history"],
             "n_runs": len(per_run),
-            "success_mean": statistics.mean(success_vals),
-            "bailed_rate": statistics.mean(bailed_vals),
-            "tool_calls_mean": statistics.mean(tool_calls),
-            "tool_calls_stdev": statistics.stdev(tool_calls) if len(tool_calls) > 1 else 0.0,
-            "input_tokens_mean": statistics.mean(in_toks),        # GROSS (≈95% cached) — contrast only
-            "uncached_input_mean": statistics.mean(uncached),     # real incremental context (primary)
-            "cached_input_mean": statistics.mean(cached),
-            "output_tokens_mean": statistics.mean(out_toks),
-            "output_tokens_stdev": statistics.stdev(out_toks) if len(out_toks) > 1 else 0.0,
-            "total_cost_mean": statistics.mean(total_cost),       # cache-aware $/turn (claude real; codex notional)
-            "wall_t_mean": statistics.mean(wall),
+            "timed_out_count": timed_out_count,
+            "all_timed_out": len(per_run) == 0,
+            "success_mean": _mean(success_vals),
+            "bailed_rate": _mean(bailed_vals),
+            "tool_calls_mean": _mean(tool_calls),
+            "tool_calls_stdev": _stdev(tool_calls),
+            "input_tokens_mean": _mean(in_toks),        # GROSS (≈95% cached) — contrast only
+            "uncached_input_mean": _mean(uncached),     # real incremental context (primary)
+            "cached_input_mean": _mean(cached),
+            "output_tokens_mean": _mean(out_toks),
+            "output_tokens_stdev": _stdev(out_toks),
+            "total_cost_mean": _mean(total_cost),       # cache-aware $/turn (claude real; codex notional)
+            "wall_t_mean": _mean(wall),
         })
     return aggregated
 
@@ -1431,7 +1470,7 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     def _agg_complete(runs):
         """Aggregate an arm only if it ran the full n_runs — a partially-failed
         arm (quota abort mid-arm) is discarded rather than reported."""
-        return aggregate_runs(runs) if runs and len(runs) == n_runs else None
+        return aggregate_runs(runs, tool) if runs and len(runs) == n_runs else None
 
     try:
         if skip_no_session:

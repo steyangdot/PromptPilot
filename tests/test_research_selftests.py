@@ -20,6 +20,7 @@ SELF_TESTS = [
     "_test_score_endstate.py",
     "_test_endstate_capture.py",
     "_test_gate_arm.py",
+    "_test_timeout_instrumentation.py",
 ]
 
 

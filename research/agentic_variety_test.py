@@ -90,13 +90,18 @@ def prepare_prompts(raw: str, cwd: str, tool: str = "codex") -> dict:
 # Codex runner
 # ---------------------------------------------------------------------------
 
-CODEX_TIMEOUT_SEC = 300
-# CLAUDE_TIMEOUT_SEC: default raised 600 -> 1200 (2026-05-16) after diagnostic
-# showed chain1 T1 hits the 600s cap on sonnet across every run we observed.
-# With opus now the default model and known to be slower per tool call, 600s
-# is definitely insufficient for first-turn cold-exploration bug-fix prompts.
+# Both caps are env-overridable so cross-tool runs can be brought to parity
+# (the historical 300 vs 1200 asymmetry confounded codex-vs-claude $/token
+# claims). Codex default stays 300 (codex turns are short); raise per-run with
+# CODEX_TIMEOUT_SEC=... when resuming long native sessions.
+CODEX_TIMEOUT_SEC = int(os.environ.get("CODEX_TIMEOUT_SEC", "300"))
+# CLAUDE_TIMEOUT_SEC default raised 1200 -> 2400 (2026-06-12). The 2026-06-07
+# claude_isolation run launched with CLAUDE_TIMEOUT_SEC=1800 and chain1 T1 STILL
+# hit the cap on 5/5 slm_native runs (4 of them on T1), zeroing the turn's tokens
+# (overwritten to '{}', UNRECOVERABLE) while it still earned file-hash success.
+# Opus first-turn cold exploration on chain1 needs more headroom than 1800.
 # Override per-run via env var. Originally calibrated to chain4 5-turn cases.
-CLAUDE_TIMEOUT_SEC = int(os.environ.get("CLAUDE_TIMEOUT_SEC", "1200"))
+CLAUDE_TIMEOUT_SEC = int(os.environ.get("CLAUDE_TIMEOUT_SEC", "2400"))
 
 
 # Backward-compat re-export. Centralized in prpt/_subprocess.py so that
@@ -132,7 +137,15 @@ def run_codex(prompt: str, out_jsonl: Path, cwd: str,
         cmd = [codex, "exec", "resume", session_id,
                "--dangerously-bypass-approvals-and-sandbox", "--json", "-"]
     else:
-        cmd = [codex, "exec", "--dangerously-bypass-approvals-and-sandbox",
+        # Pin the codex model when CODEX_MODEL is set so runs are model-stamped
+        # and reproducible (codex JSONL carries no model field otherwise). Only on
+        # the fresh-exec path — `exec resume` continues an existing thread whose
+        # model was fixed at creation and rejects extra flags. Default (unset) =
+        # codex CLI default, unchanged behavior.
+        _cm = os.environ.get("CODEX_MODEL")
+        model_flags = ["-m", _cm] if _cm else []
+        cmd = [codex, "exec", *model_flags,
+               "--dangerously-bypass-approvals-and-sandbox",
                "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
     t0 = time.time()
     with open(out_jsonl, "w", encoding="utf-8") as fout:
@@ -323,6 +336,65 @@ def codex_cost(u: dict) -> float:
         + u["cached_tokens"] * 0.275 / 1_000_000
         + u["output_tokens"] * 4.40 / 1_000_000
     )
+
+
+# ---------------------------------------------------------------------------
+# Timeout classification (2026-06-12 measurement fix)
+# ---------------------------------------------------------------------------
+# A turn that hit the subprocess wall-clock cap records 0 tokens / $0 (claude
+# overwrites its output with '{}'; codex's killed grandchild's turn.completed is
+# written AFTER the harness parses) while its partial file edits still earn
+# file-hash success. Counting such a turn as a real 0-token / 0-cost success
+# inflated the published uncached/$ ratios (codex 4.47x -> true ~2.36x) and made
+# the claude native arm look ~2.6x cheaper instead of ~1.8-1.9x. The fix is to
+# EXCLUDE-and-COUNT censored turns in aggregation. `turn_timed_out` is the single
+# shared classifier every consumer (aggregate_runs, analyze_uncached_cost) uses.
+#
+# _TIMEOUT_WALL_FLOOR: absolute wall-time floors (seconds) for classifying OLD
+# frozen run files that predate the explicit timed_out/rc/timeout_cap_sec fields.
+# Keyed to cap values actually observed in historical runs, NOT the live env
+# default, so re-analysis is deterministic regardless of the current
+# CLAUDE_TIMEOUT_SEC (just raised to 2400 — keying off 0.97*live-cap would
+# silently un-flag the known 1800-cap timeouts). claude floor 1700 catches the
+# 2026-06-07 run's ~1800.3 pegs; codex floor 295 catches the 300.0 pegs. A turn
+# must ALSO have uncached<=0 to be censored, so a slow-but-completed turn is never
+# misclassified. CAVEAT: older 1200-cap claude runs (wall~1200 < 1700) are NOT
+# caught by this floor — re-score those with an explicit timeout_cap_sec. New
+# runs all carry timeout_cap_sec and bypass the floor entirely.
+_TIMEOUT_WALL_FLOOR = {"claude-code": 1700.0, "codex": 295.0}
+_TIMEOUT_WALL_FRAC = 0.97
+
+
+def _turn_uncached(turn: dict) -> float:
+    """Uncached input recorded for a turn, with back-compat for old files."""
+    u = turn.get("usage", {})
+    return turn.get("uncached_input",
+                    u.get("uncached_tokens",
+                          u.get("input_tokens", 0) - u.get("cached_tokens", 0)))
+
+
+def turn_timed_out(turn: dict, tool: str) -> bool:
+    """True if this turn hit the wall-clock cap and its usage was censored to ~0.
+
+    Evidence order (explicit beats heuristic):
+      (a) explicit timed_out is True, or rc == 124           -> True
+      (b) explicit timed_out is False (field present)        -> False
+      (c) per-record timeout_cap_sec present (NEW files):
+          wall >= 0.97 * cap AND uncached <= 0               -> deterministic
+      (d) neither field (OLD frozen files): absolute floor
+          wall >= _TIMEOUT_WALL_FLOOR[tool] AND uncached<=0  -> heuristic
+    """
+    if turn.get("timed_out") is True or turn.get("rc") == 124:
+        return True
+    if turn.get("timed_out") is False:
+        return False
+    wall = turn.get("wall_t", 0.0) or 0.0
+    uncached = _turn_uncached(turn)
+    cap = turn.get("timeout_cap_sec")
+    if cap:
+        return wall >= _TIMEOUT_WALL_FRAC * cap and uncached <= 0
+    floor = _TIMEOUT_WALL_FLOOR.get(tool, 1e9)
+    return wall >= floor and uncached <= 0
 
 
 def claude_cost(u: dict) -> float:
