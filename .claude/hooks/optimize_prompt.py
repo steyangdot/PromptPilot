@@ -74,6 +74,12 @@ def main() -> None:
         _allow()  # promptpilot package not available
 
     # --- 4. Rewrite with SLM (auto-detects Haiku or GPT-5.4-nano) ---
+    # The hook forwards the rewrite to the coding agent with no human to answer a
+    # clarify question first, so enable the clarify->act degrade (route=clarify ->
+    # original imperative). See spec.resolve_downstream /
+    # docs/V2_CLARIFY_ROUTE_POSTMORTEM.md. setdefault respects an explicit override.
+    import os
+    os.environ.setdefault("PROMPTPILOT_AUTONOMOUS", "1")
     try:
         normalizer = create_normalizer("slm", load_repo_content=True)
     except (ImportError, RuntimeError):

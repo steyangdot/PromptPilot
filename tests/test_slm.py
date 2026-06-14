@@ -708,10 +708,12 @@ class TestSLMAnthropicV2Normalizer:
         # Context short-circuited -> only the rewrite call (no pass-1 classify).
         assert client.messages.create.call_count == 1
 
-    def test_2_clarify_route_carries_question(self, repo):
-        """Headline v2 capability: an underspecified prompt routes clarify and
-        the clarifying question rides in downstream_prompt -> normalized_prompt
-        (which the CLI prints before exiting, instead of running the agent)."""
+    def test_2_clarify_route_carries_question(self, repo, monkeypatch):
+        """Interactive (non-autonomous) path: an underspecified prompt routes
+        clarify and the clarifying question rides in downstream_prompt ->
+        normalized_prompt (the CLI prints it before exiting). The autonomous
+        clarify->act degrade is OFF here -- see test_2b for the ON case."""
+        monkeypatch.delenv("PROMPTPILOT_AUTONOMOUS", raising=False)
         import json
         question = (
             "Which area is slow — checkout, payments, or order sync? "
@@ -731,6 +733,32 @@ class TestSLMAnthropicV2Normalizer:
         assert n._last_spec is not None
         assert n._last_spec.route == "clarify"
         assert result.normalized_prompt == question
+
+    def test_2b_clarify_degrades_to_act_when_autonomous(self, repo, monkeypatch):
+        """Autonomous mode (PROMPTPILOT_AUTONOMOUS=1): route=clarify must NOT
+        forward a question to the agent (it would answer instead of act). It
+        degrades to the original imperative and resets the stale clarify spec.
+        Regression guard for the v2 clarify-route bug (see
+        docs/V2_CLARIFY_ROUTE_POSTMORTEM.md)."""
+        monkeypatch.setenv("PROMPTPILOT_AUTONOMOUS", "1")
+        import json
+        question = "Which area is slow? (A) checkout (B) payments (C) sync"
+        json_body = json.dumps({
+            "route": "clarify", "intent": "act", "scope": "broad",
+            "downstream_prompt": question,
+            "memory_record": "Vague slowness; need specifics.",
+        })
+        client = MagicMock()
+        client.messages.create.return_value = self._mock_response(json_body)
+
+        n = self._make_normalizer(client)
+        result = n.normalize("fix the N+1 query in checkout", repo)
+
+        assert result.normalized_prompt == "fix the N+1 query in checkout"
+        assert n._last_intent == "act"
+        assert n._last_scope == "localized"
+        assert n._last_spec.route == "act"
+        assert n._last_spec.memory_record == "fix the N+1 query in checkout"
 
     def test_3_prose_envelope_fallback_produces_equivalent_shape(self, repo):
         """Guardrail #2: v1 prose envelope still parses (fail-open), no spec."""
@@ -830,7 +858,9 @@ class TestSLMSubscriptionV2Normalizer:
         assert n._last_spec is not None and n._last_spec.route == "act"
         assert n._judge.call_count == 1  # only the rewrite call (no classify)
 
-    def test_2_clarify_route_via_judge(self, repo):
+    def test_2_clarify_route_via_judge(self, repo, monkeypatch):
+        """Interactive path (autonomous degrade OFF) -- clarify question carried."""
+        monkeypatch.delenv("PROMPTPILOT_AUTONOMOUS", raising=False)
         import json
         question = "Which layer is slow — frontend, API, or DB?"
         body = json.dumps({
@@ -842,6 +872,23 @@ class TestSLMSubscriptionV2Normalizer:
         result = n.normalize("the app is slow", repo)
         assert n._last_spec is not None and n._last_spec.route == "clarify"
         assert result.normalized_prompt == question
+
+    def test_2b_clarify_degrades_to_act_when_autonomous(self, repo, monkeypatch):
+        """Autonomous degrade ON: subscription v2 must degrade clarify -> act
+        (regression guard for the v2 clarify-route bug)."""
+        monkeypatch.setenv("PROMPTPILOT_AUTONOMOUS", "1")
+        import json
+        question = "Which layer is slow — frontend, API, or DB?"
+        body = json.dumps({
+            "route": "clarify", "intent": "act", "scope": "broad",
+            "downstream_prompt": question,
+            "memory_record": "Vague perf ask; need the layer.",
+        })
+        n = self._make_normalizer(body)
+        result = n.normalize("make the DB query in reports faster", repo)
+        assert result.normalized_prompt == "make the DB query in reports faster"
+        assert n._last_intent == "act"
+        assert n._last_spec.route == "act"
 
     def test_3_prose_fallback_via_judge(self, repo):
         prose = "INTENT: act\nSCOPE: localized\n---\nFix the failing auth test."
@@ -1014,3 +1061,46 @@ class TestTargetFilesHint:
             self._make_normalized("Explain X."), self._repo(), target_files=[],
         )
         assert "[likely files:" not in out
+
+
+class TestResolveDownstreamClarifyGuard:
+    """Unit tests for the shared clarify->act degrade (spec.resolve_downstream) --
+    the single guard all three v2 normalizers call. Regression coverage for the
+    v2 clarify-route bug (docs/V2_CLARIFY_ROUTE_POSTMORTEM.md)."""
+
+    def _clarify_spec(self):
+        from prpt.core.spec import ExecutionSpec
+        return ExecutionSpec(
+            route="clarify", intent="act", scope="broad",
+            downstream_prompt="Which ordering? (A) HA2 (B) A1 (C) nonce",
+            memory_record="Vague ask; need which ordering.",
+        )
+
+    def test_interactive_off_carries_question(self, monkeypatch):
+        from prpt.core.spec import resolve_downstream
+        monkeypatch.delenv("PROMPTPILOT_AUTONOMOUS", raising=False)
+        spec = self._clarify_spec()
+        out = resolve_downstream(spec, "fix the auth bug")
+        assert out == "Which ordering? (A) HA2 (B) A1 (C) nonce"
+        assert spec.route == "clarify"  # untouched in interactive mode
+        assert spec.memory_record == "Vague ask; need which ordering."
+
+    def test_autonomous_on_degrades_and_resets(self, monkeypatch):
+        from prpt.core.spec import resolve_downstream
+        monkeypatch.setenv("PROMPTPILOT_AUTONOMOUS", "1")
+        spec = self._clarify_spec()
+        out = resolve_downstream(spec, "fix the auth bug")
+        assert out == "fix the auth bug"  # original imperative, NOT the question
+        assert spec.route == "act"
+        assert spec.intent == "act"
+        assert spec.scope == "localized"  # clarify 'broad' reset so the act suffix applies
+        assert spec.memory_record == "fix the auth bug"  # question not persisted to session
+
+    def test_non_clarify_passthrough(self, monkeypatch):
+        from prpt.core.spec import ExecutionSpec, resolve_downstream
+        monkeypatch.setenv("PROMPTPILOT_AUTONOMOUS", "1")
+        spec = ExecutionSpec(route="act", intent="act", scope="pinpoint",
+                             downstream_prompt="rewritten act prompt")
+        out = resolve_downstream(spec, "orig")
+        assert out == "rewritten act prompt"  # non-clarify unaffected even when autonomous
+        assert spec.route == "act"
