@@ -26,6 +26,35 @@ for the side-by-side example.
 The README demo poster shows this `clarify` &rarr; `act` flow end to end on a real
 `slm-anthropic-v2` run.
 
+## Autonomous degrade: `clarify` &rarr; `act` (v0.3.1)
+
+A `clarify` route emits a human-style clarifying question as the downstream
+prompt. That is the right behavior interactively — but an autonomous coding
+agent has no human to answer it, so it **answers the question instead of acting**,
+producing a silent end-state failure. In the `chain_auth` benchmark this dropped
+`slm_native` v2 to 2/5 (a 60% failure rate) pre-fix.
+
+v0.3.1 (PR #39) adds a shared helper `resolve_downstream()` in
+`prpt/core/spec.py`. When the route is `clarify` **and** the environment variable
+`PROMPTPILOT_AUTONOMOUS=1` is set, it degrades the route to `act`: it returns the
+original imperative and resets the now-stale spec (`route`/`intent` &rarr; `act`,
+`scope` &rarr; `localized`, `memory_record` &rarr; the original). The helper is
+called by **all three v2 normalizers** (`slm-openai-v2`, `slm-anthropic-v2`,
+`slm-subscription-v2`), by the `cli --auto` / `--dry-run` paths, and by the
+`optimize_prompt` hook.
+
+Alongside the guard, `SYSTEM_JSON_SPEC` was tightened so `clarify` fires only for
+genuine ambiguity about **what** to change — never merely because a file or
+location is unstated (a repo-access agent can `grep`).
+
+**Result:** with the guard on, end-state is restored to 5/5. **Interactive CLI
+behavior is unchanged** — the degrade is off by default, so a human still sees the
+`clarify` question.
+
+The mis-fire is model-specific: on an actionable imperative, `gpt-5.4-nano`
+mis-fired 20/20, while `gpt-5.4-mini` mis-fired 0/20 and `claude-haiku-4-5` 0.
+The smallest SLM over-clarifies; the guard neutralizes it.
+
 ### Rewrite is a behavior, not a route
 
 When the route is `act`, the SLM produces a rewritten `downstream_prompt`

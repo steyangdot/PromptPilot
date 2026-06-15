@@ -141,6 +141,47 @@ JSON-parse fallback and an explicit opt-out (`--normalizer slm-anthropic` /
 The mapping from `route` values to harness behavior is documented in
 [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions).
 
+## Which SLM model? Prefer the terser one
+
+The SLM's output (the rewritten `downstream_prompt` and the `memory_record`) is
+**re-fed to the coding agent every turn**, so SLM terseness is not a nicety — it
+directly sets how lean the agent's input is. A bigger SLM is counterproductive
+when its output is re-injected.
+
+In the chain_auth experiment (N=5, seeded DigestAuth bug in httpx, uncached
+input tokens per run), a bulkier SLM inflated the codex agent's uncached input
+roughly **1.6×** versus the terser model:
+
+| SLM model      | with_session | slm_native |
+| -------------- | -----------: | ---------: |
+| gpt-5.4-nano   |      118,610 |    190,578 |
+| gpt-5.4-mini   |      185,677 |    326,671 |
+| ratio (mini÷nano) |    1.57×  |     1.71×  |
+
+`gpt-5.4-mini` writes bulkier rewrites and `memory_record`s; re-fed each turn,
+that bulk dominates the agent's cost. Prefer the terser SLM (`gpt-5.4-nano`).
+End-state was parity — every config fixed the bug — so the extra tokens buy no
+quality. (Cross-experiment caveat: N=5, with interleaving and an uncached
+control for caching.)
+
+### Transport is agent-uncached-invariant
+
+How the SLM is *called* — an API SDK call vs. a subscription CLI subprocess —
+does **not** change the agent's input. For the same SLM model the agent sees the
+same tokens regardless of transport: claude Haiku via API was 67,501 uncached
+vs. 65,608 via Max subscription (~3%, equal). Transport only changes **where the
+SLM cost lands** ($ on an API key vs. quota on a flat subscription) and adds
+~20k tokens/call of CLI overhead on the subprocess path. So choose the SLM
+*model* for agent cost, and the *transport* for billing — they are independent
+knobs.
+
+The hybrid setup is materially better than going all-subscription: a terse SLM
+(`gpt-5.4-nano`) on a cheap API key plus the agent on the subscription beats
+SLM + agent both on the subscription, which roughly halves codex efficiency
+(`gpt-5.4-mini` 1.71× vs. nano 2.67× vs. vanilla). The default SLM differs per
+backend — OpenAI API &rarr; `gpt-5.4-nano`; codex/ChatGPT subscription &rarr;
+`gpt-5.4-mini`; Anthropic API and Max &rarr; `claude-haiku-4-5`.
+
 ## Example
 
 This is a schematic example showing both formats for the same input.

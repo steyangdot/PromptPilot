@@ -53,6 +53,51 @@ tokens, not dollars:
 The token counts above are the measured fact; the dollar figures are one
 translation of them under specific rate/quota assumptions. Pitch the tokens.
 
+## Why a *terse* SLM on a cheap API key (v0.3.1)
+
+The hybrid split has a second, sharper edge that the v0.3.1 `chain_auth`
+experiments isolated (N=5, uncached input tokens/run, end-state = passing
+`tests/test_auth.py`): **the SLM model you pick matters as much as where you
+route it.** A smaller, terser SLM is the better choice — and it's the API-key
+side of the hybrid that lets you pick it.
+
+- **Transport is agent-uncached-invariant.** The same SLM model produces the
+  same downstream agent footprint whether the SLM ran via an API SDK call or a
+  subscription CLI subprocess (Haiku via API 67,501 vs via Max 65,608 — ~3%,
+  equal). Transport only changes **where the SLM cost lands** ($ on a metered
+  API key vs quota on a flat subscription) and adds **~20k tokens/call of CLI
+  overhead** on the subprocess path. So routing the SLM to the API key is purely
+  upside: same agent cost, no subprocess overhead, predictable metered spend.
+- **SLM model size is first-order for the agent.** On codex, a bigger SLM
+  inflates the *agent's* uncached tokens because the SLM's bulkier rewrites and
+  memory records get re-fed every turn: gpt-5.4-mini vs gpt-5.4-nano was
+  **1.57×** with a bounded session (185,677 vs 118,610) and **1.71×** native
+  (326,671 vs 190,578). **The terser model wins** — a bigger SLM is
+  counterproductive when its output is re-injected into the agent loop.
+- **Pure-subscription works but costs ~half the efficiency.** Putting *both*
+  the SLM and the agent on the ChatGPT/Max subscription (zero API keys) runs,
+  but it forces the heavier subscription-default SLM (gpt-5.4-mini) and pays the
+  ~20k-tokens/call CLI overhead. On codex that lands at **1.71× cheaper than
+  vanilla**, versus **2.67×** for the terse-nano hybrid. The hybrid — terse SLM
+  (nano) on a cheap API key + agent on the subscription — is materially better.
+- **End-state is parity** across every config: each one fixed the seeded bug,
+  so the token differences carry **no quality tradeoff**.
+
+The default SLM differs per backend for exactly this reason: OpenAI API →
+gpt-5.4-nano (terse), codex/ChatGPT subscription → gpt-5.4-mini, Anthropic API
+and Max → claude-haiku-4-5. For an autonomous/agent run on codex, prefer the
+nano-on-API-key hybrid over the mini-on-subscription path.
+
+> **Autonomous guard (v0.3.1):** the terse nano SLM over-clarifies — on an
+> actionable imperative it mis-fired the `clarify` route **20/20** (gpt-5.4-mini
+> 0/20, claude-haiku-4-5 0). An autonomous agent has no human to answer a
+> clarifying question, so it answered instead of acting — a silent end-state
+> failure (slm_native scored 2/5 pre-fix). Setting `PROMPTPILOT_AUTONOMOUS=1`
+> degrades a `clarify` route back to `act`, restoring end-state to **5/5**.
+> Interactive CLI behavior is unchanged (the degrade is off by default; a human
+> still sees the question). Keep this guard on for autonomous/agent use of the
+> terse SLM.
+
 ## When hybrid pays off
 
 Use hybrid when:
@@ -167,6 +212,13 @@ prpt --tool codex "refactor the auth middleware"
 The Haiku normalizer rewrites the prompt for ~$0.0001; codex does the heavy
 coding work and bills against your ChatGPT subscription quota instead of
 OpenAI API per-call billing.
+
+For the leanest codex run specifically, route the SLM to an **OpenAI API key**
+so it uses the terse gpt-5.4-nano, add a bounded session, and keep the autonomous
+guard on (`PROMPTPILOT_AUTONOMOUS=1`) — that config measured **2.67× cheaper than
+vanilla** (with_session 118,610 vs builtin 317,079 uncached tokens/run; codex
+`chain_auth` N=5). The terse-nano SLM on the API key is what makes this beat the
+~1.71× of an all-on-subscription run.
 
 ### Python configuration
 
