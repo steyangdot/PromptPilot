@@ -12,6 +12,7 @@ parser at `slm_anthropic._parse_intent_response`.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 
@@ -93,6 +94,44 @@ def spec_to_dict(spec: ExecutionSpec) -> dict:
     return asdict(spec)
 
 
+def resolve_downstream(spec: ExecutionSpec, original_prompt: str) -> str:
+    """Resolve an ExecutionSpec to the downstream prompt, applying the
+    autonomous-mode clarify->act degrade. Shared by all three v2 normalizers
+    (they are siblings, not a chain, so the guard cannot propagate by
+    inheritance -- it must live in one place they all call).
+
+    route='clarify' makes the SLM emit a human-style clarifying question
+    (lettered options) as downstream_prompt. That is correct for an interactive
+    CLI where a human answers and re-runs. But in AUTONOMOUS execution
+    (PROMPTPILOT_AUTONOMOUS=1) there is no human: the question is delivered
+    straight to the coding agent, which ANSWERS it (diagnoses / picks an option)
+    instead of acting -> silent end-state failure (measured 60% on chain_auth
+    slm_native, 2026-06-14; see docs/V2_CLARIFY_ROUTE_POSTMORTEM.md).
+
+    In autonomous mode we degrade clarify to a best-effort 'act': return the
+    ORIGINAL imperative (fully actionable for a repo-access agent that can grep)
+    and reset the spec's now-stale fields IN PLACE so downstream consumers do
+    not carry the abandoned clarification:
+      - route/intent -> 'act' (so the action output-suffix is applied)
+      - scope -> 'localized' (a clarify 'broad'/'new' scope would mis-shape the suffix)
+      - memory_record -> the original prompt (NOT the question; the question is
+        not what we did, and persisting it pollutes the session history that the
+        bounded-session mechanism feeds to later turns).
+    """
+    if spec.route == "clarify" and os.environ.get("PROMPTPILOT_AUTONOMOUS") == "1":
+        from prpt.core.utils import write_stderr
+        write_stderr(
+            "[prpt] route=clarify in autonomous mode -> degrading to act "
+            "(original prompt; no human to answer the clarification)."
+        )
+        spec.route = "act"
+        spec.intent = "act"
+        spec.scope = "localized"
+        spec.memory_record = (original_prompt or "").strip()[:200]
+        return original_prompt
+    return spec.downstream_prompt or original_prompt
+
+
 # ---------------------------------------------------------------------------
 # Shared v2 system prompt
 # ---------------------------------------------------------------------------
@@ -119,9 +158,13 @@ SYSTEM_JSON_SPEC = (
     "}\n\n"
     "Field guidance:\n"
     "- route: pick 'answer' if you can fully answer from context (explanations); "
-    "'act' if a code change is needed; 'clarify' if the prompt is underspecified "
-    "and asking the user is cheaper than guessing; 'passthrough' if rewriting "
-    "is risky (highly specific, already-precise prompts).\n"
+    "'act' if a code change is needed; 'clarify' ONLY if the task is genuinely "
+    "ambiguous about WHAT to change such that guessing risks the wrong change -- NOT "
+    "merely because a file or location is unstated (a coding agent has repo access "
+    "and can grep/read to find WHERE itself). An imperative that names a function, "
+    "symbol, or symptom (e.g. 'fix the bug in DigestAuth where the response hash is "
+    "wrong') is actionable: use 'act', never 'clarify'. Use 'passthrough' if "
+    "rewriting is risky (highly specific, already-precise prompts).\n"
     "- When route is 'clarify', put the clarifying question in downstream_prompt "
     "as ONE short lead question followed by a short lettered list of the most "
     "likely options (A), B), C), ... -- a few words each), then at most one "

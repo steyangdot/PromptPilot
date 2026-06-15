@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from prpt.core.spec import SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json
+from prpt.core.spec import (
+    SYSTEM_JSON_SPEC, ExecutionSpec, parse_spec_json, resolve_downstream,
+)
 from prpt.core.types import RepoMetadata
 from prpt.core.utils import log_v2_raw, write_stderr
 from prpt.normalizers.slm_anthropic import (
@@ -84,9 +86,12 @@ class SubscriptionSLMNormalizerV2(SubscriptionSLMNormalizer):
             spec = parse_spec_json(text)
             if spec is not None:
                 self._last_spec = spec
+                # Shared autonomous clarify->act degrade (spec.resolve_downstream).
+                # Mutates spec in place on degrade, so read intent/scope AFTER.
+                downstream = resolve_downstream(spec, prompt)
                 self._last_intent = spec.intent
                 self._last_scope = spec.scope
-                return spec.downstream_prompt or prompt
+                return downstream
 
             # Fall back to the prose parser only if the envelope is present.
             raw_upper = text.upper()

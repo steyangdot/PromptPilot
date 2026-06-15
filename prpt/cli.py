@@ -660,6 +660,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     )
                 )
 
+    # Autonomous execution: --auto / --dry-run skip the interactive clarify gate
+    # below and forward the rewrite straight to the coding agent -- with no human
+    # to answer a clarify question. Enable the clarify->act degrade so route=clarify
+    # doesn't reach the agent as an unanswerable question (which it would answer
+    # instead of acting on). See spec.resolve_downstream /
+    # docs/V2_CLARIFY_ROUTE_POSTMORTEM.md.
+    if args.auto or args.dry_run:
+        os.environ["PROMPTPILOT_AUTONOMOUS"] = "1"
+
     normalized = normalizer.normalize(prompt_for_slm, repo, high_stakes=args.high_stakes)
     validation = SemanticValidator().validate(normalized)
 
