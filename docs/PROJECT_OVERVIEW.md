@@ -76,6 +76,21 @@ This is a measured example, not a guarantee. The useful claim is not "PromptPilo
 
 For the full evidence and caveats, see [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) and [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode).
 
+## Tool-aware session strategy
+
+Bounding the session is not universally cheaper — the right choice depends on the tool. On the same code, task, and SLM, the verdict flips:
+
+- On Codex, the native session re-feeds the whole transcript uncached every turn, so a bounded session wins (about 1.87x cheaper than native resume).
+- On Claude, native `--resume` caches history so uncached input collapses to roughly 1.5k tokens per turn by turn 5; the bounded session loses there, so the better path is the SLM rewrite over native resume.
+
+The rule of thumb: bound the session on Codex, use native resume (rewrite-only) on Claude, and prefer the terser SLM. These are measured on an N=5 chain with uncached input tokens as the metric, not universal guarantees.
+
+## v0.3.1: clarify-route guard for autonomous agents
+
+In v2, a `clarify` route emitted a human-style multiple-choice question as the downstream prompt. An autonomous coding agent has no human to answer it, so it would answer the question instead of acting — a silent end-state failure.
+
+v0.3.1 adds a shared guard (`resolve_downstream()` in `prpt/core/spec.py`): when `route=clarify` and `PROMPTPILOT_AUTONOMOUS=1`, it degrades to `act`, returning the original imperative. The JSON spec was also tightened so `clarify` fires only for genuine ambiguity about *what* to change, never merely because a file or location is unstated. End-state recovered from 2/5 to 5/5 on the affected config. Interactive CLI behavior is unchanged: the degrade is off by default, so a human still sees the clarify question.
+
 ## When to use PromptPilot
 
 Use PromptPilot when:

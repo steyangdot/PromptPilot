@@ -34,13 +34,14 @@ Common settings include:
 
 ## Normalizers and defaults
 
-The default `slm` normalizer **auto-selects a v2 (JSON `ExecutionSpec`) normalizer to match your auth**:
+The default `slm` normalizer **auto-selects a v2 (JSON `ExecutionSpec`) normalizer to match your auth**, along with a default SLM model per backend:
 
-| Auth present | Normalizer chosen |
-|---|---|
-| `ANTHROPIC_API_KEY` | `slm-anthropic-v2` |
-| `OPENAI_API_KEY` | `slm-openai-v2` |
-| Max OAuth / ChatGPT subscription | `slm-subscription-v2` |
+| Auth present | Normalizer chosen | Default SLM model |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | `slm-anthropic-v2` | `claude-haiku-4-5` |
+| `OPENAI_API_KEY` | `slm-openai-v2` | `gpt-5.4-nano` |
+| Max OAuth | `slm-subscription-v2` | `claude-haiku-4-5` |
+| ChatGPT/Codex subscription | `slm-subscription-v2` | `gpt-5.4-mini` |
 
 v2 normalizers emit the routing decision (`route` = answer / act / **clarify** / passthrough) alongside the rewrite. The legacy v1 prose normalizers (`slm-anthropic` / `slm-openai` / `slm-subscription`) only emit `act`/`answer`; pick them explicitly with `--normalizer` for pre-v2 behavior. `PROMPTPILOT_JUDGE` is a **separate** setting (the checkpoint/restart judge backend), not the normalizer.
 
@@ -49,6 +50,62 @@ v2 normalizers emit the routing decision (`route` = answer / act / **clarify** /
 - `prpt preview` — interactive playground: type a prompt, see the routing spec (JSON) + rewrite, nothing forwarded to an agent.
 - `prpt --show-spec "..."` — print the parsed `ExecutionSpec` for one run.
 - `PROMPTPILOT_V2_RAW_LOG=1` — log each raw model JSON response to `~/.promptpilot/v2_slm_raw.jsonl`.
+
+### Autonomous clarify guard (`PROMPTPILOT_AUTONOMOUS=1`)
+
+When a v2 normalizer chooses `route = clarify`, it emits a human-style
+multiple-choice clarifying question as the downstream prompt. That is correct
+for interactive use, but an autonomous coding agent has no human to answer it —
+so the agent *answers the question* instead of acting, producing a silent
+end-state failure.
+
+Set `PROMPTPILOT_AUTONOMOUS=1` for agent/headless runs. When `route = clarify`
+and this flag is set, PromptPilot degrades the route to `act`: it returns the
+original imperative and resets the stale spec (route/intent → `act`, scope →
+localized, memory_record → original). The guard is applied by all three v2
+normalizers (`slm-openai-v2`, `slm-anthropic-v2`, `slm-subscription-v2`) and by
+`prpt --auto` / `--dry-run`. Interactive behavior is **unchanged** — the degrade
+is off by default, so a human still sees the clarify question.
+
+In the v0.3.1 release the clarify policy was also tightened: `clarify` now fires
+only for genuine ambiguity about *what* to change, never merely because a file
+or location is unstated (a repo-access agent can grep). The mis-fire is
+model-specific — on an actionable imperative, `gpt-5.4-nano` over-clarified
+20/20, while `gpt-5.4-mini` and `claude-haiku-4-5` did not. With the guard on,
+the seeded-bug chain task returned to a 5/5 end-state pass rate (from 2/5
+pre-fix).
+
+## SLM model choice, transport, and the hybrid
+
+Two independent settings affect cost: **which SLM model** does the rewrite, and
+**which transport** carries the call (API SDK vs subscription CLI subprocess).
+
+**Transport is agent-uncached-invariant.** For the same SLM model, the
+downstream agent sees the same input whether the SLM ran via an API key or via a
+subscription CLI. Measured: Haiku via the Anthropic API drove 67,501 uncached
+agent tokens/run vs 65,608 via Max (~3%, equal). Transport only changes *where*
+the SLM cost lands — dollars on an API key vs quota on a flat subscription — and
+adds ~20k tokens/call of CLI subprocess overhead on the subscription path.
+
+**SLM model is first-order for the codex agent.** A bulkier SLM writes bulkier
+rewrites and memory records, which are re-fed to the agent every turn. On codex,
+`gpt-5.4-mini` inflated agent uncached ~1.6× vs `gpt-5.4-nano` (with bounded
+session: 185,677 vs 118,610 = 1.57×; native resume: 326,671 vs 190,578 =
+1.71×). The terser model is the better SLM — a bigger SLM is counterproductive
+when its output is re-injected.
+
+**Pure-subscription vs hybrid.** Running both the SLM and the agent on one
+ChatGPT/Codex subscription (zero API keys) works, but it pins the SLM to
+`gpt-5.4-mini`, whose bulkier output erodes the codex win: with a bounded session
+it lands at **1.71× cheaper than vanilla** (185,677 vs 317,079) — versus **2.67×**
+for the terse-`gpt-5.4-nano` hybrid (118,610 vs 317,079). The hybrid — a terse SLM
+on a cheap API key plus the agent on the subscription — is materially better. See
+[Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode).
+
+> All figures: chain task fixing a seeded auth bug in httpx, N=5, uncached input
+> tokens/run, claude-code 2.1.163 / codex-cli 0.130.0. End-state was parity —
+> every config fixed the bug; the token differences carry no quality tradeoff.
+> Codex dollar figures are notional.
 
 ## Security notes
 

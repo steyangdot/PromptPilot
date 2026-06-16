@@ -4,6 +4,11 @@ These markdown files are the **source of truth** for PromptPilot's long-form doc
 
 Browse them locally in this folder, or read the rendered versions on the wiki — both reflect the same content. Links below use absolute URLs so they resolve the same whether you're reading this page in the repo or on the wiki.
 
+## What's new in v0.3.1
+
+- **Tool-aware session strategy** — PromptPilot now picks the cheaper session mechanism per tool: bound the session on codex, use native `--resume` (rewrite-only) on claude. Same code/task/SLM, opposite verdict — see [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory) and [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks).
+- **Autonomous clarify-route guard** — with `PROMPTPILOT_AUTONOMOUS=1`, a `route=clarify` decision degrades to `act` instead of emitting a human-style clarifying question, so an agent acts rather than answering itself. Interactive CLI behavior is unchanged. See [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions).
+
 ## Where to start
 
 - **New user** → [Quickstart](https://github.com/steyangdot/PromptPilot/wiki/Quickstart) · [Troubleshooting](https://github.com/steyangdot/PromptPilot/wiki/Troubleshooting) · [FAQ](https://github.com/steyangdot/PromptPilot/wiki/FAQ)

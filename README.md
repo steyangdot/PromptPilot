@@ -14,7 +14,7 @@
 
 The SLM manages the workflow; the frontier model still writes and debugs the code. PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction — a rewrite may be *longer* when that preserves a constraint. The savings come from fewer ambiguous turns, bounded replay, and compressed context.
 
-> **Measured (hybrid mode, one 15-turn chain):** ~24k input tokens of SLM work directed ~12.66M input tokens of agent work — the control layer was **~0.2%** of the input footprint, and the bounded session ran the same work on **~7.6× fewer** input tokens than the tool's native `--resume`. Single workload, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
+> **Measured (chain_auth, N=5, end-state parity):** on **Codex**, bounding the ever-growing native transcript feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M/run) and costs **~2.67× fewer full-price (uncached) tokens** for the same task. On **Claude Code**, native `--resume` already caches history cheaply, so PromptPilot keeps it and wins on the **rewrite** instead — **~1.25× fewer full-price (uncached) tokens** than the raw prompt + native resume, at parity. The SLM control layer itself is **~0.2%** of the input footprint. Same correctness, fewer tokens — single benchmark, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
 
 ## Demo
 
@@ -34,61 +34,57 @@ Sample output, the live-SLM run, and every flag are in the **[demo walkthrough �
 ## How it works
 
 ```mermaid
-%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 48, "rankSpacing": 60}}}%%
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 50, "rankSpacing": 64}}}%%
 flowchart LR
   U([Developer request])
 
-  subgraph PP["PromptPilot control plane"]
-    direction LR
-    M[["Session memory<br/>bounded summaries"]]
-    C{{"SLM route<br/>clarify / answer / passthrough / act"}}
-    Q["Clarify<br/>ask first"]
-    A["Answer<br/>offer reply"]
-    D["Direct reply<br/>opt-in only"]
-    P["Passthrough<br/>raw prompt"]
-    R["Act<br/>safe rewrite"]
+  subgraph PP["PromptPilot SLM control plane (~0.2% of tokens)"]
+    direction TB
+    C{{"Route + classify<br/>act / clarify / answer / passthrough"}}
+    R["Rewrite<br/>precise, self-sufficient<br/>+ target files, scope, constraints"]
+    M[["Bounded session memory<br/>one-line intent + constraints per turn"]]
+  end
+
+  subgraph SS["Session strategy (tool-aware)"]
+    direction TB
+    K["Codex<br/>inject bounded record<br/>native transcript grows, so bound it"]
+    L["Claude Code<br/>lean on native resume<br/>cache is cheap, so do not bound"]
   end
 
   subgraph AG["Frontier coding agent"]
-    direction LR
-    F["Codex / Claude CLI"]
-    O["Code changes<br/>tests / summary"]
+    direction TB
+    F["Codex / Claude CLI<br/>writes and debugs the code"]
+    O["Edits, tests, summary"]
     T["Tool output"]
-  end
-
-  subgraph HK["Optional hooks"]
     H["Compress logs<br/>pytest / grep / diff"]
   end
 
-  U --> M --> C
-  C -->|clarify| Q
-  C -->|answer| A
-  A -->|enabled| D
-  A -.->|otherwise| F
-  C -->|passthrough| P --> F
-  C -->|act| R --> F
+  U --> C
+  C -->|act| R
+  C -. "clarify becomes act when autonomous" .-> R
+  R --> M
+  M --> K --> F
+  M --> L --> F
   F --> O
   F --> T --> H --> F
-
-  C -. "hybrid" .-> API[("Metered SLM API")]
-  F -. "hybrid" .-> SUB[("Subscription CLI")]
+  O -. "SLM distills each turn" .-> M
 
   classDef entry fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#7c2d12;
   classDef control fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
   classDef route fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#4c1d95;
+  classDef sess fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f;
   classDef agent fill:#ecfeff,stroke:#06b6d4,stroke-width:2px,color:#164e63;
   classDef hook fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d;
-  classDef infra fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px,color:#334155;
 
   class U entry;
-  class M,Q,A,D,P,R control;
+  class R,M control;
   class C route;
+  class K,L sess;
   class F,O,T agent;
   class H hook;
-  class API,SUB infra;
 ```
 
-For `answer`, PromptPilot skips the downstream coding agent only when direct SLM answering is enabled (`--let-slm-answer` or `PROMPTPILOT_LET_SLM_ANSWER`); otherwise the request continues to the agent. The diagram keeps node labels short so GitHub Mermaid previews do not clip long text.
+The SLM control plane is a tiny layer (~0.2% of the run's tokens) that *shapes* the agent's work without doing it. Routing: **act** rewrites the prompt; **passthrough** sends the raw prompt straight to the agent; **answer** lets the SLM reply directly and skip the agent *only* when enabled (`--let-slm-answer` / `PROMPTPILOT_LET_SLM_ANSWER`); and in autonomous mode (`PROMPTPILOT_AUTONOMOUS=1`) a **clarify** degrades to **act** (there is no human to answer). Bounding the session is **itself SLM work**: each turn the small model distills the request into the one-line intent + constraints record that seeds the next turn (only the list of files the agent changed is appended mechanically) — the frontier model never summarizes itself. The session strategy is **tool-aware** — PromptPilot bounds the session on Codex (whose native transcript grows uncached) and defers to native `--resume` on Claude Code (whose cache makes history nearly free). Labels are kept short so GitHub's Mermaid preview does not clip them.
 
 Dig deeper in [Architecture](docs/ARCHITECTURE.md), [Routes and Decisions](docs/ROUTES_AND_DECISIONS.md), and [Semantic Preservation](docs/SEMANTIC_PRESERVATION.md).
 

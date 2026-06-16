@@ -48,32 +48,58 @@ work **collapses** (41 → 2 tool calls — by late turns the agent mostly re-in
 its own bloated transcript). PromptPilot stays bounded (~44k/turn average). This is
 the durable, mechanism-level result; the cost ratios below follow from it.
 
+### 1b. The tool-aware rule — bound on codex, don't bound on claude
+
+The bounded-vs-native verdict **flips by tool**, and it flips for a concrete
+mechanical reason: the two native sessions cache history differently. Holding the
+SLM constant (clean session-mechanism isolation, `slm_native` vs `with_session`,
+uncached input tokens per run, chain_auth N=5):
+
+| Tool | bounded vs native | Verdict | Why |
+|---|---|---|---|
+| **codex** | bounded **1.87× cheaper** | **bound the session** | codex native re-feeds the transcript **uncached** — it grows to ~100k/turn by turn 5 |
+| **claude** | bounded **1.49× costlier** (0.67×) | **use native `--resume`** | claude native caches history — uncached collapses to ~1.5k/turn by turn 5, so history is near-free |
+
+Same code, same task, same SLM — a **~2.8× swing** with the opposite conclusion.
+The driver is the native-cache profile: on claude the prior transcript is read from
+cache and barely shows up in uncached tokens, so PromptPilot's bounded window is
+*extra* cost on top of an already-cheap native session. On codex there is no such
+cache, so every turn re-pays for the whole growing transcript and the bounded
+window is a large saving.
+
+> **Rule of thumb:** **bound the session on codex; use native resume (rewrite-only)
+> on claude.** PromptPilot picks the right mode per tool by default.
+
 ### 2. Cost — product comparison
 
-| Comparison | Result |
+| Comparison (chain_auth, N=5, uncached input tokens) | Result |
 |---|---|
-| Full PromptPilot vs raw-prompt + native session (**codex**, N=5) | **~8.5× cheaper per success** ($0.74 vs $6.31), equal quality (1.70 vs 1.50) |
-| Full PromptPilot vs raw-prompt + native session (**claude-code**, prior) | **~3× cheaper per success**, 6.1× fewer input tokens, equal quality |
+| Full PromptPilot vs raw-prompt + native session (**codex**) | **2.67× fewer uncached tokens** (v2; 1.86× v1), end-state parity |
+| Full PromptPilot vs raw-prompt + native session (**claude**) | bounded session **loses** (1.19× costlier); the win is **rewrite-only** (slm_native): **1.25× fewer**, end-state parity |
 
-> **Honest caveat:** these compare *full PromptPilot* (SLM rewrite **+** bounded
-> session) against a *raw-prompt + native-session* baseline — so the ratio bundles
-> the rewrite's exploration savings with the session-mechanism savings. It's a valid
-> "use PromptPilot vs use the tool raw" comparison, **not** an isolated session-only
-> number. The transcript-growth curve (§1) is the clean session-mechanism evidence.
+> **Honest caveat:** the codex ratio bundles the SLM rewrite's savings with the
+> bounded-session savings — a valid "use PromptPilot vs use the tool raw" comparison,
+> **not** an isolated session-only number. On claude, bounding the session is
+> *counterproductive* (it loses to native `--resume`); use rewrite-only there. The
+> clean session-mechanism evidence is the transcript-growth curve (§1). These supersede
+> earlier per-success-$ figures (e.g. a prior "8.5× / $0.74-vs-$6.31"), which were on a
+> confounded, cache-inclusive basis — see [Benchmarks](BENCHMARKS.md).
 
-### 3. Quality — tool-dependent (the nuance that matters)
+### 3. Cost is tool-dependent; quality is parity
 
-Session memory does **not** behave the same on every coding tool:
+The bounded session's value flips by tool — and in the clean chain_auth
+replication, **quality (end-state) is parity across configs**:
 
-| Tool | Session's effect on success | Why |
+| Tool | Bounded session vs native | End-state |
 |---|---|---|
-| **claude-code** | **+60% success** (−28.7% cost-per-success), N=5 chain1, clean isolation | Resolves references for a model that otherwise cold-explores and bails |
-| **codex** | **success tied** (cost optimization: −20% input tokens) | codex already resolves references well natively, so session mainly saves cost |
+| **claude** | **costs more** — 1.49× vs native `--resume` (1.19× vs vanilla); use native resume | parity |
+| **codex** | **2.67× cheaper** (full product vs vanilla) — bound it | parity |
 
-Don't market a single "+60%" number — it's claude-code-specific. The universal
-claim is: *session memory is at worst a cost optimization and at best a large
-success lift, depending on how well your downstream agent resolves references on
-its own.*
+The earlier "+60% success on claude-code" figure does **not** reproduce in the
+clean chain_auth replication (end-state is parity across configs); it was a
+confounded / cached-read artifact. The durable, universal claim is tool-dependent:
+**bound the session on codex (large cost win), use native resume on claude** —
+both at equal quality.
 
 ## When it helps most
 
@@ -86,6 +112,10 @@ its own.*
 
 - **Single-shot, self-contained prompts** — nothing to reference.
 - **codex** — still a cost win, but no success lift.
+- **claude with bounded session** — don't bound it. On claude the native cache
+  already makes history near-free, so a bounded window is *1.49× costlier* than
+  plain native `--resume`; take the SLM rewrite and let native resume carry the
+  history (see §1b).
 - For workloads with many self-contained turns, `--gate-session` adds a cheap
   classifier that skips the session load when a prompt doesn't reference prior turns
   (see [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions)).
