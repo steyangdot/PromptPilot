@@ -41,16 +41,17 @@ Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism 
 
 | Config | with_session | builtin (vanilla) | Ratio |
 |---|---|---|---|
-| codex v1 (nano SLM) | — | — | **1.86× cheaper** |
-| codex v2 (nano, post clarify-fix) | 118,610 | 317,079 | **2.67× cheaper** |
+| codex (nano SLM, same-run) | 170,264 | 317,079 | **1.86× uncached** (warm) · **3.8× total** |
 | claude (bounded) | 76,832 | 64,592 | **0.84×** (1.19× costlier — bounded loses) |
 | claude (rewrite-only, slm_native) | 51,548 | 64,592 | **1.25× cheaper** |
+
+The single codex uncached ratio is cache-warmth-dependent (~1.86× warm → ~3.8× cold) — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md); a clean v2 same-run ratio is pending.
 
 On claude the win is **rewrite-only**: bound nothing, keep native `--resume`. On codex, bound the session.
 
 ### Cached vs uncached — two real reductions
 
-PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions; uncached is the cost-relevant one (cache-reads bill at a discount), so quote uncached for cost and gross for total footprint.
+PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions. Lead with **total** — it's cache-independent and reproducible. Provider-reported **uncached** varies with server-side cache warmth and is not reproducible cross-run, so it's a range rather than a single number — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
 
 **Codex** (N=5, per run):
 
@@ -60,7 +61,7 @@ PromptPilot reduces both the **total tokens fed** to the model (gross, including
 | slm_native (native) | 5,155,286 | 4,836,633 | 318,652 | 94% |
 | builtin (vanilla) | 4,664,957 | 4,347,878 | 317,079 | 93% |
 
-→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M) and costs **~2.67× fewer full-price tokens** (v2).
+→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M). The full-price (uncached) saving is cache-warmth-dependent — **~1.86× (warm cache) to ~3.8× (cold)**, with_session winning throughout — so we don't quote a single uncached ratio; see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
 
 **Claude** (N=5, per run):
 
@@ -77,8 +78,8 @@ PromptPilot reduces both the **total tokens fed** to the model (gross, including
 ### SLM model and transport
 
 - **Transport is agent-uncached-invariant.** Same SLM model → same agent input whether the SLM runs over an API SDK call or a subscription CLI subprocess: claude Haiku via API **67,501** vs via Max subscription **65,608** (~3%, equal). Transport only changes *where* the SLM cost lands ($ on an API key vs quota on a flat subscription) and adds ~20k tokens/call CLI overhead on the subprocess path.
-- **SLM model is first-order for the codex agent.** gpt-5.4-mini inflates agent uncached **~1.6×** vs gpt-5.4-nano (with_session 185,677 vs 118,610 = 1.57×; slm_native 326,671 vs 190,578 = 1.71×) — mini writes bulkier rewrites/memory_records that are re-fed every turn. **The terser SLM (nano) is the better SLM:** a bigger SLM is counterproductive when its output is re-injected.
-- **Hybrid beats pure-subscription.** Pure-subscription (SLM + agent both on the ChatGPT/Max subscription, zero API keys) works but ~halves codex efficiency (mini 1.71× vs nano 2.67× vs vanilla). The hybrid — terse SLM (nano) on a cheap API key + agent on the subscription — is materially better. Default SLM per backend: OpenAI API → gpt-5.4-nano; codex subscription → gpt-5.4-mini; Anthropic API and Max → claude-haiku-4-5.
+- **SLM model (nano vs mini) is not yet cleanly measured.** Earlier "~1.6×" figures (with_session 1.57×, slm_native 1.71×) compared gpt-5.4-mini vs gpt-5.4-nano *across different runs* with different cache warmth (nano run ~89–94% hit vs mini run ~78–90%) and different normalizers/transport — a cross-run uncached confound, not a model effect. On cache-independent **total** tokens the mini runs actually fed slightly *fewer* tokens, so the data does **not** support "mini is bulkier / nano is terser". This comparison needs a clean interleaved same-run measurement before any token-efficiency claim — currently **unverified**. See [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
+- **Hybrid beats pure-subscription.** Running the SLM on a cheap API key while the agent runs on the subscription avoids the ~20k tokens/call CLI subprocess overhead the all-subscription path incurs, and gives predictable metered dollars for the SLM layer. (The earlier "nano is terser than mini, so hybrid ~doubles efficiency" justification is dropped — that nano-vs-mini comparison is unverified; see the bullet above.) Default SLM per backend: OpenAI API → gpt-5.4-nano; codex subscription → gpt-5.4-mini; Anthropic API and Max → claude-haiku-4-5.
 
 ### The v2 clarify fix (shipped in PR #39)
 
@@ -88,9 +89,9 @@ The fix is a shared `resolve_downstream()` helper in `prpt/core/spec.py`. When `
 
 ### Optimal config (the actionable rule)
 
-- **codex:** terse SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **2.67× cheaper** than vanilla.
+- **codex:** default SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **~3.8× fewer total tokens** than vanilla; uncached savings are cache-warmth-dependent (**~1.86–3.8×**).
 - **claude:** SLM rewrite + **native `--resume`** (do *not* bound the session) → **~1.25× cheaper** than vanilla.
-- Rule of thumb: bound the session on codex; use native resume (rewrite-only) on claude; prefer the terser SLM; keep the clarify guard on for autonomous/agent use.
+- Rule of thumb: bound the session on codex; use native resume (rewrite-only) on claude; use the per-backend default SLM; keep the clarify guard on for autonomous/agent use.
 
 Caveats:
 - Single workload (`httpx`). Your repo will land somewhere different.
@@ -99,7 +100,7 @@ Caveats:
 - N=5 success deltas under ~0.2/turn are within the noise floor; cost gaps are the robust signal.
 - **Lead with tokens, not dollars.** Tokens are measured directly and are provider-neutral; dollar figures require assuming both API rates and subscription terms (the assumption that made an earlier "$38 vs $0.0085, 4,500× subsidy" framing misleading — it treated finite, flat-fee subscription quota as free). The honest, durable numbers are the token footprints: ~24k SLM tokens directing ~12.66M agent tokens (hybrid split), and ~7.6× fewer input tokens than native session (efficiency). What those tokens cost is downstream: per-token on metered API, or a slice of finite subscription quota (which sustained runs exhaust — we hit the ChatGPT usage limit mid-experiment, May 2026; use the API path for high-volume automation). See [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode).
 - "Success" is judged by an SLM rubric; see [research/chain_test_v2.py](https://github.com/steyangdot/PromptPilot/blob/main/research/chain_test_v2.py) for the scorer.
-- **chain_auth numbers are uncached tokens, N=5; codex dollar figures are notional.** The uncached basis is the corrected one — earlier project numbers over-reported by using gross/cache-inclusive tokens. The cross-experiment nano-vs-mini comparison has a bounded, conservative cache caveat (interleaving + N=5 + the uncached control for caching).
+- **chain_auth numbers are uncached tokens, N=5; codex dollar figures are notional.** The uncached basis is the corrected one — earlier project numbers over-reported by using gross/cache-inclusive tokens. Provider-reported uncached varies with server-side cache warmth and is not reproducible cross-run, so within-run interleaved comparisons (or cache-independent total tokens) are the reliable basis — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md). The cross-experiment nano-vs-mini comparison is **unverified** (cache-warmth + normalizer/transport confounds; needs a clean same-run measurement).
 
 ## Preservation targets
 

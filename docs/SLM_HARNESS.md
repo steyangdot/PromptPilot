@@ -141,28 +141,33 @@ JSON-parse fallback and an explicit opt-out (`--normalizer slm-anthropic` /
 The mapping from `route` values to harness behavior is documented in
 [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions).
 
-## Which SLM model? Prefer the terser one
+## Which SLM model?
 
 The SLM's output (the rewritten `downstream_prompt` and the `memory_record`) is
-**re-fed to the coding agent every turn**, so SLM terseness is not a nicety — it
-directly sets how lean the agent's input is. A bigger SLM is counterproductive
-when its output is re-injected.
+**re-fed to the coding agent every turn**, so in principle SLM terseness sets how
+lean the agent's input is.
 
-In the chain_auth experiment (N=5, seeded DigestAuth bug in httpx, uncached
-input tokens per run), a bulkier SLM inflated the codex agent's uncached input
-roughly **1.6×** versus the terser model:
+Whether a bulkier SLM actually inflates the agent's input is **UNVERIFIED**. The
+numbers below were collected in *separate* runs with different cache warmth (the
+nano run ran ~89–94% cache-hit, the mini run ~78–90%) and different
+normalizers/transport, so the uncached figures are not comparable
+(cross-run/cache-confounded — see
+[MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)). On cache-independent
+**total** tokens the mini runs actually fed slightly *fewer* tokens, so the data
+does **not** support "mini is bulkier / nano is terser."
 
 | SLM model      | with_session | slm_native |
 | -------------- | -----------: | ---------: |
 | gpt-5.4-nano   |      118,610 |    190,578 |
 | gpt-5.4-mini   |      185,677 |    326,671 |
-| ratio (mini÷nano) |    1.57×  |     1.71×  |
 
-`gpt-5.4-mini` writes bulkier rewrites and `memory_record`s; re-fed each turn,
-that bulk dominates the agent's cost. Prefer the terser SLM (`gpt-5.4-nano`).
-End-state was parity — every config fixed the bug — so the extra tokens buy no
-quality. (Cross-experiment caveat: N=5, with interleaving and an uncached
-control for caching.)
+> ⚠️ Cross-run, cache-confounded — **not a clean result.** The two rows come from
+> different runs with different cache warmth, so the apparent gap is an artifact of
+> caching, not SLM terseness. A clean interleaved same-run comparison has not yet
+> been done; the nano-vs-mini token-efficiency question is open.
+
+End-state was parity — every config fixed the bug — so model choice did not
+affect quality in these runs.
 
 ### Transport is agent-uncached-invariant
 
@@ -175,12 +180,13 @@ SLM cost lands** ($ on an API key vs. quota on a flat subscription) and adds
 *model* for agent cost, and the *transport* for billing — they are independent
 knobs.
 
-The hybrid setup is materially better than going all-subscription: a terse SLM
-(`gpt-5.4-nano`) on a cheap API key plus the agent on the subscription beats
-SLM + agent both on the subscription, which roughly halves codex efficiency
-(`gpt-5.4-mini` 1.71× vs. nano 2.67× vs. vanilla). The default SLM differs per
-backend — OpenAI API &rarr; `gpt-5.4-nano`; codex/ChatGPT subscription &rarr;
-`gpt-5.4-mini`; Anthropic API and Max &rarr; `claude-haiku-4-5`.
+The hybrid setup is preferable to going all-subscription, on two valid grounds:
+running the SLM on a cheap API key avoids the ~20k tokens/call of CLI subprocess
+overhead that the all-subscription path incurs (see *Transport* above), and it
+puts the SLM cost on predictable metered dollars instead of finite subscription
+quota. The default SLM differs per backend — OpenAI API &rarr; `gpt-5.4-nano`;
+codex/ChatGPT subscription &rarr; `gpt-5.4-mini`; Anthropic API and Max &rarr;
+`claude-haiku-4-5`.
 
 ## Example
 
