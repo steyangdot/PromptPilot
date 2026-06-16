@@ -69,16 +69,12 @@ flowchart LR
   F --> T --> H --> F
   O -. "distill each turn" .-> M
 
-  C -. "hybrid: cheap metered API key" .-> API[("SLM API")]
-  F -. "hybrid: flat subscription" .-> SUB[("Subscription CLI")]
-
   classDef entry fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#7c2d12;
   classDef control fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
   classDef route fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px,color:#4c1d95;
   classDef sess fill:#fffbeb,stroke:#f59e0b,stroke-width:2px,color:#78350f;
   classDef agent fill:#ecfeff,stroke:#06b6d4,stroke-width:2px,color:#164e63;
   classDef hook fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#14532d;
-  classDef infra fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px,color:#334155;
 
   class U entry;
   class R,M control;
@@ -86,7 +82,6 @@ flowchart LR
   class K,L sess;
   class F,O,T agent;
   class H hook;
-  class API,SUB infra;
 ```
 
 The SLM control plane is a tiny layer (~0.2% of the run's tokens) that *shapes* the agent's work without doing it. Routing: **act** rewrites the prompt; **passthrough** sends the raw prompt straight to the agent; **answer** lets the SLM reply directly and skip the agent *only* when enabled (`--let-slm-answer` / `PROMPTPILOT_LET_SLM_ANSWER`); and in autonomous mode (`PROMPTPILOT_AUTONOMOUS=1`) a **clarify** degrades to **act** (there is no human to answer). The session strategy is **tool-aware** — PromptPilot bounds the session on Codex (whose native transcript grows uncached) and defers to native `--resume` on Claude Code (whose cache makes history nearly free). Labels are kept short so GitHub's Mermaid preview does not clip them.
