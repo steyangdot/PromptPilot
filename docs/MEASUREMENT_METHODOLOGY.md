@@ -11,7 +11,7 @@
 - The codex headline **"2.67× fewer uncached tokens"** is **not sound** — it is a *cross-run stitch* of two different runs measured under different provider-cache warmth. The honest same-run number is **1.86×**, and even that slides with cache warmth.
 - Root cause: `uncached = input − cached`, and `cached_tokens` is **OpenAI's server-side prefix cache**, which we do not control and which varies run-to-run (warmth, load, TTL). Any metric derived from it inherits that variance.
 - **You cannot both "avoid the cache" and keep a cache-discounted number** — a value where `uncached < total` exists *only because of* caching. Force everything cold and `uncached` collapses to `total`.
-- **Fix:** lead with **total tokens** (cache-independent by definition, already measured, reproducible). Optionally add a **deterministic structural-cache cost** (we model the cached fraction ourselves from prompt prefixes, instead of reading the provider's number). **Drop provider-`cached`-derived uncached as a headline.**
+- **Fix:** report **two separate metrics**, never a blended range. (1) **Total tokens** is the deterministic headline (cache-independent by definition, already measured, reproducible). (2) **Uncached (full-price) tokens** is a *separate*, cache-warmth-sensitive figure reported at the observed cache (single interleaved data point; cross-run it varies). Optionally add a **deterministic structural-cache cost** (we model the cached fraction ourselves from prompt prefixes, instead of reading the provider's number). **Drop provider-`cached`-derived uncached as a headline.**
 
 ---
 
@@ -64,6 +64,8 @@ Interleaving guarantees both arms see the *same* warmth at the same wall-clock, 
 | warm (builtin 93% / with 86%) | 317k | 170k | **1.86×** |
 | cold (≈0% both) | ≈4.66M | ≈1.22M | **3.8×** |
 
+Note the cold endpoint (3.8×) is numerically the *total-token* ratio — which is exactly why we report **total** as its own deterministic metric and **uncached** separately as its observed-cache value, rather than as a single blended range.
+
 A single uncached ratio is just *one point on this line*. `2.67×` and `1.45×` are both reachable from the same code, depending only on which run's warmth you sampled.
 
 ### 1.4 Cache-contamination channels in the harness
@@ -93,33 +95,63 @@ The cache is server-side. The only levers we hold are **content** (make the pref
 | provider `cached_tokens` → uncached | **server-side, varies** | ❌ | **drop as a headline** |
 
 - **Lead with total tokens.** It is cache-independent by definition, already logged in every run, and reproducible. Honest framing: *context/volume fed to the model*, not *billed dollars* (total slightly overstates $ because real caching does discount within-session reuse).
-- **If a cost figure is wanted, model the cache ourselves** (structural prefix model, §2.3) — never read the provider's `cached`.
+- **If a cost figure is wanted, model the cache ourselves** (structural prefix model, §2.4) — never read the provider's `cached`.
 - **Stop publishing provider-uncached ratios.** They are the only numbers carrying server variance and are the sole source of the 2.67×/1.86×/1.45× ambiguity.
 
 ### 2.2 Experimental-design rules
 
 - **Interleave arms** (run-major: for each run, A then B) so both share warmth — required whenever a cache-dependent metric is reported.
 - **Salted per-(arm, run) nonce** at the system-prompt→task boundary *if* measuring within-session cache: `nonce = f(arm, run, batch_salt)`, constant within an arm-run, unique across arm-runs and batches. This kills channels (1) and (2) while preserving (3), and makes interleaving *safe* (no cross-arm sharing even back-to-back).
+- **Prefer direct OpenAI API for any cache-isolated cost study.** The Responses API exposes `prompt_cache_key` and `prompt_cache_retention`; Codex CLI does not clearly expose the same cache-domain controls, and its hidden system/tool prefix may remain shared before any user-level nonce.
 - **Do NOT de-interleave (block + reset).** We cannot force a provider cache flush, and separating arms into time blocks reintroduces the time-drift confound that caused the 118k-vs-218k blowup.
 - **Replication (≥3 batches + 1 non-isolated control) is required ONLY for a cache-dependent metric** — to show the ratio is warmth-invariant and to measure the contamination removed. **It is NOT needed for total tokens** (no cache term ⇒ nothing to sample).
 - **N=5 per arm** for *workload* variance (agent doing more/fewer tool calls) — real but cache-unrelated.
 
-### 2.3 Deterministic structural-cache model (optional secondary)
+### 2.3 Direct OpenAI API cache-isolated option
+
+Use this only for a secondary cost-style study, not for the primary Codex CLI headline. The goal is to measure a cache-dependent number while removing cross-arm and cross-run cache contamination.
+
+**Protocol:**
+
+1. Run the same chain harness through a direct OpenAI API adapter (Responses API preferred) instead of `codex exec`.
+2. Choose a model that supports `prompt_cache_retention="in-memory"`; avoid `gpt-5.5` / `gpt-5.5-pro` for this study because the OpenAI docs say those models only support `24h` retention.
+3. Set `prompt_cache_retention="in-memory"` on every request.
+4. Set `prompt_cache_key` to a fresh value per `(batch, arm, run)`, and keep that value constant for all turns inside that arm-run:
+
+   ```text
+   promptpilot:chain_auth:v2:{batch_salt}:{arm}:run{run_idx}
+   ```
+
+5. Keep the arm-run's prompt prefix stable across turns, except for the normal session growth. This preserves the production-faithful within-run cache channel while preventing one arm/run from reusing another arm/run's provider cache.
+6. Run paired, run-major interleaving, preferably with alternating or randomized arm order per run (`AB`, `BA`, ...), and repeat across at least 3 independent batch salts.
+7. Report this as an **API cache-isolated cost study**, separate from the Codex CLI total-token benchmark.
+
+**What this proves:** the direct API path can estimate a reproducible cache-aware cost profile under controlled cache domains. It does not prove Codex CLI has the same cost profile, because Codex CLI may add hidden system/tool prefixes and may not expose `prompt_cache_key` or retention controls.
+
+**What to log per request:**
+
+- model, `prompt_cache_key`, and `prompt_cache_retention`;
+- arm, run, batch salt, turn, and arm order;
+- total input tokens, cached tokens, output tokens, tool calls, wall time;
+- exact prompt snapshot or a stable prompt hash for structural-cache backfill.
+
+### 2.4 Deterministic structural-cache model (optional secondary)
 
 Compute the cached fraction from the **prompts themselves**, assuming an idealized never-evict prefix cache: per turn, `structural_cached =` longest common prefix with the prior request in that arm-run's lineage; `uncached* = total − structural_cached`. Reproducible (depends only on content), server-independent, and validateable against observed warm-run hits. Caveat: needs exact per-turn prompt logs — available for `with_session`/`mech_session`; `builtin`'s native-resume packing is harder to reconstruct exactly.
 
-### 2.4 Concrete next steps
+### 2.5 Concrete next steps
 
 1. **Clean v2 total ratio:** one interleaved v2 run, `[builtin, with_session]`, N=5, on the existing fixture (seeded-auth-bug @ d764bfc) → publishable v2 **total** ratio (cache-free; no nonce/replication needed for total).
-2. **(Optional) structural-cache scorer:** implement §2.3 and backfill across existing runs for a reproducible cost figure.
-3. **(Optional) cache-dependent study:** if we still want an uncached/cost ratio, do salted-nonce interleaved + ≥3 batches + 1 non-isolated control, per §2.2.
-4. **Correct the docs:** README headline + BENCHMARKS table/summary/optimal-config + HYBRID_MODE — replace the codex **2.67× uncached** with **total tokens (~3.8–4.3×)** as the headline; remove/relabel the cross-run uncached stitches (incl. the mini-vs-nano "1.57×/1.71×", which are the same defect). Claude's 1.25× is from a single interleaved run and is unaffected.
+2. **(Optional) direct API cache-isolated study:** if we still want an observed uncached/cost ratio, run the direct OpenAI API protocol in §2.3. Do not present it as Codex CLI billing behavior.
+3. **(Optional) structural-cache scorer:** implement §2.4 and backfill across existing runs for a reproducible cost figure.
+4. **(Optional) Codex CLI cache-dependent diagnostic:** only if needed, do salted-nonce interleaved + ≥3 batches + 1 non-isolated control, per §2.2, and label it diagnostic because hidden Codex prefixes may remain shared.
+5. **Correct the docs:** README headline + BENCHMARKS table/summary/optimal-config + HYBRID_MODE — replace the codex **2.67× uncached** with **total tokens (~3.8–4.3×)** as the headline; remove/relabel the cross-run uncached stitches (incl. the mini-vs-nano "1.57×/1.71×", which are the same defect). Claude's 1.25× is from a single interleaved run and is unaffected.
 
 ---
 
 ## 3. Corrected numbers (what to publish)
 
-- **Codex:** `with_session` feeds **~3.8× fewer total tokens** than vanilla native resume (v1 same-run: 4,664,958 → 1,224,729). v2 feeds even less total (with_session ≈ 0.9–1.09M across two runs) — a clean v2 total ratio awaits the §2.4(1) run. **Do not** quote a single uncached ratio; if cost is discussed, state the warm↔cold bracket **1.86×–3.8×** or use the structural model.
+- **Codex:** report **two separate metrics**, never a blended range. (1) **Total tokens** = the headline: `with_session` feeds **~3.8× fewer total tokens** (deterministic, cache-free) than vanilla native resume (v1 same-run: 4,664,958 → 1,224,729). (2) **Uncached tokens** = a separate, cache-warmth-sensitive figure: **~1.86×** fewer (317,079 → 170,264, observed ~90% cache; single interleaved data point — cross-run it varies), or use the structural model. v2 feeds even less total (with_session ≈ 0.9–1.09M across two runs) — a clean v2 total ratio awaits the §2.5(1) run. **Do not** blend these two into a single range.
 - **Claude:** unchanged — `slm_native`/`builtin` ≈ **1.25× fewer uncached**, from one interleaved run (`chain_auth/claude-code`), all arms ~95% hit. Same-run, not a stitch.
 
 ---
@@ -139,6 +171,7 @@ Related memory: `chain_auth_mech_vs_slm_session.md` (cache-warmth gotcha re-conf
 
 ## 5. Open decisions
 
-- [ ] Launch the single interleaved v2 run for the clean v2 **total** ratio? (§2.4-1)
-- [ ] Build the deterministic structural-cache scorer for a reproducible cost figure? (§2.3)
-- [x] Apply the doc corrections to README/BENCHMARKS/HYBRID_MODE (§2.4-4) — **done in PR #41** (total-led; uncached as a warmth range; nano-vs-mini marked unverified).
+- [ ] Launch the single interleaved v2 run for the clean v2 **total** ratio? (§2.5-1)
+- [ ] Build the direct OpenAI API cache-isolated study for observed cache-aware cost? (§2.3 / §2.5-2)
+- [ ] Build the deterministic structural-cache scorer for a reproducible cost figure? (§2.4 / §2.5-3)
+- [x] Apply the doc corrections to README/BENCHMARKS/HYBRID_MODE (§2.5-5) — **done in PR #41** (total-led; total and uncached as two separate metrics; nano-vs-mini marked unverified).

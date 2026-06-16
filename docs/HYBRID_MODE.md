@@ -226,10 +226,11 @@ add a bounded session, and keep the autonomous guard on
 (`PROMPTPILOT_AUTONOMOUS=1`). On the cache-independent headline metric, that
 config measured **~3.8× fewer total tokens than vanilla** (with_session 1,224,729
 vs builtin 4,664,958 total tokens/run; one interleaved codex `chain_auth` N=5
-run). Full-price *uncached* tokens are cache-warmth-dependent and run from
-**~1.86× (warm cache)** (same-run with_session 170,264 vs builtin 317,079) up
-toward the **~3.8× total ratio under a cold cache** — with_session wins
-throughout. What makes the hybrid the recommended split here is putting the SLM
+run). As a separate metric, full-price *uncached* tokens measured
+**~1.86× fewer** (same-run with_session 170,264 vs builtin 317,079, observed
+~93%/86% cache hit) — this is cache-warmth-sensitive (a single interleaved data
+point; cross-run it varies), not a range running up to the 3.8× total ratio.
+What makes the hybrid the recommended split here is putting the SLM
 on the API key: it avoids the ~20k-tokens/call CLI subprocess overhead of an
 all-on-subscription run and keeps SLM spend metered and predictable. See
 [Measurement methodology](MEASUREMENT_METHODOLOGY.md) for why uncached ratios

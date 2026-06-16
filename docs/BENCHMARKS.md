@@ -41,17 +41,17 @@ Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism 
 
 | Config | with_session | builtin (vanilla) | Ratio |
 |---|---|---|---|
-| codex (nano SLM, same-run) | 170,264 | 317,079 | **1.86× uncached** (warm) · **3.8× total** |
+| codex (nano SLM, same-run) | 170,264 | 317,079 | **1.86× uncached** · **3.8× total** |
 | claude (bounded) | 76,832 | 64,592 | **0.84×** (1.19× costlier — bounded loses) |
 | claude (rewrite-only, slm_native) | 51,548 | 64,592 | **1.25× cheaper** |
 
-The single codex uncached ratio is cache-warmth-dependent (~1.86× warm → ~3.8× cold) — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md); a clean v2 same-run ratio is pending.
+On codex these are two separate metrics: **total** (~3.8× fewer) is deterministic and cache-independent; **uncached** (~1.86× fewer) is the observed-cache value and is cache-warmth-sensitive (see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)). They are not blended into a range.
 
 On claude the win is **rewrite-only**: bound nothing, keep native `--resume`. On codex, bound the session.
 
 ### Cached vs uncached — two real reductions
 
-PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions. Lead with **total** — it's cache-independent and reproducible. Provider-reported **uncached** varies with server-side cache warmth and is not reproducible cross-run, so it's a range rather than a single number — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
+PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions. Lead with **total** — it's cache-independent and reproducible. Report total and uncached as two separate metrics — **total** is cache-independent/deterministic; **uncached** is the observed-cache value (cache-warmth-sensitive, varies cross-run) and is not blended into total — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
 
 **Codex** (N=5, per run):
 
@@ -61,7 +61,7 @@ PromptPilot reduces both the **total tokens fed** to the model (gross, including
 | slm_native (native) | 5,155,286 | 4,836,633 | 318,652 | 94% |
 | builtin (vanilla) | 4,664,957 | 4,347,878 | 317,079 | 93% |
 
-→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M). The full-price (uncached) saving is cache-warmth-dependent — **~1.86× (warm cache) to ~3.8× (cold)**, with_session winning throughout — so we don't quote a single uncached ratio; see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
+→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (cache-independent) and, as a separate metric, **~1.86× fewer full-price (uncached) tokens** at the observed cache (uncached is cache-warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)).
 
 **Claude** (N=5, per run):
 
@@ -89,7 +89,7 @@ The fix is a shared `resolve_downstream()` helper in `prpt/core/spec.py`. When `
 
 ### Optimal config (the actionable rule)
 
-- **codex:** default SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **~3.8× fewer total tokens** than vanilla; uncached savings are cache-warmth-dependent (**~1.86–3.8×**).
+- **codex:** default SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **~3.8× fewer total tokens** than vanilla, and **~1.86× fewer uncached** at the observed cache (separate, warmth-sensitive metric).
 - **claude:** SLM rewrite + **native `--resume`** (do *not* bound the session) → **~1.25× cheaper** than vanilla.
 - Rule of thumb: bound the session on codex; use native resume (rewrite-only) on claude; use the per-backend default SLM; keep the clarify guard on for autonomous/agent use.
 

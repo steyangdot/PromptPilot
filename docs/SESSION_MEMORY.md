@@ -74,7 +74,7 @@ window is a large saving.
 
 | Comparison (chain_auth, N=5, uncached input tokens) | Result |
 |---|---|
-| Full PromptPilot vs raw-prompt + native session (**codex**) | **~3.8× fewer total tokens** (cache-independent); uncached savings cache-warmth-dependent ~1.86–3.8× (see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)), end-state parity |
+| Full PromptPilot vs raw-prompt + native session (**codex**) | **~3.8× fewer total tokens** (cache-independent) · **~1.86× fewer uncached** (observed cache, warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)); end-state parity |
 | Full PromptPilot vs raw-prompt + native session (**claude**) | bounded session **loses** (1.19× costlier); the win is **rewrite-only** (slm_native): **1.25× fewer**, end-state parity |
 
 > **Honest caveat:** the codex ratio bundles the SLM rewrite's savings with the
@@ -93,7 +93,7 @@ replication, **quality (end-state) is parity across configs**:
 | Tool | Bounded session vs native | End-state |
 |---|---|---|
 | **claude** | **costs more** — 1.49× vs native `--resume` (1.19× vs vanilla); use native resume | parity |
-| **codex** | **~3.8× fewer total tokens** (uncached savings cache-dependent ~1.86–3.8×) — bound it | parity |
+| **codex** | **~3.8× fewer total tokens** · **~1.86× fewer uncached** (observed cache) — bound it | parity |
 
 The earlier "+60% success on claude-code" figure does **not** reproduce in the
 clean chain_auth replication (end-state is parity across configs); it was a
