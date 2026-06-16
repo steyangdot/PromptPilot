@@ -67,7 +67,7 @@ flowchart LR
   M --> L --> F
   F --> O
   F --> T --> H --> F
-  O -. "distill each turn" .-> M
+  O -. "SLM distills each turn" .-> M
 
   classDef entry fill:#fff7ed,stroke:#fb923c,stroke-width:2px,color:#7c2d12;
   classDef control fill:#eef2ff,stroke:#6366f1,stroke-width:2px,color:#312e81;
@@ -84,7 +84,7 @@ flowchart LR
   class H hook;
 ```
 
-The SLM control plane is a tiny layer (~0.2% of the run's tokens) that *shapes* the agent's work without doing it. Routing: **act** rewrites the prompt; **passthrough** sends the raw prompt straight to the agent; **answer** lets the SLM reply directly and skip the agent *only* when enabled (`--let-slm-answer` / `PROMPTPILOT_LET_SLM_ANSWER`); and in autonomous mode (`PROMPTPILOT_AUTONOMOUS=1`) a **clarify** degrades to **act** (there is no human to answer). The session strategy is **tool-aware** — PromptPilot bounds the session on Codex (whose native transcript grows uncached) and defers to native `--resume` on Claude Code (whose cache makes history nearly free). Labels are kept short so GitHub's Mermaid preview does not clip them.
+The SLM control plane is a tiny layer (~0.2% of the run's tokens) that *shapes* the agent's work without doing it. Routing: **act** rewrites the prompt; **passthrough** sends the raw prompt straight to the agent; **answer** lets the SLM reply directly and skip the agent *only* when enabled (`--let-slm-answer` / `PROMPTPILOT_LET_SLM_ANSWER`); and in autonomous mode (`PROMPTPILOT_AUTONOMOUS=1`) a **clarify** degrades to **act** (there is no human to answer). Bounding the session is **itself SLM work**: each turn the small model distills the request into the one-line intent + constraints record that seeds the next turn (only the list of files the agent changed is appended mechanically) — the frontier model never summarizes itself. The session strategy is **tool-aware** — PromptPilot bounds the session on Codex (whose native transcript grows uncached) and defers to native `--resume` on Claude Code (whose cache makes history nearly free). Labels are kept short so GitHub's Mermaid preview does not clip them.
 
 Dig deeper in [Architecture](docs/ARCHITECTURE.md), [Routes and Decisions](docs/ROUTES_AND_DECISIONS.md), and [Semantic Preservation](docs/SEMANTIC_PRESERVATION.md).
 
