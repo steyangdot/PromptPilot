@@ -1,6 +1,6 @@
 # Token-Measurement Methodology: the cache-warmth problem and our fix
 
-**Status:** problem confirmed; fix plan agreed in principle; correction + clean re-measure pending.
+**Status:** problem confirmed; doc correction **applied** (PR #41); clean v2 re-measure + optional structural-cache scorer still pending.
 **Date:** 2026-06-16
 **Scope:** how PromptPilot benchmarks count tokens on codex (and claude), why the "uncached" figure is unreliable, and what we report instead.
 
@@ -141,4 +141,4 @@ Related memory: `chain_auth_mech_vs_slm_session.md` (cache-warmth gotcha re-conf
 
 - [ ] Launch the single interleaved v2 run for the clean v2 **total** ratio? (§2.4-1)
 - [ ] Build the deterministic structural-cache scorer for a reproducible cost figure? (§2.3)
-- [ ] Apply the doc corrections to README/BENCHMARKS/HYBRID_MODE now, or after the v2 total run lands? (§2.4-4)
+- [x] Apply the doc corrections to README/BENCHMARKS/HYBRID_MODE (§2.4-4) — **done in PR #41** (total-led; uncached as a warmth range; nano-vs-mini marked unverified).
