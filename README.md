@@ -14,7 +14,7 @@
 
 The SLM manages the workflow; the frontier model still writes and debugs the code. PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction — a rewrite may be *longer* when that preserves a constraint. The savings come from fewer ambiguous turns, bounded replay, and compressed context.
 
-> **Measured (hybrid mode, one 15-turn chain):** ~24k input tokens of SLM work directed ~12.66M input tokens of agent work — the control layer was **~0.2%** of the input footprint, and the bounded session ran the same work on **~7.6× fewer** input tokens than the tool's native `--resume`. Single workload, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
+> **Measured (chain_auth, N=5, end-state parity):** on **Codex**, bounding the ever-growing native transcript feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M/run) and costs **~2.67× fewer full-price (uncached) tokens** for the same task. On **Claude Code**, native `--resume` already caches history cheaply, so PromptPilot leans on the rewrite rather than session-bounding. The SLM control layer itself is **~0.2%** of the input footprint. Same correctness, fewer tokens — single benchmark, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
 
 ## Demo
 

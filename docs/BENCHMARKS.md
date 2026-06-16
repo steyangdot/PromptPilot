@@ -35,7 +35,7 @@ Holding the SLM constant and isolating the session mechanism (slm_native vs with
 | **claude** | **0.67×** | bounded session costs **1.49× more** than native `--resume` — bounded **loses** |
 | **codex** | **1.87×** | bounded session is **1.87× cheaper** than native — bounded **wins** |
 
-Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism: claude native `--resume` caches history, so uncached collapses to ~1.5k/turn by turn 5; codex native re-feeds the transcript uncached, so it grows to ~100k/turn by turn 5.
+Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism (detail in *Cached vs uncached* below): **both tools cache at similar rates** — codex native ~93%, claude ~95% — so codex doesn't cache *worse*. The flip is that (1) codex's transcript **balloons** (its gross grows ~3.6× larger than claude's) and (2) codex's per-turn cache-hit stays flat ~90–93%, so uncached **grows** to ~100k/turn by turn 5; claude's stays small and its per-turn hit **climbs to ~99.5%** by turn 5, so uncached **collapses** to ~1.5k/turn.
 
 ### Full product (with_session vs vanilla = raw prompt + native resume)
 
@@ -47,6 +47,32 @@ Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism:
 | claude (rewrite-only, slm_native) | 51,548 | 64,592 | **1.25× cheaper** |
 
 On claude the win is **rewrite-only**: bound nothing, keep native `--resume`. On codex, bound the session.
+
+### Cached vs uncached — two real reductions
+
+PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions; uncached is the cost-relevant one (cache-reads bill at a discount), so quote uncached for cost and gross for total footprint.
+
+**Codex** (N=5, per run):
+
+| arm | total tokens fed | cached | uncached (full-price) | cache-hit |
+|---|---|---|---|---|
+| with_session (bounded) | 1,224,728 | 1,054,464 | **170,264** | 86% |
+| slm_native (native) | 5,155,286 | 4,836,633 | 318,652 | 94% |
+| builtin (vanilla) | 4,664,957 | 4,347,878 | 317,079 | 93% |
+
+→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M) and costs **~2.67× fewer full-price tokens** (v2).
+
+**Claude** (N=5, per run):
+
+| arm | total tokens fed | cached | uncached | cache-hit |
+|---|---|---|---|---|
+| with_session (bounded) | 1,300,022 | 1,223,190 | 76,832 | 94% |
+| slm_native (native) | 1,122,459 | 1,070,911 | 51,547 | 95% |
+| builtin (vanilla) | 1,306,356 | 1,241,764 | 64,592 | 95% |
+
+→ On claude, total tokens fed is ~the same across arms (~1.3M) and bounding reduces **neither** gross nor uncached — which is why claude should keep native `--resume`.
+
+**Why the flip (mechanism):** both tools cache at similar rates (codex native ~93%, claude ~95%) — codex isn't worse at caching. The flip is two things: (1) codex's transcript **balloons** (gross grows to ~4.66M vs claude's flat ~1.3M, because codex agents are tool-heavy and `exec resume` re-feeds it all), and (2) codex's per-turn cache-hit stays flat ~90–93% while claude's **climbs toward ~99.5%** by turn 5 (its agent converges to small edits, so uncached collapses to ~1.5k). Bounding the session caps codex's growing transcript; on claude there's nothing to cap.
 
 ### SLM model and transport
 
