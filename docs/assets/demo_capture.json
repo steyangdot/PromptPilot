@@ -1,21 +1,19 @@
 {
-  "normalizer": "AnthropicSLMNormalizerV2",
+  "normalizer": "OpenAISLMNormalizerV2",
   "raw_prompt": "the checkout page is slow, make it faster",
   "clarify": {
     "route": "clarify",
-    "question": "What is the primary performance bottleneck on the checkout page?\n\nA) Page load time / asset delivery\nB) API calls / backend latency\nC) Form rendering / JavaScript execution\nD) Database queries\nE) Not sure – need full profiling\n\nAlso: are there any critical user flows or payment integrations we must not break?",
+    "question": "What part of the checkout page is slow (pick one)?\nA) Initial page load / TTFB\nB) Client-side rendering / JS bundle\nC) API calls during checkout (shipping/tax/payment)\nD) Third-party scripts (payment, analytics)\nE) Database queries/server render\n\nShare a URL/route name and any metrics (LCP/TTFB), plus whether you mean web, mobile web, or app.",
     "risk": "medium",
-    "memory_record": "User wants to optimize checkout page performance; needs clarification on bottleneck type and risk constraints before proceeding."
+    "memory_record": "User wants to speed up the checkout page performance but hasn’t specified which layer (frontend/backend/API/third-party) is the bottleneck."
   },
-  "answer": "The database side — api/checkout.py runs a separate query per line item, so checkout drags on big carts (p95 is around 3s). Keep the public API and behavior unchanged, and add a regression/benchmark test.",
+  "answer": "It's the database queries — they're slow on big carts. Keep the public API and behavior the same, and make sure it's tested.",
   "rewrite": {
     "route": "act",
-    "task_type": "performance",
-    "confidence": "high",
-    "target_files": [
-      "api/checkout.py"
-    ],
-    "memory_record": "User wants to optimize api/checkout.py checkout latency caused by N+1 queries per line item; must preserve public API contract and add regression + benchmark tests.",
-    "downstream_prompt": "Optimize api/checkout.py to reduce database query count on large carts. Currently it runs one query per line item, causing p95 latency around 3s. Use batch queries or similar techniques to fetch all line items in one or two queries. Keep the public API signature and checkout behavior unchanged. Add a regression test and benchmark test that verifies the optimization works for large carts (e.g., 50+ items) and doesn't break existing functionality.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
+    "task_type": "bug_fix",
+    "confidence": "medium",
+    "target_files": [],
+    "memory_record": "Optimize slow database queries in the checkout flow for large carts without changing public API/behavior, and add/extend tests to cover big-cart scenarios.",
+    "downstream_prompt": "Checkout page is slow due to database queries on large carts. Optimize the slow DB queries used during checkout for big carts while keeping the public API and all user-visible behavior exactly the same.\n\nRequirements:\n- Identify which queries are slow on the checkout flow for large carts (use profiling/logging or inspecting ORM query patterns).\n- Reduce query count and/or query cost (e.g., eliminate N+1s, add/adjust eager-loading, rewrite inefficient joins/subqueries, add/adjust indexes, batch/aggregate queries, avoid per-line-item queries).\n- Do not change request/response schemas, endpoints, or business logic outputs; behavior must remain identical.\n- Add/extend automated tests to cover big-cart scenarios and to prevent regressions (functional correctness; optionally performance-guard style tests if the repo supports it).\n\nProcess:\n1) Locate the checkout route/controller/service and the code path that fetches cart, line items, pricing, inventory, shipping/tax inputs, etc.\n2) Reproduce/construct a large cart case in tests/fixtures.\n3) Optimize the DB interactions.\n4) Ensure all tests pass; add new tests for the large cart query behavior/correctness.\n\nDeliverable: code changes + tests demonstrating the optimization without changing public API/behavior.\n[cwd=/home/dev/payments-api; Python; branch=main; tests=pytest; changed: api/checkout.py, tests/test_checkout.py]"
   }
 }

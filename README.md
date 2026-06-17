@@ -14,13 +14,13 @@
 
 The SLM manages the workflow; the frontier model still writes and debugs the code. PromptPilot optimizes for **semantic-preserving context control**, not blind token reduction — a rewrite may be *longer* when that preserves a constraint. The savings come from fewer ambiguous turns, bounded replay, and compressed context.
 
-> **Measured (chain_auth, N=5, end-state parity):** on **Codex**, bounding the ever-growing native transcript feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M/run) and costs **~2.67× fewer full-price (uncached) tokens** for the same task. On **Claude Code**, native `--resume` already caches history cheaply, so PromptPilot keeps it and wins on the **rewrite** instead — **~1.25× fewer full-price (uncached) tokens** than the raw prompt + native resume, at parity. The SLM control layer itself is **~0.2%** of the input footprint. Same correctness, fewer tokens — single benchmark, not a guarantee — see [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
+> **Measured (chain_auth, N=5, end-state parity):** on **Codex**, bounding the ever-growing native transcript feeds the model **~3.8× fewer total tokens** (4.66M → 1.22M/run) at the same task quality. On **Claude Code**, native `--resume` already caches history cheaply, so PromptPilot keeps it and wins on the **rewrite** instead — **~1.25× fewer full-price tokens** than the raw prompt + native resume, at parity. The SLM control layer itself is **~0.2%** of the input footprint. See [Benchmarks](docs/BENCHMARKS.md) and [Hybrid Mode](docs/HYBRID_MODE.md).
 
 ## Demo
 
 ![PromptPilot visual demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief to the coding agent](docs/assets/demo.svg)
 
-*Above: a real `slm-anthropic-v2` run. A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a one-line answer it routes **`act`** and forwards a precise, constraint-pinned brief. Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
+*Above: a real `gpt-5.2` run (`slm-openai-v2`). A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a short, informal answer it routes **`act`** and expands it into a precise, constraint-pinned brief (the developer names the bottleneck; PromptPilot does the scoping and the agent does the diagnosis). Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
 
 Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live routing + rewrite pictured above. The `clarify` route needs a v2 SLM backend, which the default `slm` now auto-selects for whichever auth you have — `slm-anthropic-v2` / `slm-openai-v2` (API key) or `slm-subscription-v2` (Max OAuth / ChatGPT):
 

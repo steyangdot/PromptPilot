@@ -83,7 +83,7 @@ Bounding the session is not universally cheaper — the right choice depends on 
 - On Codex, the native session re-feeds the whole transcript uncached every turn, so a bounded session wins (about 1.87x cheaper than native resume).
 - On Claude, native `--resume` caches history so uncached input collapses to roughly 1.5k tokens per turn by turn 5; the bounded session loses there, so the better path is the SLM rewrite over native resume.
 
-The rule of thumb: bound the session on Codex, use native resume (rewrite-only) on Claude, and prefer the terser SLM. These are measured on an N=5 chain with uncached input tokens as the metric, not universal guarantees.
+The rule of thumb: bound the session on Codex, use native resume (rewrite-only) on Claude. These are measured on an N=5 chain at end-state parity — directional, not universal guarantees. (The nano-vs-mini "terser SLM" comparison was cross-run and cache-confounded, so it is **unverified** — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md).)
 
 ## v0.3.1: clarify-route guard for autonomous agents
 

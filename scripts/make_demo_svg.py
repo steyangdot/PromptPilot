@@ -92,7 +92,7 @@ def _truncate(text: str, width: int) -> str:
 # ---------------------------------------------------------------------------
 
 def _capture_live() -> Dict:
-    """Drive slm-anthropic-v2 through the vague -> clarify -> answer -> rewrite flow."""
+    """Drive the demo SLM (slm-openai-v2 / gpt-5.2) through the vague -> clarify -> answer -> rewrite flow."""
     from pathlib import Path
 
     from prpt.core.dotenv import load_dotenv
@@ -110,7 +110,10 @@ def _capture_live() -> Dict:
     if not ex.answer:
         raise SystemExit("CLARIFY_EXAMPLE must carry a representative `answer`.")
 
-    norm = create_normalizer("slm-anthropic-v2", load_repo_content=False)
+    # Demo showcase SLM: gpt-5.2 via the OpenAI v2 normalizer. (The benchmark
+    # itself uses gpt-5.4-nano; the poster uses a stronger model for a clean demo.)
+    norm = create_normalizer("slm-openai-v2", load_repo_content=False)
+    norm.MODEL = "gpt-5.2"
 
     # Turn 1: the vague prompt -> clarify.
     n1 = norm.normalize(ex.prompt, ex.repo, high_stakes=False)
@@ -366,7 +369,7 @@ def _render(cap: Dict) -> str:
               "instead of burning an agent run on a guess.",
               color=DIM, size=14, family=SANS)
     _pill(out, WIDTH - PAD - 120, 30, "real SLM", GREEN, 120)
-    _pill(out, WIDTH - PAD - 120 - 12 - 134, 30, "slm-anthropic-v2", BLUE, 134)
+    _pill(out, WIDTH - PAD - 120 - 12 - 86, 30, "gpt-5.2", BLUE, 86)
 
     out.extend(body)
 

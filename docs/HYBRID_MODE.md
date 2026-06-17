@@ -53,13 +53,15 @@ tokens, not dollars:
 The token counts above are the measured fact; the dollar figures are one
 translation of them under specific rate/quota assumptions. Pitch the tokens.
 
-## Why a *terse* SLM on a cheap API key (v0.3.1)
+## Why route the SLM to a cheap API key (v0.3.1)
 
-The hybrid split has a second, sharper edge that the v0.3.1 `chain_auth`
-experiments isolated (N=5, uncached input tokens/run, end-state = passing
-`tests/test_auth.py`): **the SLM model you pick matters as much as where you
-route it.** A smaller, terser SLM is the better choice — and it's the API-key
-side of the hybrid that lets you pick it.
+The hybrid split has a second edge that the v0.3.1 `chain_auth` experiments
+examined (N=5, end-state = passing `tests/test_auth.py`): **where you route the
+SLM is the lever you control.** Routing it to an API key keeps SLM spend metered
+and predictable and avoids the CLI subprocess overhead of an all-on-subscription
+run. (Whether the *choice* of SLM model — smaller vs larger — also changes the
+agent's token footprint is a separate question that hasn't been cleanly measured;
+see below and [Measurement methodology](MEASUREMENT_METHODOLOGY.md).)
 
 - **Transport is agent-uncached-invariant.** The same SLM model produces the
   same downstream agent footprint whether the SLM ran via an API SDK call or a
@@ -68,25 +70,31 @@ side of the hybrid that lets you pick it.
   API key vs quota on a flat subscription) and adds **~20k tokens/call of CLI
   overhead** on the subprocess path. So routing the SLM to the API key is purely
   upside: same agent cost, no subprocess overhead, predictable metered spend.
-- **SLM model size is first-order for the agent.** On codex, a bigger SLM
-  inflates the *agent's* uncached tokens because the SLM's bulkier rewrites and
-  memory records get re-fed every turn: gpt-5.4-mini vs gpt-5.4-nano was
-  **1.57×** with a bounded session (185,677 vs 118,610) and **1.71×** native
-  (326,671 vs 190,578). **The terser model wins** — a bigger SLM is
-  counterproductive when its output is re-injected into the agent loop.
-- **Pure-subscription works but costs ~half the efficiency.** Putting *both*
-  the SLM and the agent on the ChatGPT/Max subscription (zero API keys) runs,
-  but it forces the heavier subscription-default SLM (gpt-5.4-mini) and pays the
-  ~20k-tokens/call CLI overhead. On codex that lands at **1.71× cheaper than
-  vanilla**, versus **2.67×** for the terse-nano hybrid. The hybrid — terse SLM
-  (nano) on a cheap API key + agent on the subscription — is materially better.
+- **SLM model size — token efficiency not cleanly measured.** Whether a smaller
+  SLM (gpt-5.4-nano) feeds the agent fewer tokens than a bigger one (gpt-5.4-mini)
+  is **unverified**: the earlier 1.57×/1.71× figures were cross-run *uncached*
+  comparisons confounded by different cache warmth (the nano run hit ~89–94% vs
+  the mini run ~78–90%) and different normalizers/transport, so they don't isolate
+  model size. On cache-independent *total* tokens the mini runs actually fed
+  slightly fewer tokens, so the data does **not** support "nano is terser /
+  bigger-SLM is counterproductive." A clean interleaved same-run comparison is
+  needed before claiming either way — see
+  [Measurement methodology](MEASUREMENT_METHODOLOGY.md).
+- **Pure-subscription works but pays real overhead.** Putting *both* the SLM and
+  the agent on the ChatGPT/Max subscription (zero API keys) runs, but it pays the
+  **~20k-tokens/call CLI subprocess overhead** for the SLM and gives you quota
+  draw instead of predictable metered dollars. The hybrid — SLM on a cheap API
+  key + agent on the subscription — avoids that overhead and keeps the SLM spend
+  metered and predictable, which is why it's the recommended split.
 - **End-state is parity** across every config: each one fixed the seeded bug,
   so the token differences carry **no quality tradeoff**.
 
-The default SLM differs per backend for exactly this reason: OpenAI API →
-gpt-5.4-nano (terse), codex/ChatGPT subscription → gpt-5.4-mini, Anthropic API
-and Max → claude-haiku-4-5. For an autonomous/agent run on codex, prefer the
-nano-on-API-key hybrid over the mini-on-subscription path.
+The default SLM differs per backend: OpenAI API → gpt-5.4-nano, codex/ChatGPT
+subscription → gpt-5.4-mini, Anthropic API and Max → claude-haiku-4-5. For an
+autonomous/agent run on codex, the nano-on-API-key hybrid keeps SLM spend metered
+and skips the ~20k-tokens/call CLI overhead of the mini-on-subscription path
+(whether the model choice itself changes the agent's token footprint is
+unverified — see above).
 
 > **Autonomous guard (v0.3.1):** the terse nano SLM over-clarifies — on an
 > actionable imperative it mis-fired the `clarify` route **20/20** (gpt-5.4-mini
@@ -213,12 +221,20 @@ The Haiku normalizer rewrites the prompt for ~$0.0001; codex does the heavy
 coding work and bills against your ChatGPT subscription quota instead of
 OpenAI API per-call billing.
 
-For the leanest codex run specifically, route the SLM to an **OpenAI API key**
-so it uses the terse gpt-5.4-nano, add a bounded session, and keep the autonomous
-guard on (`PROMPTPILOT_AUTONOMOUS=1`) — that config measured **2.67× cheaper than
-vanilla** (with_session 118,610 vs builtin 317,079 uncached tokens/run; codex
-`chain_auth` N=5). The terse-nano SLM on the API key is what makes this beat the
-~1.71× of an all-on-subscription run.
+For the leanest codex run specifically, route the SLM to an **OpenAI API key**,
+add a bounded session, and keep the autonomous guard on
+(`PROMPTPILOT_AUTONOMOUS=1`). On the cache-independent headline metric, that
+config measured **~3.8× fewer total tokens than vanilla** (with_session 1,224,729
+vs builtin 4,664,958 total tokens/run; one interleaved codex `chain_auth` N=5
+run). As a separate metric, full-price *uncached* tokens measured
+**~1.86× fewer** (same-run with_session 170,264 vs builtin 317,079, observed
+~93%/86% cache hit) — this is cache-warmth-sensitive (a single interleaved data
+point; cross-run it varies), not a range running up to the 3.8× total ratio.
+What makes the hybrid the recommended split here is putting the SLM
+on the API key: it avoids the ~20k-tokens/call CLI subprocess overhead of an
+all-on-subscription run and keeps SLM spend metered and predictable. See
+[Measurement methodology](MEASUREMENT_METHODOLOGY.md) for why uncached ratios
+depend on cache warmth and why total tokens is the headline metric.
 
 ### Python configuration
 

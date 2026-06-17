@@ -109,6 +109,8 @@ copy_page "docs/SEMANTIC_PRESERVATION.md" "Semantic-Preservation.md"
 copy_page "docs/SAFETY_MODEL.md" "Safety-Model.md"
 copy_page "docs/TELEMETRY_AND_REPLAY.md" "Telemetry-and-Replay.md"
 copy_page "docs/BENCHMARKS.md" "Benchmarks.md"
+copy_page "docs/TESTING_STRATEGY.md" "Testing-Strategy.md"
+copy_page "docs/MEASUREMENT_METHODOLOGY.md" "Measurement-Methodology.md"
 copy_page "docs/COMPARISON.md" "Comparison.md"
 copy_page "docs/FAQ.md" "FAQ.md"
 copy_page "docs/ROADMAP.md" "Roadmap.md"
@@ -135,6 +137,8 @@ cat > "$workdir/_Sidebar.md" <<'SIDEBAR'
   - [Telemetry and Replay](Telemetry-and-Replay)
 - Evaluation
   - [Benchmarks](Benchmarks)
+  - [Testing Strategy](Testing-Strategy)
+  - [Measurement Methodology](Measurement-Methodology)
   - [Comparison](Comparison)
 - Project
   - [Roadmap](Roadmap)

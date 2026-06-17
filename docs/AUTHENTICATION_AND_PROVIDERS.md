@@ -87,20 +87,26 @@ agent tokens/run vs 65,608 via Max (~3%, equal). Transport only changes *where*
 the SLM cost lands — dollars on an API key vs quota on a flat subscription — and
 adds ~20k tokens/call of CLI subprocess overhead on the subscription path.
 
-**SLM model is first-order for the codex agent.** A bulkier SLM writes bulkier
-rewrites and memory records, which are re-fed to the agent every turn. On codex,
-`gpt-5.4-mini` inflated agent uncached ~1.6× vs `gpt-5.4-nano` (with bounded
-session: 185,677 vs 118,610 = 1.57×; native resume: 326,671 vs 190,578 =
-1.71×). The terser model is the better SLM — a bigger SLM is counterproductive
-when its output is re-injected.
+**SLM model size vs token efficiency is unverified for the codex agent.** It is
+plausible that a bulkier SLM writes bulkier rewrites and memory records that are
+re-fed to the agent every turn, but the earlier `gpt-5.4-mini` vs `gpt-5.4-nano`
+ratios (1.57× / 1.71× uncached) were CROSS-RUN comparisons confounded by cache
+warmth (the nano run hit ~89–94% cache vs ~78–90% for the mini run) and by
+different normalizers/transport. On cache-independent TOTAL tokens the mini runs
+actually fed slightly *fewer* tokens, so the data does not support "mini is
+bulkier / nano is terser". This comparison needs a clean interleaved same-run
+measurement before any model-size claim can stand. See
+[MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
 
 **Pure-subscription vs hybrid.** Running both the SLM and the agent on one
-ChatGPT/Codex subscription (zero API keys) works, but it pins the SLM to
-`gpt-5.4-mini`, whose bulkier output erodes the codex win: with a bounded session
-it lands at **1.71× cheaper than vanilla** (185,677 vs 317,079) — versus **2.67×**
-for the terse-`gpt-5.4-nano` hybrid (118,610 vs 317,079). The hybrid — a terse SLM
-on a cheap API key plus the agent on the subscription — is materially better. See
-[Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode).
+ChatGPT/Codex subscription (zero API keys) works, but the all-subscription path
+routes the SLM through the codex CLI subprocess, which adds ~20k tokens/call of
+agent-loop overhead. The hybrid — SLM on a cheap API key plus the agent on the
+subscription — avoids that per-call overhead and gives predictable metered
+dollars for the SLM layer, so it remains the recommended setup. (The earlier
+1.71×/2.67× vanilla-comparison ratios were cross-run, cache-confounded numbers
+and have been removed; see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).)
+See [Hybrid Mode](https://github.com/steyangdot/PromptPilot/wiki/Hybrid-Mode).
 
 > All figures: chain task fixing a seeded auth bug in httpx, N=5, uncached input
 > tokens/run, claude-code 2.1.163 / codex-cli 0.130.0. End-state was parity —

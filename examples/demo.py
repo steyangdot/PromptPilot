@@ -122,14 +122,15 @@ EXAMPLES: List[Example] = [
               "sharp question instead of guessing, then forwards a precise brief.",
         prompt="the checkout page is slow, make it faster",
         repo=_CHECKOUT_REPO,
-        # Representative human reply to the clarify question: it picks the
-        # "database" option the model offers and adds the detail a developer
-        # would actually know — a symptom, not jargon. (Named by category, not
-        # by letter, since the option letters are regenerated on each --live.)
+        # Representative human reply to the clarify question: terse and realistic.
+        # It names the bottleneck *category* the model offers and the constraints,
+        # but deliberately does NOT pre-diagnose the code-level root cause (that's
+        # the coding agent's job) or pre-write the brief (that's PromptPilot's) —
+        # so step 4 visibly earns its keep. Named by category, not by letter,
+        # since the option letters are regenerated on each --live.
         answer=(
-            "The database side — api/checkout.py runs a separate query per line "
-            "item, so checkout drags on big carts (p95 is around 3s). Keep the "
-            "public API and behavior unchanged, and add a regression/benchmark test."
+            "It's the database queries — they're slow on big carts. Keep the "
+            "public API and behavior the same, and make sure it's tested."
         ),
     ),
 ]
