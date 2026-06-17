@@ -37,29 +37,28 @@ And a **quality gate**: **end-state parity**. After each run we run the repo's a
 
 ## 1b. What the v2 rewrite actually produced
 
-This is the SLM step at the heart of the `with_session` arm — the **v2 normalizer** (`slm-openai-v2`, model **gpt-5.4-nano**, the SLM the benchmark used) turning a terse developer line into a precise, file-grounded, constraint-pinned brief. (The per-run rewrite text isn't stored in the run records, so this is reproduced under the *identical* SLM, model, prompt, repo, and autonomous guard the run used.)
+This is the SLM step at the heart of the `with_session` arm — the **v2 normalizer** (`slm-openai-v2`, model **gpt-5.4-nano**). The record below is **verbatim from the raw normalizer log** (`~/.promptpilot/v2_slm_raw.jsonl`, captured with `PROMPTPILOT_V2_RAW_LOG=1`): timestamp `2026-06-17T05:59:47Z`, **9,876 input / 303 output tokens** — the input is mostly the repo context the SLM read; the 303-token output *is* the spec (the "~0.2% control layer", made concrete).
 
-**Raw prompt** — `chain_auth`, turn 1:
+**Raw prompt** — the `<developer_prompt>` fed to the SLM:
 
 > fix the bug in DigestAuth where the digest Authorization 'response' hash is computed from the wrong secret ordering
 
-**v2 rewrite** — what the agent actually receives:
+**The `downstream_prompt` the SLM emitted — what the agent receives, verbatim:**
 
-> Implement a fix for DigestAuth in `httpx/_auth.py`: the digest Authorization 'response' hash is currently computed using the wrong secret ordering. Locate where HA1/HA2 and the final response digest are built for Digest authorization, and correct the ordering to match **RFC 7616 / RFC 2069** digest calculation (ensure the final 'response' is computed from the proper components in the proper order).
->
-> Also add or update tests to reproduce the bug and verify the corrected digest: find existing DigestAuth tests in `tests/test_auth.py` and `tests/client/test_auth.py`, extend them with a deterministic example (fixed realm, nonce, uri, method, qop if applicable, nc/cnonce, username/password/secret ordering) and assert that the computed Authorization header matches the expected digest 'response'. **Ensure other auth flows remain unchanged.**
->
-> `[cwd=C:\projects\httpx; branch=seeded-auth-bug; tests=pytest]`
+> Fix DigestAuth in httpx/_auth.py so that the digest Authorization header computes the `response` hash using the correct secret ordering (i.e., correct HA2/HA1 inputs and the proper placement of the precomputed secrets per the RFC algorithm). Locate the current DigestAuth implementation, identify where the `response` digest is calculated, and correct the ordering/combination so it matches the expected digest formula for username/password vs any precomputed values. Update/extend tests to cover this bug by adding a failing test case in tests/test_auth.py and/or tests/client/test_auth.py that asserts the exact Digest Authorization header (or computed response hash) matches the expected value for a known challenge/nonce/opaque/qop/uri/method setup. Ensure existing DigestAuth behavior remains unchanged except for the corrected hash. Run the relevant test suite(s).
 
-**Plus the structured decision the SLM emits alongside it:**
+**The rest of the `ExecutionSpec` it emitted (same JSON object):**
 
 | field | value |
 |---|---|
-| route / intent / scope | `act` / `act` / `pinpoint` |
+| route / intent / scope | `act` / `act` / `localized` |
+| risk | `high` |
 | target_files | `httpx/_auth.py`, `tests/test_auth.py`, `tests/client/test_auth.py` |
-| memory_record (seeds the next turn's bounded session) | *"Fix DigestAuth so the digest Authorization 'response' hash is computed from the correct secret/component ordering, and add/update deterministic tests to validate the Authorization header."* |
+| memory_record (seeds the next turn's bounded session) | *"Correct DigestAuth's digest `response` hash computation in httpx/_auth.py by fixing the wrong secret ordering, and add/adjust tests to assert the correct Authorization header output."* |
 
-So for **~0.2% of the run's tokens**, the SLM added: the **target file**, the **standard to match** (RFC 7616/2069), a **concrete test spec** (a deterministic realm/nonce/uri/qop/nc/cnonce example asserting the expected `response`), a **protected-span guard** ("other auth flows remain unchanged"), repo grounding, and the **one-line `memory_record`** that carries intent into the next turn without re-feeding the transcript. The frontier agent still writes the code — the rewrite just stops it from burning a run on ambiguity. (PromptPilot optimizes for *semantic-preserving context control*, not blind shortening: this rewrite is **longer** than the raw prompt, on purpose.)
+So for **303 output tokens** (the ~0.2% control layer), the SLM turned one terse line into: the **target files** (`httpx/_auth.py` + both test suites), a **`risk: high`** flag, a **concrete test spec** (assert the exact Authorization header for a known challenge/nonce/qop/uri/method setup), a **protected-span guard** ("existing DigestAuth behavior remains unchanged except for the corrected hash"), and the one-line **`memory_record`** that carries intent into the next turn without re-feeding the transcript. The frontier agent still writes the code — the rewrite just stops it burning a run on ambiguity. (PromptPilot optimizes for *semantic-preserving context control*, not blind shortening: this brief is **longer** than the raw prompt, on purpose.)
+
+> Provenance: verbatim from `~/.promptpilot/v2_slm_raw.jsonl` (the `PROMPTPILOT_V2_RAW_LOG` capture) — an auditable artifact, not a reconstruction. At runtime a short repo-grounding suffix (`[cwd=…; branch=…; tests=pytest]`) is appended before the brief is forwarded.
 
 ---
 
