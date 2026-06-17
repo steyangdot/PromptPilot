@@ -16,7 +16,8 @@ with `prpt new-session`.
 ## How it differs from native session
 
 Your coding tool already has a conversation mode — `claude --resume`,
-`codex exec resume`. The difference is **what gets carried forward**:
+`codex resume` (the benchmark below drives the headless `codex exec resume`
+form — same session mechanism). The difference is **what gets carried forward**:
 
 | | Native session (`--resume` / `exec resume`) | PromptPilot `withSession` |
 |---|---|---|
