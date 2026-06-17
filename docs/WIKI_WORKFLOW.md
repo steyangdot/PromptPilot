@@ -31,6 +31,8 @@ scripts/publish_wiki.sh
 - `docs/SAFETY_MODEL.md` → `Safety-Model.md`
 - `docs/TELEMETRY_AND_REPLAY.md` → `Telemetry-and-Replay.md`
 - `docs/BENCHMARKS.md` → `Benchmarks.md`
+- `docs/TESTING_STRATEGY.md` → `Testing-Strategy.md`
+- `docs/MEASUREMENT_METHODOLOGY.md` → `Measurement-Methodology.md`
 - `docs/COMPARISON.md` → `Comparison.md`
 - `docs/FAQ.md` → `FAQ.md`
 - `docs/ROADMAP.md` → `Roadmap.md`
