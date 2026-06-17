@@ -35,6 +35,34 @@ And a **quality gate**: **end-state parity**. After each run we run the repo's a
 
 ---
 
+## 1b. What the v2 rewrite actually produced
+
+This is the SLM step at the heart of the `with_session` arm — the **v2 normalizer** (`slm-openai-v2`, model **gpt-5.4-nano**, the SLM the benchmark used) turning a terse developer line into a precise, file-grounded, constraint-pinned brief. (The per-run rewrite text isn't stored in the run records, so this is reproduced under the *identical* SLM, model, prompt, repo, and autonomous guard the run used.)
+
+**Raw prompt** — `chain_auth`, turn 1:
+
+> fix the bug in DigestAuth where the digest Authorization 'response' hash is computed from the wrong secret ordering
+
+**v2 rewrite** — what the agent actually receives:
+
+> Implement a fix for DigestAuth in `httpx/_auth.py`: the digest Authorization 'response' hash is currently computed using the wrong secret ordering. Locate where HA1/HA2 and the final response digest are built for Digest authorization, and correct the ordering to match **RFC 7616 / RFC 2069** digest calculation (ensure the final 'response' is computed from the proper components in the proper order).
+>
+> Also add or update tests to reproduce the bug and verify the corrected digest: find existing DigestAuth tests in `tests/test_auth.py` and `tests/client/test_auth.py`, extend them with a deterministic example (fixed realm, nonce, uri, method, qop if applicable, nc/cnonce, username/password/secret ordering) and assert that the computed Authorization header matches the expected digest 'response'. **Ensure other auth flows remain unchanged.**
+>
+> `[cwd=C:\projects\httpx; branch=seeded-auth-bug; tests=pytest]`
+
+**Plus the structured decision the SLM emits alongside it:**
+
+| field | value |
+|---|---|
+| route / intent / scope | `act` / `act` / `pinpoint` |
+| target_files | `httpx/_auth.py`, `tests/test_auth.py`, `tests/client/test_auth.py` |
+| memory_record (seeds the next turn's bounded session) | *"Fix DigestAuth so the digest Authorization 'response' hash is computed from the correct secret/component ordering, and add/update deterministic tests to validate the Authorization header."* |
+
+So for **~0.2% of the run's tokens**, the SLM added: the **target file**, the **standard to match** (RFC 7616/2069), a **concrete test spec** (a deterministic realm/nonce/uri/qop/nc/cnonce example asserting the expected `response`), a **protected-span guard** ("other auth flows remain unchanged"), repo grounding, and the **one-line `memory_record`** that carries intent into the next turn without re-feeding the transcript. The frontier agent still writes the code — the rewrite just stops it from burning a run on ambiguity. (PromptPilot optimizes for *semantic-preserving context control*, not blind shortening: this rewrite is **longer** than the raw prompt, on purpose.)
+
+---
+
 ## 2. Experimental design (the rules, and why)
 
 - **Interleave the arms** (run-major: for each run, builtin then with_session, back-to-back). This is a **matched-pairs** design: both arms hit the *same* provider state (cache warmth, load) at the *same* moment, so those nuisance factors **cancel in the ratio**. Running one arm's five runs first and the other's later (a "blocked" design) would let conditions drift *between* the blocks and contaminate the comparison.
