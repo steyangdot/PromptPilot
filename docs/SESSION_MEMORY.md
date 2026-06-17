@@ -1,8 +1,10 @@
 # Session Memory (`withSession`)
 
-**Cross-invocation memory that's an order of magnitude cheaper than your coding
-tool's native session — at equal task quality — because it carries one-line
-intent summaries instead of re-feeding the whole transcript every turn.**
+**Cross-invocation memory that feeds the coding agent far fewer tokens than its
+native session — on Codex, ~4× fewer total tokens at equal task quality — by
+carrying one-line intent summaries instead of re-feeding the whole transcript every
+turn.** (On Claude Code, native `--resume` already caches history cheaply, so the win
+there is the rewrite, not the bounding — it's tool-dependent; see §1b.)
 
 Each `prpt` call is a separate process, so by default a coding agent has no idea
 what the previous call did. Session memory fixes that: PromptPilot persists a
@@ -70,6 +72,17 @@ window is a large saving.
 > **Rule of thumb:** **bound the session on codex; use native resume (rewrite-only)
 > on claude.** PromptPilot picks the right mode per tool by default.
 
+### 1c. It's the SLM distillation, not just the bounding
+
+Would a *dumb* mechanical flatten — raw prompt plus a raw window of recent turns,
+no SLM — save just as much? No. A controlled A/B (codex `chain_auth`, N=5,
+interleaved) pitted PromptPilot's SLM-distilled session against exactly that
+mechanical bounded session: the mechanical version fed **1.27× more uncached /
+1.37× more total** tokens for the **same** end-state (5/5 both). Bounding the
+session gets you part of the way; the SLM's one-line `memory_record` — materially
+leaner than re-feeding raw turns — supplies the rest. Distilling each turn is itself
+SLM work; the frontier agent never summarizes itself.
+
 ### 2. Cost — product comparison
 
 | Comparison (chain_auth, N=5, uncached input tokens) | Result |
@@ -77,13 +90,18 @@ window is a large saving.
 | Full PromptPilot vs raw-prompt + native session (**codex**) | **~3.8× fewer total tokens** (cache-independent) · **~1.86× fewer uncached** (observed cache, warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)); end-state parity |
 | Full PromptPilot vs raw-prompt + native session (**claude**) | bounded session **loses** (1.19× costlier); the win is **rewrite-only** (slm_native): **1.25× fewer**, end-state parity |
 
-> **Honest caveat:** the codex ratio bundles the SLM rewrite's savings with the
-> bounded-session savings — a valid "use PromptPilot vs use the tool raw" comparison,
-> **not** an isolated session-only number. On claude, bounding the session is
-> *counterproductive* (it loses to native `--resume`); use rewrite-only there. The
-> clean session-mechanism evidence is the transcript-growth curve (§1). These supersede
-> earlier per-success-$ figures (e.g. a prior "8.5× / $0.74-vs-$6.31"), which were on a
-> confounded, cache-inclusive basis — see [Benchmarks](BENCHMARKS.md).
+> **Honest caveat:** the codex product ratio bundles the SLM rewrite's savings with
+> the bounded-session savings — a valid "use PromptPilot vs use the tool raw"
+> comparison, **not** an isolated session-only number (the clean session-mechanism
+> isolation is §1b's `slm_native` vs `with_session`). On claude, bounding the session
+> is *counterproductive*; use rewrite-only there. **Lead with total tokens:** the
+> *uncached* figure rides the provider's cache, which is non-deterministic and varies
+> run-to-run, so it's a warmth-sensitive range, not a fixed point — see
+> [Measurement Methodology](MEASUREMENT_METHODOLOGY.md) and the full journey in
+> [Testing Strategy](TESTING_STRATEGY.md). A later clean v2 run (N=5, interleaved,
+> 0 censored, end-state 5/5 both arms) reconfirms parity at **~4.2× fewer total
+> tokens**. These supersede earlier per-success-$ figures (a prior
+> "8.5× / $0.74-vs-$6.31") on a confounded, cache-inclusive basis.
 
 ### 3. Cost is tool-dependent; quality is parity
 
@@ -122,15 +140,22 @@ both at equal quality.
 
 ## Caveats
 
-- **Single workload** (`httpx`, chain1/chain4/chain5). Your repo will land elsewhere.
+- **Single workload** (`httpx`; chain1/chain4/chain5 and the cleaner `chain_auth`).
+  Your repo will land elsewhere.
 - **N=5 noise floor** — success deltas under ~0.2/turn are inside the noise; the
-  *cost* gaps are the robust signal, the success deltas are directional.
-- The codex native-session comparison is **cross-session** (~24h apart) and
-  **confounded** (raw vs SLM-rewritten prompts) — see §2 caveat. A clean
-  session-only isolation (STACKED vs WITH) is an open follow-up.
-- "Success" is judged by the harness scorer; chain1's T3 is a known artifact that
-  suppresses success on all arms equally.
+  *cost* gaps are the robust signal.
+- **Uncached is not reproducible.** The full-price (uncached) figure depends on the
+  provider's server-side cache, which is best-effort and varies run-to-run — so we
+  report it as a warmth-sensitive range and lead with **total** tokens
+  (cache-independent). See [Measurement Methodology](MEASUREMENT_METHODOLOGY.md).
+- **The clean isolation is done.** The earlier caveat (cross-session, raw-vs-rewritten
+  confound, "open follow-up") is resolved by `chain_auth`: same-session,
+  **interleaved**, with `slm_native` vs `with_session` giving the clean
+  session-mechanism number (§1b) and a co-run `builtin` vs `with_session` giving the
+  product number (§2), all at end-state parity.
+- **Quality is scored on end-state.** The clean `chain_auth` replication checks
+  passing `tests/test_auth.py`, sidestepping chain1's T3 per-turn-scorer artifact.
 
 ---
 
-**See also:** [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison)
+**See also:** [Benchmarks](https://github.com/steyangdot/PromptPilot/wiki/Benchmarks) · [Testing Strategy](https://github.com/steyangdot/PromptPilot/wiki/Testing-Strategy) · [Measurement Methodology](https://github.com/steyangdot/PromptPilot/wiki/Measurement-Methodology) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Comparison](https://github.com/steyangdot/PromptPilot/wiki/Comparison)
