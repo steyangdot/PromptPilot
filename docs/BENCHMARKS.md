@@ -26,7 +26,7 @@ See [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memo
 
 ## chain_auth (v0.3.1)
 
-The `chain_auth` task seeds a `DigestAuth` secret-ordering bug in `httpx` and fixes it over a 5-turn chain. **Setup:** N=5, claude-code 2.1.163 / codex-cli 0.130.0, agent models claude-opus-4-8 / gpt-5.5, SLMs gpt-5.4-nano (OpenAI API) / gpt-5.4-mini (codex subscription) / claude-haiku-4-5 (Anthropic API / Max). **Metric: UNCACHED input tokens per run** (input minus cached) — the corrected basis; earlier project numbers over-reported by using gross/cache-inclusive tokens. **End-state across every config below is parity** (`pytest tests/test_auth.py` passing) — the token differences carry no quality tradeoff.
+The `chain_auth` task seeds a `DigestAuth` secret-ordering bug in `httpx` and fixes it over a 5-turn chain. **Setup:** N=5, claude-code 2.1.163 / codex-cli 0.130.0, agent models claude-opus-4-8 / gpt-5.5, SLMs gpt-5.4-nano (OpenAI API) / gpt-5.4-mini (codex subscription) / claude-haiku-4-5 (Anthropic API / Max). **Metrics: total input tokens per run** (cache-independent — the headline) **and uncached** (input minus cached) — reported separately because uncached rides the provider's cache warmth and isn't reproducible cross-run (see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)). **End-state across every config below is parity** (`pytest tests/test_auth.py` passing) — the token differences carry no quality tradeoff.
 
 ### The tool-flip: bounding the session helps on codex, hurts on claude
 
@@ -43,11 +43,11 @@ Same code, task, and SLM; a **~2.8× swing** to the opposite verdict. Mechanism 
 
 | Config | with_session | builtin (vanilla) | Ratio |
 |---|---|---|---|
-| codex (nano SLM, same-run) | 170,264 | 317,079 | **1.86× uncached** · **3.8× total** |
+| codex (v2 SLM, clean same-run N=5) | 201,707 | 396,534 | **1.97× uncached** · **4.19× total** |
 | claude (bounded) | 76,832 | 64,592 | **0.84×** (1.19× costlier — bounded loses) |
 | claude (rewrite-only, slm_native) | 51,548 | 64,592 | **1.25× cheaper** |
 
-On codex these are two separate metrics: **total** (~3.8× fewer) is deterministic and cache-independent; **uncached** (~1.86× fewer) is the observed-cache value and is cache-warmth-sensitive (see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)). They are not blended into a range.
+On codex these are two separate metrics: **total** (~4.2× fewer) is deterministic and cache-independent; **uncached** (~1.97× fewer) is the observed-cache value and is cache-warmth-sensitive (range ~1.5–3.4× — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)). They are not blended into a range.
 
 On claude the win is **rewrite-only**: bound nothing, keep native `--resume`. On codex, bound the session.
 
@@ -55,15 +55,16 @@ On claude the win is **rewrite-only**: bound nothing, keep native `--resume`. On
 
 PromptPilot reduces both the **total tokens fed** to the model (gross, including cache-reads) and the **full-price (uncached)** tokens. Both are real reductions. Lead with **total** — it's cache-independent and reproducible. Report total and uncached as two separate metrics — **total** is cache-independent/deterministic; **uncached** is the observed-cache value (cache-warmth-sensitive, varies cross-run) and is not blended into total — see [MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md).
 
-**Codex** (N=5, per run):
+**Codex** — clean **v2** run (N=5, per run, `builtin` + `with_session` interleaved, 0 censored, end-state 5/5 both arms):
 
 | arm | total tokens fed | cached | uncached (full-price) | cache-hit |
 |---|---|---|---|---|
-| with_session (bounded) | 1,224,728 | 1,054,464 | **170,264** | 86% |
-| slm_native (native) | 5,155,286 | 4,836,633 | 318,652 | 94% |
-| builtin (vanilla) | 4,664,957 | 4,347,878 | 317,079 | 93% |
+| with_session (bounded) | 1,066,833 | 865,126 | **201,707** | 81% |
+| builtin (vanilla) | 4,471,773 | 4,075,239 | 396,534 | 91% |
 
-→ On codex, bounding the session feeds the model **~3.8× fewer total tokens** (cache-independent) and, as a separate metric, **~1.86× fewer full-price (uncached) tokens** at the observed cache (uncached is cache-warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)).
+→ On codex, bounding the session feeds the model **~4.2× fewer total tokens** (cache-independent) and, as a separate metric, **~1.97× fewer full-price (uncached) tokens** at the observed cache (uncached is cache-warmth-sensitive, range ~1.5–3.4× — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)).
+
+The earlier **v1 toolflip** run — which also carried the third `slm_native` arm used in the tool-flip analysis above — measured the same direction and confirms these figures: with_session 1,224,728 total / 170,264 uncached (86%), slm_native 5,155,286 / 318,652 (94%), builtin 4,664,957 / 317,079 (93%) → **3.81× total / 1.86× uncached**.
 
 **Claude** (N=5, per run):
 
@@ -75,7 +76,7 @@ PromptPilot reduces both the **total tokens fed** to the model (gross, including
 
 → On claude, total tokens fed is ~the same across arms (~1.3M) and bounding reduces **neither** gross nor uncached — which is why claude should keep native `--resume`.
 
-**Why the flip (mechanism):** both tools cache at similar rates (codex native ~93%, claude ~95%) — codex isn't worse at caching. The flip is two things: (1) codex's transcript **balloons** (gross grows to ~4.66M vs claude's flat ~1.3M, because codex agents are tool-heavy and `exec resume` re-feeds it all), and (2) codex's per-turn cache-hit stays flat ~90–93% while claude's **climbs toward ~99.5%** by turn 5 (its agent converges to small edits, so uncached collapses to ~1.5k). Bounding the session caps codex's growing transcript; on claude there's nothing to cap.
+**Why the flip (mechanism):** both tools cache at similar rates (codex native ~93%, claude ~95%) — codex isn't worse at caching. The flip is two things: (1) codex's transcript **balloons** (gross grows to ~4.5M vs claude's flat ~1.3M, because codex agents are tool-heavy and `exec resume` re-feeds it all), and (2) codex's per-turn cache-hit stays flat ~90–93% while claude's **climbs toward ~99.5%** by turn 5 (its agent converges to small edits, so uncached collapses to ~1.5k). Bounding the session caps codex's growing transcript; on claude there's nothing to cap.
 
 ### SLM model and transport
 
@@ -91,12 +92,13 @@ The fix is a shared `resolve_downstream()` helper in `prpt/core/spec.py`. When `
 
 ### Optimal config (the actionable rule)
 
-- **codex:** default SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **~3.8× fewer total tokens** than vanilla, and **~1.86× fewer uncached** at the observed cache (separate, warmth-sensitive metric).
+- **codex:** default SLM (nano) + **bounded** session + clarify guard (`PROMPTPILOT_AUTONOMOUS=1`) → **~4.2× fewer total tokens** than vanilla, and **~1.97× fewer uncached** at the observed cache (separate, warmth-sensitive metric).
 - **claude:** SLM rewrite + **native `--resume`** (do *not* bound the session) → **~1.25× cheaper** than vanilla.
 - Rule of thumb: bound the session on codex; use native resume (rewrite-only) on claude; use the per-backend default SLM; keep the clarify guard on for autonomous/agent use.
 
 Caveats:
 - Single workload (`httpx`). Your repo will land somewhere different.
+- **The savings are a CLI/automation story.** They come from bounding an ever-growing native transcript across a *multi-turn programmatic* run, so the multiplier scales with session length — agent chains, headless `codex exec` / `claude --resume` loops, CI/batch. A single interactive turn has little transcript to bound; don't expect ~4× on a one-shot prompt. (This is also the workload where the SLM should run on a metered API key rather than finite subscription quota — see the dollars caveat below.)
 - **Session value is tool-dependent and primarily a *cost* effect:** the original "+60% claude-code success lift" did **not** reproduce — it was a cached-read / phantom-bug artifact, and the clean chain_auth replication shows **end-state parity**. The durable rule: **bound the session on codex** (large cost win), **use native `--resume` on claude**. Don't quote +60% as a result.
 - The "~8.5× cheaper" (and the analogous claude-code "~3× cheaper than `--resume`") compares *full PromptPilot* (SLM rewrite + bounded session) against a *raw-prompt + native-session* baseline — so the ratio bundles the rewrite benefit with the session-mechanism benefit. It's a product comparison, not an isolated session-only number. The transcript-growth curve is the clean session-mechanism evidence.
 - N=5 success deltas under ~0.2/turn are within the noise floor; cost gaps are the robust signal.

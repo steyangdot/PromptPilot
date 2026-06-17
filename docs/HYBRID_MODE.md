@@ -224,12 +224,13 @@ OpenAI API per-call billing.
 For the leanest codex run specifically, route the SLM to an **OpenAI API key**,
 add a bounded session, and keep the autonomous guard on
 (`PROMPTPILOT_AUTONOMOUS=1`). On the cache-independent headline metric, that
-config measured **~3.8× fewer total tokens than vanilla** (with_session 1,224,729
-vs builtin 4,664,958 total tokens/run; one interleaved codex `chain_auth` N=5
-run). As a separate metric, full-price *uncached* tokens measured
-**~1.86× fewer** (same-run with_session 170,264 vs builtin 317,079, observed
-~93%/86% cache hit) — this is cache-warmth-sensitive (a single interleaved data
-point; cross-run it varies), not a range running up to the 3.8× total ratio.
+config measured **~4.2× fewer total tokens than vanilla** (with_session 1,066,833
+vs builtin 4,471,773 total tokens/run; clean interleaved codex `chain_auth` v2 N=5
+run, 0 censored, end-state 5/5 both arms). As a separate metric, full-price
+*uncached* tokens measured **~1.97× fewer** (same-run with_session 201,707 vs
+builtin 396,534; observed cache hit ~81% with_session / ~91% builtin) — this is
+cache-warmth-sensitive (range ~1.5–3.4× cross-run), not a range running up to the
+4.2× total ratio.
 What makes the hybrid the recommended split here is putting the SLM
 on the API key: it avoids the ~20k-tokens/call CLI subprocess overhead of an
 all-on-subscription run and keeps SLM spend metered and predictable. See
