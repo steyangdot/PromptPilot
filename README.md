@@ -20,7 +20,7 @@ The SLM manages the workflow; the frontier model still writes and debugs the cod
 
 ![PromptPilot visual demo: a vague request routes to clarify, the developer answers, and PromptPilot forwards a constraint-pinned brief to the coding agent](docs/assets/demo.svg)
 
-*Above: a real `slm-anthropic-v2` run. A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a one-line answer it routes **`act`** and forwards a precise, constraint-pinned brief. Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
+*Above: a real `gpt-5.2` run (`slm-openai-v2`). A vague one-liner routes to **`clarify`** — PromptPilot asks one sharp question instead of guessing — and after a short, informal answer it routes **`act`** and expands it into a precise, constraint-pinned brief (the developer names the bottleneck; PromptPilot does the scoping and the agent does the diagnosis). Steps 2 and 4 are genuine small-model output; refresh with `python scripts/make_demo_svg.py --live`.*
 
 Run the same control layer yourself with **zero setup** — `python examples/demo.py` defaults to the **offline** heuristic normalizer (no API key, no coding agent, no network); add `--slm` for the live routing + rewrite pictured above. The `clarify` route needs a v2 SLM backend, which the default `slm` now auto-selects for whichever auth you have — `slm-anthropic-v2` / `slm-openai-v2` (API key) or `slm-subscription-v2` (Max OAuth / ChatGPT):
 
