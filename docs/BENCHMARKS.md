@@ -7,6 +7,8 @@ PromptPilot measures the SLM harness on two dimensions:
 
 A harness output is not successful just because it is shorter. Token reduction without preservation makes the expensive coding agent cheaper but less informed — usually a net loss.
 
+> **How these numbers were measured** — the experimental design, the two-metric (total vs uncached) policy, and the honest journey of corrections that produced the final figures — is in [Testing Strategy & the Road to the Numbers](TESTING_STRATEGY.md) and the cache-mechanics deep-dive in [Measurement Methodology](MEASUREMENT_METHODOLOGY.md).
+
 ## Measured results
 
 These numbers come from the in-repo chain harness ([research/chain_test_v2.py](https://github.com/steyangdot/PromptPilot/blob/main/research/chain_test_v2.py)) against a real target repo (`httpx`). Each row is a specific experiment with a stable identifier so re-runs are reproducible.
