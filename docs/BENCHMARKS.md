@@ -98,6 +98,7 @@ The fix is a shared `resolve_downstream()` helper in `prpt/core/spec.py`. When `
 
 Caveats:
 - Single workload (`httpx`). Your repo will land somewhere different.
+- **The savings are a CLI/automation story.** They come from bounding an ever-growing native transcript across a *multi-turn programmatic* run, so the multiplier scales with session length — agent chains, headless `codex exec` / `claude --resume` loops, CI/batch. A single interactive turn has little transcript to bound; don't expect ~4× on a one-shot prompt. (This is also the workload where the SLM should run on a metered API key rather than finite subscription quota — see the dollars caveat below.)
 - **Session value is tool-dependent and primarily a *cost* effect:** the original "+60% claude-code success lift" did **not** reproduce — it was a cached-read / phantom-bug artifact, and the clean chain_auth replication shows **end-state parity**. The durable rule: **bound the session on codex** (large cost win), **use native `--resume` on claude**. Don't quote +60% as a result.
 - The "~8.5× cheaper" (and the analogous claude-code "~3× cheaper than `--resume`") compares *full PromptPilot* (SLM rewrite + bounded session) against a *raw-prompt + native-session* baseline — so the ratio bundles the rewrite benefit with the session-mechanism benefit. It's a product comparison, not an isolated session-only number. The transcript-growth curve is the clean session-mechanism evidence.
 - N=5 success deltas under ~0.2/turn are within the noise floor; cost gaps are the robust signal.

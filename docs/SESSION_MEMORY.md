@@ -6,6 +6,11 @@ carrying one-line intent summaries instead of re-feeding the whole transcript ev
 turn.** (On Claude Code, native `--resume` already caches history cheaply, so the win
 there is the rewrite, not the bounding — it's tool-dependent; see §1b.)
 
+The savings are mainly a **CLI / automation** effect: they compound over multi-turn
+*programmatic* runs (agent chains, headless `exec` / `--resume` loops, CI/batch) where
+the native transcript grows turn-over-turn — a single interactive prompt has little
+to bound, so that's not where the multiplier shows up.
+
 Each `prpt` call is a separate process, so by default a coding agent has no idea
 what the previous call did. Session memory fixes that: PromptPilot persists a
 small, bounded record of recent turns and prepends it to the next SLM rewrite, so
