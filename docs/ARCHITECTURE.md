@@ -63,6 +63,18 @@ PromptPilot separates workflow control from coding execution:
 
 This keeps the SLM central but bounded: it controls the workflow around the coding agent without replacing the model that reasons about and edits code.
 
+## Session memory (bounded)
+
+Multi-turn work needs continuity, but a tool's native session re-feeds the whole transcript every turn — cheap on Claude Code (its `--resume` caches history), costly on Codex (its transcript grows uncached). PromptPilot keeps a **bounded session memory** instead: one short record per turn — the SLM's one-line `memory_record` (intent + constraints) plus the files the agent changed — not the full replay.
+
+The choice is **tool-aware**: bound the session on Codex; defer to native `--resume` on Claude Code. Either way the agent keeps enough thread to handle referential follow-ups ("add a test for that") without paying to re-read everything. Distilling each turn into the `memory_record` is itself SLM work — the frontier agent never summarizes itself.
+
+## The v2 control spec
+
+The SLM returns more than a rewritten string. The **v2 normalizer** emits one structured decision — a JSON `ExecutionSpec` carrying the **route**, **intent**, **scope**, **target files**, a **risk** estimate, and the one-line **`memory_record`**. That single object drives the whole control layer: it selects the route, grounds the rewrite (target files + constraints), and seeds the bounded session (the `memory_record`).
+
+One guard matters for automation: in **autonomous mode** (`PROMPTPILOT_AUTONOMOUS=1`, for agent/CI use), a `clarify` route **degrades to `act`** — with no human to answer, the agent acts on the original request instead of asking itself a question. Interactive use is unchanged (a human still sees the clarifying question).
+
 ---
 
-**See also:** [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
+**See also:** [SLM Harness](https://github.com/steyangdot/PromptPilot/wiki/SLM-Harness) · [Routes and Decisions](https://github.com/steyangdot/PromptPilot/wiki/Routes-and-Decisions) · [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory) · [Telemetry and Replay](https://github.com/steyangdot/PromptPilot/wiki/Telemetry-and-Replay)
