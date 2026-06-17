@@ -86,9 +86,9 @@ SLM work; the frontier agent never summarizes itself.
 
 ### 2. Cost — product comparison
 
-| Comparison (chain_auth, N=5, uncached input tokens) | Result |
+| Comparison (chain_auth, N=5, total + uncached input tokens) | Result |
 |---|---|
-| Full PromptPilot vs raw-prompt + native session (**codex**) | **~3.8× fewer total tokens** (cache-independent) · **~1.86× fewer uncached** (observed cache, warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)); end-state parity |
+| Full PromptPilot vs raw-prompt + native session (**codex**) | **~4.2× fewer total tokens** (cache-independent) · **~1.97× fewer uncached** (observed cache, warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)); end-state parity |
 | Full PromptPilot vs raw-prompt + native session (**claude**) | bounded session **loses** (1.19× costlier); the win is **rewrite-only** (slm_native): **1.25× fewer**, end-state parity |
 
 > **Honest caveat:** the codex product ratio bundles the SLM rewrite's savings with
@@ -99,9 +99,10 @@ SLM work; the frontier agent never summarizes itself.
 > *uncached* figure rides the provider's cache, which is non-deterministic and varies
 > run-to-run, so it's a warmth-sensitive range, not a fixed point — see
 > [Measurement Methodology](MEASUREMENT_METHODOLOGY.md) and the full journey in
-> [Testing Strategy](TESTING_STRATEGY.md). A later clean v2 run (N=5, interleaved,
-> 0 censored, end-state 5/5 both arms) reconfirms parity at **~4.2× fewer total
-> tokens**. These supersede earlier per-success-$ figures (a prior
+> [Testing Strategy](TESTING_STRATEGY.md). The headline figures above come from a
+> clean v2 run (N=5, interleaved, 0 censored, end-state 5/5 both arms): **~4.2×
+> fewer total tokens / ~1.97× fewer uncached** at parity. These supersede earlier
+> per-success-$ figures (a prior
 > "8.5× / $0.74-vs-$6.31") on a confounded, cache-inclusive basis.
 
 ### 3. Cost is tool-dependent; quality is parity
@@ -112,7 +113,7 @@ replication, **quality (end-state) is parity across configs**:
 | Tool | Bounded session vs native | End-state |
 |---|---|---|
 | **claude** | **costs more** — 1.49× vs native `--resume` (1.19× vs vanilla); use native resume | parity |
-| **codex** | **~3.8× fewer total tokens** · **~1.86× fewer uncached** (observed cache) — bound it | parity |
+| **codex** | **~4.2× fewer total tokens** · **~1.97× fewer uncached** (observed cache) — bound it | parity |
 
 The earlier "+60% success on claude-code" figure does **not** reproduce in the
 clean chain_auth replication (end-state is parity across configs); it was a
