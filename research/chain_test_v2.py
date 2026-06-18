@@ -452,6 +452,16 @@ CHAINS = [
     },
 ]
 
+# Long dependent chain for the compaction-regime test (docs/COMPACTION_REGIME_TEST.md).
+# Kept in a separate module to keep the literal above readable; appended here so it
+# participates in CHAINS selection exactly like the inline chains. Select with
+# `--chain long`.
+try:
+    from chain_long_fixture import CHAIN_LONG as _CHAIN_LONG
+    CHAINS.append(_CHAIN_LONG)
+except Exception as _e:  # pragma: no cover - fixture is optional
+    print("[chain_test_v2] warning: chain_long fixture not loaded: {0}".format(_e))
+
 
 # ---------------------------------------------------------------------------
 # Repo state helpers
@@ -1474,7 +1484,9 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--chain", default="all", choices=["1", "2", "3", "4", "5", "all"])
+    parser.add_argument("--chain", default="all", choices=["1", "2", "3", "4", "5", "long", "all"],
+                        help="Which chain to run. '1'..'5' map to chainN; 'long' selects "
+                             "chain_long (the compaction-regime test fixture).")
     parser.add_argument("--tool", default="all", choices=["codex", "claude-code", "all"])
     parser.add_argument("--runs", type=int, default=3,
                         help="Number of runs per variant (default 3)")
@@ -1565,9 +1577,11 @@ def main() -> None:
     _NORMALIZER_NAME = args.normalizer
     print(f"[startup] normalizer={_NORMALIZER_NAME}")
 
-    targets = CHAINS if args.chain == "all" else [
-        c for c in CHAINS if c["id"] == "chain{0}".format(args.chain)
-    ]
+    if args.chain == "all":
+        targets = CHAINS
+    else:
+        _wanted = "chain_long" if args.chain == "long" else "chain{0}".format(args.chain)
+        targets = [c for c in CHAINS if c["id"] == _wanted]
     tools = ["codex", "claude-code"] if args.tool == "all" else [args.tool]
 
     # Reap any orphaned claude.exe processes from prior killed/crashed runs.
