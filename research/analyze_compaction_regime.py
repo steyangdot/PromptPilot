@@ -252,20 +252,32 @@ def main():
     comp = defaultdict(lambda: defaultdict(dict))
     windows = set()
     misses = 0
+    seg_mismatch = []   # (arm, run, n_segments, n_turns) — boundary assumption may be wrong
     for arm in cost:
         for run in cost[arm]:
             turn_tids = tids.get(arm, {}).get(run, {})
             uniq = set(v for v in turn_tids.values() if v)
             if len(uniq) == 1:  # resumed thread (builtin): one thread, segment into turns
-                segs, w = (lambda r: (segment(r[0]), r[1]))(rollout_rows(find_rollouts(next(iter(uniq)), rollout_paths)))
-                if w:
-                    windows.add(w)
-                if not find_rollouts(next(iter(uniq)), rollout_paths):
+                rps = find_rollouts(next(iter(uniq)), rollout_paths)
+                if not rps:
                     misses += 1
-                for t in sorted(cost[arm][run]):
-                    s = segs[t - 1] if 0 <= t - 1 < len(segs) else None
-                    occ[arm][run][t] = s["occ"] if s else None
-                    comp[arm][run][t] = s["comp"] if s else 0
+                    for t in sorted(cost[arm][run]):
+                        occ[arm][run][t] = None
+                        comp[arm][run][t] = 0
+                else:
+                    rows, w = rollout_rows(rps)
+                    if w:
+                        windows.add(w)
+                    segs = segment(rows)
+                    # If #segments != #turns the per-turn boundary assumption (BOUNDARY_TYPES)
+                    # is off — alignment of occupancy/compaction to turns (hence the in-regime
+                    # window `f`) is then unreliable. Surface it instead of silently mis-aligning.
+                    if len(segs) != len(cost[arm][run]):
+                        seg_mismatch.append((arm, run, len(segs), len(cost[arm][run])))
+                    for t in sorted(cost[arm][run]):
+                        s = segs[t - 1] if 0 <= t - 1 < len(segs) else None
+                        occ[arm][run][t] = s["occ"] if s else None
+                        comp[arm][run][t] = s["comp"] if s else 0
             else:  # fresh thread per turn
                 for t in sorted(cost[arm][run]):
                     rps = find_rollouts(turn_tids.get(t), rollout_paths)
@@ -285,6 +297,25 @@ def main():
     if misses:
         out("WARNING: {0} thread(s) had no matching rollout — occupancy/compaction unavailable "
             "for those (cost metrics still valid). Check SESSIONS_DIR.".format(misses))
+    if seg_mismatch:
+        out("WARNING: rollout segment count != turn count for {0} — the per-turn boundary "
+            "assumption (BOUNDARY_TYPES) is likely wrong, so occupancy/compaction turn-alignment "
+            "(and the in-regime window) are UNRELIABLE. Inspect a rollout's turn markers before "
+            "trusting the PRIMARY verdict.".format(
+                ", ".join("{0}/run{1}({2}seg!={3}turn)".format(*m) for m in seg_mismatch)))
+    # The reviewer's "eyeball builtin occupancy for monotonic growth" — automated:
+    # a resumed transcript should grow turn-over-turn; a non-monotonic curve means the
+    # segmentation mis-aligned turns (so the first-compaction turn `f` can't be trusted).
+    nonmono = []
+    for run in cost.get("builtin", {}):
+        seq = [occ["builtin"][run].get(t) for t in sorted(occ["builtin"][run])]
+        seq = [x for x in seq if x is not None]
+        if any(b < a * 0.9 for a, b in zip(seq, seq[1:])):  # >10% drop = suspicious
+            nonmono.append(run)
+    if nonmono:
+        out("WARNING: builtin per-turn occupancy is non-monotonic in run(s) {0} — expected to "
+            "grow as the resumed transcript accumulates. Segmentation alignment is suspect; "
+            "verify before trusting the in-regime window.".format(nonmono))
     out("")
 
     builtin_first_compaction = {}

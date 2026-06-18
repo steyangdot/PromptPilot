@@ -74,6 +74,10 @@ def _prioritize_diff(diff: str, cap: int) -> str:
         if used + len(c) <= cap:
             kept.append(c)
             used += len(c)
+        elif tier(c) == 0 and (cap - used) > 2000:
+            # never drop continuity evidence whole — head-truncate it into the remaining budget
+            kept.append(c[: cap - used] + "\n...[file diff truncated]...")
+            used = cap
         else:
             omitted += 1
     note = ("\n...[{0} file-diffs omitted for length; reference-critical files were "

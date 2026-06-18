@@ -21,6 +21,7 @@ if (-not (Test-Path (Join-Path $repo ".env"))) {
 # Calibration: N=1, with_session (default) + builtin; skip no_session.
 python research/chain_test_v2.py --chain long --tool codex --runs 1 `
     --skip-no-session --include-builtin --normalizer slm-openai-v2
+if ($LASTEXITCODE -ne 0) { Write-Error "[pilot] harness exited $LASTEXITCODE"; exit $LASTEXITCODE }
 
 Write-Host ""
 Write-Host "[pilot] complete. Analyze the calibration curves:"

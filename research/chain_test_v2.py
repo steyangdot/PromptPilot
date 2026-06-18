@@ -1582,6 +1582,13 @@ def main() -> None:
     else:
         _wanted = "chain_long" if args.chain == "long" else "chain{0}".format(args.chain)
         targets = [c for c in CHAINS if c["id"] == _wanted]
+        if not targets:
+            extra = (" (the chain_long fixture failed to import — see the warning above)"
+                     if _wanted == "chain_long" else "")
+            raise SystemExit("[chain_test_v2] no chain matches --chain {0} -> '{1}'{2}. "
+                             "Available: {3}".format(
+                                 args.chain, _wanted, extra,
+                                 ", ".join(c["id"] for c in CHAINS)))
     tools = ["codex", "claude-code"] if args.tool == "all" else [args.tool]
 
     # Reap any orphaned claude.exe processes from prior killed/crashed runs.

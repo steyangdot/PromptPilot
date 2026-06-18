@@ -24,6 +24,7 @@ if (-not (Test-Path (Join-Path $repo ".env"))) {
 # Re-run after the window resets, or see the design §5 quota mitigations.
 python research/chain_test_v2.py --chain long --tool codex --runs 5 `
     --skip-no-session --include-builtin --normalizer slm-openai-v2
+if ($LASTEXITCODE -ne 0) { Write-Error "[full] harness exited $LASTEXITCODE"; exit $LASTEXITCODE }
 
 Write-Host ""
 Write-Host "[full] complete. Analyze:"
