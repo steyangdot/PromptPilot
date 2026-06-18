@@ -40,6 +40,46 @@ from chain_long_fixture import CHAIN_LONG  # noqa: E402
 
 DIFF_CHAR_CAP = 60_000  # keep the judge prompt within a sane size
 
+# The continuity rubric grades exactly these (tests carried forward, ResilienceConfig
+# refactor, both clients migrated). `git diff` is path-ordered, so head-truncation
+# drops `tests/` FIRST — the opposite of what we need (review #5). Float these to the
+# front by TIER so the continuity evidence survives even if reference files alone
+# exceed the cap. Tier 0 = the migration evidence the rubric weights most.
+_TIER0 = ("/test", "tests/", "_config.py")                       # tests carried forward + ResilienceConfig
+_TIER1 = ("_client.py", "_transports/default.py", "_stats.py",   # other reference files
+          "changelog", "docs/resilience")
+
+
+def _prioritize_diff(diff: str, cap: int) -> str:
+    """Reorder a unified diff so continuity-critical files come first, then truncate.
+    Keeps whole per-file chunks; reports any omission rather than silently cutting."""
+    chunks = re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)
+    chunks = [c for c in chunks if c.strip()]
+    if len(chunks) <= 1:
+        # not a multi-file diff we can reorder; fall back to head truncation
+        return diff[:cap] + ("\n...[diff truncated]..." if len(diff) > cap else "")
+
+    def tier(c: str) -> int:
+        header = c.splitlines()[0].lower() if c else ""
+        if any(p in header for p in _TIER0):
+            return 0
+        if any(p in header for p in _TIER1):
+            return 1
+        return 2
+
+    # stable sort by tier preserves path order within a tier
+    ordered = sorted(chunks, key=tier)
+    kept, used, omitted = [], 0, 0
+    for c in ordered:
+        if used + len(c) <= cap:
+            kept.append(c)
+            used += len(c)
+        else:
+            omitted += 1
+    note = ("\n...[{0} file-diffs omitted for length; reference-critical files were "
+            "prioritized first]...".format(omitted)) if omitted else ""
+    return "".join(kept) + note
+
 
 def _turn_summary() -> str:
     lines = []
@@ -50,9 +90,7 @@ def _turn_summary() -> str:
 
 
 def _build_prompt(diff: str, new_files, pytest_passed) -> str:
-    truncated = diff[:DIFF_CHAR_CAP]
-    if len(diff) > DIFF_CHAR_CAP:
-        truncated += "\n...[diff truncated for length]..."
+    truncated = _prioritize_diff(diff, DIFF_CHAR_CAP)
     return (
         "You are grading whether a coding agent completed a 24-step DEPENDENT task on the "
         "httpx codebase and preserved CONTINUITY across back-references between steps.\n\n"

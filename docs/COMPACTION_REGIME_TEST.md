@@ -29,8 +29,8 @@ But the native agent has its **own** context-management: once a session is long/
 
 If that holds, the value proposition is **regime-independent** — it covers the long-autonomous-session market that matters most. If it does **not** hold, we will **honestly narrow the pitch** to short/mid chains and reconsider the long-session story.
 
-### 1.4 Why this is the decisive open question
-Every prior PromptPilot result is **sub-threshold**. The target deployment (CI bots, codemods, multi-hour autonomous agents) is **above threshold**. This is the one test that validates or refutes the thesis **for the use case the project is actually sold on** — the only regime where we do not yet know the answer.
+### 1.4 Why this is the highest-leverage untested regime
+Every prior PromptPilot result is **sub-threshold**; the long-autonomous deployment (CI bots, codemods, multi-hour agents) is **above threshold**. So this is the **highest-leverage untested regime** for the session thesis — *not* the project's only open problem (ambiguity, routing accuracy, preservation recall, and SLM A/B are co-equal; see `ROADMAP.md`), and *not* currently on the committed benchmark queue (proposed as a near-term addition, not roadmap-licensed). What it uniquely does: validate or refute the **implicit assumption** behind the `BENCHMARKS.md` headline ("the multiplier scales with session length") — namely that native *never compacts*.
 
 ---
 
@@ -97,7 +97,7 @@ Deliverable: a new chain in `research/chain_test_v2.py` (e.g. `id: "chain_long"`
 - **`with_session`** — prpt bounded loop (fresh `codex exec` + injected `memory_record`).
 - **`slm_native` spot-check (Review M-1):** at **high turn count only** (not full N=5), one run of SLM-rewrite + native resume, to confirm the rewrite stays ~token-neutral *in-regime* (it was sub-threshold). This isolates rewrite-help from session-help — which matters most for the H4 quality read, where the rewrite/session confound bites hardest.
 
-Interleave builtin/with_session turn-by-turn (matched pairs) so cache-warmth cancels in the ratio ([MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)).
+Ideally interleave builtin/with_session turn-by-turn (matched pairs) so cache-warmth cancels in the ratio ([MEASUREMENT_METHODOLOGY.md](MEASUREMENT_METHODOLOGY.md)). **Implementation note:** the existing harness runs arms **block-sequential** (all with_session, then all builtin), and we reuse it rather than write a new interleaved runner. That is acceptable **because the PRIMARY metric is total = gross input tokens, which is cache-independent**; interleaving would only tighten the *uncached* secondary — so **we do not publish an uncached number from this run.** (Doc-vs-code reconciliation per the PR #43 review.)
 
 ### 4.3 "In-regime" is defined PER RUN; compaction is stochastic (Review M-2)
 Whether/when compaction fires depends on each run's tool-call count and output volume, which vary.
@@ -119,7 +119,7 @@ Instrument from the **rollout JSONL** (`~/.codex/sessions/**/rollout-*.jsonl`), 
 
 ### 4.5 Metrics & scoring
 - **PRIMARY:** marginal in-regime per-turn ratio (§2.1). **SECONDARY:** cumulative total ratio.
-- **Lead with TOTAL tokens.** Uncached is a **warmth range**, never a single number — and note the **cache discontinuity at the boundary (Review nit):** compaction replaces history with a summary, busting the prefix cache, so builtin's uncached behavior changes qualitatively right where we care. Another reason total leads.
+- **Lead with TOTAL tokens — defined as gross `input_tokens` (cache-inclusive, output excluded), the *same* metric `BENCHMARKS.md:62` publishes** (`1,066,833 = 865,126 cached + 201,707 uncached`). The analyzer sources this from the harness's saved per-run `usage`, not a re-parse, and **excludes censored/timed-out turns** (matching `aggregate_runs`/`turn_timed_out` — the guard that fixed the 4.47×→2.36× inflation; a censored in-regime turn logs ~0 and would bias the ratio toward REFUTED). Uncached is a **warmth range**, never a single number — and compaction **busts the prefix cache at the boundary**, so builtin's uncached behavior changes qualitatively right where we care. Another reason total leads.
 - **Quality (H4) needs a real instrument (Review H-2 — accepted, confirmed):** `score_endstate.py` ceilings at **1.000** (15/15 in prior runs) and `score_turn` is a file-hash/churn detector — **neither can detect continuity loss**, so H4 would report "parity by construction." Replace with: **(a) an LLM judge over the final diff + each back-reference turn** (did the resolved reference match intent?), and **(b) a manual transcript-forensics pass** on diverging cells (as done in the chain_auth 10-cell analysis). Per-turn churn scores are kept only as a cheap sanity signal, not the parity verdict.
 - Report whether/when compaction fired (H1) and the per-turn-increment capping (H2).
 
@@ -175,9 +175,16 @@ Files (this worktree):
 
 Validation performed (no firing):
 - All files parse; fixture loads (24 turns / 22 referential).
-- The analyzer was run against the **existing `chain_auth_v2total` data** and: (a) reproduced the published headline — cumulative **4.17×** (≡ 4.19×, modulo total-token definition); (b) recovered per-call occupancy peak **~58k** (matching the manual baseline); (c) read **window=258,400** from the rollouts; (d) **correctly tripped the validity gate (0/5 compaction)** and withheld the PRIMARY metric — i.e. it correctly classifies sub-threshold data as not-in-regime, which is the discriminator the whole test depends on.
+- The analyzer was run against the **existing `chain_auth_v2total` data** and: (a) reproduced the published headline **exactly** — cumulative **4.19×** (`22,358,864 / 5,334,166`; per-run `4,471,773 / 1,066,833`) using gross-input total; (b) recovered per-call occupancy peak **~56k** (matching the manual baseline); (c) read **window=258,400** from the rollouts; (d) **correctly tripped the validity gate (0/5 compaction)** and withheld the PRIMARY metric — i.e. it correctly classifies sub-threshold data as not-in-regime, the discriminator the whole test depends on.
 
-Known minor caveat: in the resumed-`builtin` rollout, turn-1 occupancy can read `0` (segmentation boundary lands after T1's first usage event). Harmless — T1 is never in-regime; later-turn occupancy/compaction (what the verdict uses) is captured correctly.
+Corrections applied after the PR #43 review (all pre-fire):
+- **Total = gross `input_tokens`** (cache-inclusive), sourced from the harness saved per-run `usage` — same metric as `BENCHMARKS.md` (the old `input+output+reasoning` double-counted reasoning; that's why it read 4.17× not 4.19×).
+- **Censored/timed-out turns excluded** from both metrics (via the saved `timed_out`/`score.censored`), matching `aggregate_runs`/`turn_timed_out`.
+- **CI over runs, not turns:** one marginal ratio per run, CI across the N runs (turns within a run are correlated; pooling understated the band and under-fired the straddle rule).
+- **Segmentation fixed:** no implicit leading segment, so the first-compaction turn `f` (which defines the in-regime window) is attributed correctly; and **all** rollout files for a thread are concatenated (a post-compaction rollover can split a thread).
+- **H4 judge truncation is reference-aware:** the back-referenced files (`tests/`, `_config.py`, `_client.py`, …) are floated to the front so head-truncation no longer drops the very files the continuity rubric grades.
+
+**Precondition still UNVALIDATED (the real gate):** whether `chain_long` actually pushes per-call occupancy past ~233k and fires ≥2 compactions/run is **untested by construction** — that is exactly what the calibration pilot (§4.0) measures. Treat the pilot as a **blocker**, not a formality; "validated against existing data" means the *instrument* is validated, not the *fixture length*.
 
 ---
 

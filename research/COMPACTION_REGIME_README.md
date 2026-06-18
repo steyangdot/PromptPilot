@@ -43,7 +43,7 @@ Outputs land in `research/data/chain_results_v2/codex/chain_long/`:
   `>=1.5x` thesis holds · `1.1–1.5x` narrows · `<=1.1x` (incl. prpt costlier) refuted for long sessions.
 - **Validity gate:** compaction must fire in **>=4/5** builtin runs, else the result is provisional (apparatus issue / #16033).
 - **Straddle rule:** if the 95% CI crosses a threshold, report the band — do not call it.
-- **Lead with total tokens;** uncached is a warmth range and the prefix cache is busted at the compaction boundary.
+- **Lead with total tokens** (gross input, cache-inclusive — the same metric `BENCHMARKS.md` publishes); censored/timed-out turns are excluded (matching `aggregate_runs`). Uncached is a warmth range and the prefix cache is busted at the compaction boundary — **do not publish an uncached number from this run.**
 
 ## Known deviations from the design doc
 - **Block-sequential, not turn-interleaved.** The harness runs all `with_session` runs then all `builtin` runs. This is acceptable because the PRIMARY metric is cache-independent (total tokens). Turn-interleaving would only tighten the *uncached secondary*; if that's ever needed, it requires a new interleaved runner (future work).
