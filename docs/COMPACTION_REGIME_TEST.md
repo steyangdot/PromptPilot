@@ -210,7 +210,15 @@ Two pilots were needed before the real run.
 
 ## 10. RESULT — N=2 run (2026-06-18, provisional)
 
-Ran N=2 both arms (`builtin` vs `with_session`) on the 13-turn `chain_long`, via a detached Windows Scheduled Task (survives Claude session resets — the N=3 attempt died overnight when the session reset). Analyzed by `analyze_compaction_regime.py` + an ultracode workflow (timeout forensics, continuity judge, adversarial math re-verification, synthesis). **Verdict: thesis HOLDS-WITH-CAVEATS — strong directional signal, NOT yet a publishable headline.**
+Ran N=2 both arms (`builtin` vs `with_session`) on the 13-turn `chain_long`, via a detached Windows Scheduled Task (survives Claude session resets — the N=3 attempt died overnight when the session reset). Analyzed by `analyze_compaction_regime.py` + an ultracode workflow (timeout forensics, continuity judge, adversarial math re-verification, synthesis). **Verdict: thesis HOLDS-WITH-CAVEATS — directional signal (~5×), NOT yet a publishable headline.**
+
+### ⚠️ CORRECTION (recovered censored data, 2026-06-18) — the win is ~5.5×, not ~8–12×
+The censored turns the analyzer excluded were **not** cheap 0-token artifacts — re-reading their (late-flushed) `turn.completed` off disk shows they were `with_session`'s **heaviest** turns, where the bounded arm **thrashed**: ws run1 T13 (migrate) = **9.5M**, ws run2 T1 = **4.1M**, plus T10/T11/T6 ≈ 1–1.4M each. Excluding them made `with_session` look far cheaper than it was. With the recovered data (all turns, real `turn.completed` tokens):
+- **Cumulative total ratio = 5.48×** (builtin 171.6M / with_session 31.3M) — vs the excluded-data 8.25× matched / 10.84× unmatched. **The honest token win is ~half the first figure.**
+- The **marginal in-regime ratio (12.2× below) is inflated for the same reason** — the excluded T13 pair is 13.3M/9.5M ≈ **1.4×**, not ~12×. Bounded **thrashes to multi-million on the heavy referential turns** (29–54 tool calls/turn re-discovering context), so its in-regime advantage is much softer than 12.2× — **do not cite 12.2×**.
+- **Still a win (≥1.5×), but ~5× cumulative, not ~10×**, and bounded's heavy-turn thrash is itself a real cost (the reliability caveat — now also a *token* caveat).
+
+This is exactly why the harness fix matters: the censored-exclusion didn't just drop recording artifacts — it dropped bounded's *most expensive* turns. The recovered **~5.5×** supersedes the 8.25×/12.2× figures below (kept for the record). **Fix the harness** (`CODEX_TIMEOUT_SEC=600` + reparse-after-timeout + recovery-gating so recovered turns are counted, not censored) and re-run **N≥5** for the real, clean number (expected ~5–6× cumulative).
 
 **Compaction (H1): confirmed 2/2** — builtin run1 compacted @T10 (occ 222k→63k), run2 @T8 & T13. with_session never neared the threshold (peak occ ~127–152k). The regime engaged.
 
