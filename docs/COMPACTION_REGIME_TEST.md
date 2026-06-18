@@ -188,6 +188,56 @@ Corrections applied after the PR #43 review (all pre-fire):
 
 ---
 
+## 9. Calibration pilot results (2026-06-18)
+
+Two pilots were needed before the real run.
+
+**Pilot 1 (original fixture — "write tests + run them"): WEDGED.** The agent executed httpx's hang-prone network/timeout tests (no real server) → pytest hung → 184s command-timeouts × retries → ~60 model calls/turn → per-turn cost exploded to ~9.8M and orphaned pytest procs piled up until the run hung at T12 (79 min no progress). Salvaged occupancy from T1–T11: monotonic 62k→178k (~11.6k/turn), 0 compaction, would not have compacted until ~turn 16. **Lesson: drop test execution; drive occupancy via large-file reads.**
+
+**Fixture reworked** (read-heavy, no test execution, no-tests guard per turn).
+
+**Pilot 2 (reworked fixture, builtin-only, 18 turns): SUCCESS.**
+- **Compaction fires** — per-call occupancy climbed to **222k (turn 10)** then **compacted (reset to 66k, turn 11)**; clean sawtooth, ~turn 10–11. Climbed again to 214k by t18.
+- **Stable** — completed all 18 turns (no wedge). One turn (T12, the ResilienceConfig refactor) timed out / censored.
+- **Headline finding — compaction does NOT make native cheap.** Per-turn input kept climbing *through and past* compaction: t10=12.3M → t18=20.8M; one builtin run ≈ **~187M tokens**. Compaction resets per-*call* context (222k→66k) but per-*turn* billed cost keeps rising because the agent **churns more calls** to recover lost context (+ a bad-`rg`-retry artifact). → preliminary signal: the thesis likely **holds strongly** (native stays ~12–20M/turn in-regime vs prpt's expected ~1–2M), pending the `with_session` run. Churn largely cancels in the ratio (same agent/tasks both arms).
+- **Analyzer/segmentation validated on real data** — occupancy monotonic, segments align to turns, thread_id→rollout match worked; the only "non-monotonic" drop is the legitimate compaction sawtooth (guard refinement noted).
+
+**Cost anchor:** the 18-turn builtin run = **~20% of a 5h ChatGPT-Pro window**.
+
+**Real-run parameters (locked):** trimmed to **13 turns** (compaction by ~11 + in-regime turns 11–13), **N=3**, both arms (`builtin` + `with_session`, MAX_TOKENS-fixed). Est. **~41% of a 5h window**, ~5–7h wall. Caveat: the in-regime window is thin (~turns 11–13, and T12 is timeout-prone) → ~6–9 in-regime turn-pairs for the marginal ratio; if too thin to separate from noise, widen to ~15 turns.
+
+---
+
+## 10. RESULT — N=2 run (2026-06-18, provisional)
+
+Ran N=2 both arms (`builtin` vs `with_session`) on the 13-turn `chain_long`, via a detached Windows Scheduled Task (survives Claude session resets — the N=3 attempt died overnight when the session reset). Analyzed by `analyze_compaction_regime.py` + an ultracode workflow (timeout forensics, continuity judge, adversarial math re-verification, synthesis). **Verdict: thesis HOLDS-WITH-CAVEATS — strong directional signal, NOT yet a publishable headline.**
+
+**Compaction (H1): confirmed 2/2** — builtin run1 compacted @T10 (occ 222k→63k), run2 @T8 & T13. with_session never neared the threshold (peak occ ~127–152k). The regime engaged.
+
+**Tokens (lead with TOTAL, gross input):**
+- **Matched cumulative (fair): 8.25×** (builtin 113.6M / with_session 13.8M, 20 kept pairs). Recomputed from raw independently: 8.2518×.
+- Unmatched cumulative: 10.84× — **inflated by asymmetric censoring** (5 with_session vs 1 builtin turn dropped; the dropped with_session turns include heavy work → its sum understated). Do not headline.
+- **PRIMARY — marginal in-regime per-turn ratio: 12.2×** (per-run 13.36×/11.03×; CI ~[9.9, 14.5]). Clears the ≥1.5× "holds" threshold by a wide margin.
+- Uncached: matched **2.89×** (unmatched 3.61×) — **not publishable** (block-sequential + compaction busts the prefix cache → warmth-confounded).
+- **Mechanism:** compaction resets per-*call* occupancy but does **not** cap per-*turn* cost — the agent churns to recover dropped context, so native keeps climbing 10–17M/turn while bounded holds ~0.4–1.2M/turn. This is *why* bounding wins in-regime, and it strengthens the long-session case.
+- **Correction:** gross `input_tokens` climbs **monotonically** every turn; the sawtooth is in per-call **occupancy** only (the `~/.codex/sessions` rollout series), not the published total.
+
+**Quality / continuity (H4): rough PARITY (no hard oracle).** The LLM judge reported a continuity gap (with_session 0.28 < builtin 0.50), but hand-inspection of the diffs **overturns it**: the unified `ResilienceConfig` dataclass + sync/async client migration (the referential refactor) **landed in all 4 runs, both arms**; the −0.22 reduces to one weak with_session run missing early-turn features (retry-after/http-date), and the bounded arm did **more** test/doc carry-forward (tests_updated 0.625 vs builtin 0.0). `implemented` is ~identical (0.31/0.315). `pytest_passed=False` everywhere (no oracle for this test-free fixture). Confidence LOW on any gap; MODERATE-HIGH that the refactor carried forward in both arms.
+
+**Reliability: a real bounding cost, amplified by a measurement artifact.** with_session censored 5 turns vs builtin 1. The asymmetry is **structural** (~3.5/5 thrash-induced): the bounded arm re-discovers file layout + re-locates prior edits every turn (T8 40–54 cmds vs builtin 7–11) → several turns hit the 300s cap. **But all 6 "timeouts" actually COMPLETED** — recorded input=0 via the **orphan-flush race** (codex grandchild flushed `turn.completed` after the harness parsed; same as `audit_uncached_timeout_bug`), so **no work was lost** (end-state parity held). Mitigable: raise the codex cap to ~600s and/or fix the post-timeout reparse. One outlier (run2 T1 thrash with *no history* → 56 reads/1 edit) is agent-flailing-on-a-big-file, not a bounding defect.
+
+**Why it stays PROVISIONAL (3 caveats):**
+1. **N=2 < the pre-registered ≥4-of-5 validity gate → INVALID/provisional.** Direction (≫1.5×) is robust to N=2; the magnitude (12.2×) is a 2-point estimate with no real CI.
+2. The **reliability cost** (5× timeout asymmetry) sits alongside the token win — bounding trades cheaper tokens for more per-turn exploration that occasionally hits the cap.
+3. **No correctness oracle** — quality rests on LLM judge + diff forensics, not ground truth.
+
+**Decision:**
+- This doc records the **provisional N=2 result** (above). Lead with matched total (8.25×) + marginal in-regime (12.2×); never publish uncached or the unmatched 10.84×.
+- **`docs/BENCHMARKS.md`: NOT updated.** The published 4.19×/1.97× is the *valid N=5 interleaved end-state-parity sub-threshold* number; this compaction result is N=2 / block-sequential / no-oracle / fails its own gate — not at parity with the benchmark's standards.
+- **To promote an in-regime number:** N≥5 interleaved on the frozen 13-turn (or widened ~15-turn) fixture, with the codex cap raised to ~600s and/or the orphan-flush reparse fixed.
+
+---
+
 ## Change log (v1 → v2, from the third-party review)
 - **C1:** target **per-call occupancy ≥233k** (not cumulative); added a **calibration pilot** before freezing N=5 (§4.0/§4.1).
 - **C2:** **marginal in-regime per-turn ratio** is now the PRIMARY metric; cumulative demoted to secondary; H3 magnitude derived from mechanics, not guessed (§2.1/§4.5).

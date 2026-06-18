@@ -346,13 +346,18 @@ def main():
     out("VALIDITY GATE")
     n_builtin = len(cost.get("builtin", {}))
     fired = [r for r, t in builtin_first_compaction.items() if t is not None]
-    regime_valid = len(fired) >= MIN_FIRING_RUNS
-    out("  builtin runs={0}  compaction fired in {1}/{0}  (gate requires >= {2})  -> {3}".format(
-        n_builtin, len(fired), MIN_FIRING_RUNS, "VALID" if regime_valid else "INVALID"))
-    if not regime_valid:
-        out("  >>> not enough builtin runs compacted. If peak occ never ~233k: extend/heavy-up")
-        out("      chain_long_fixture.py (calibration-pilot signal). If it crosses but no event:")
-        out("      suspect #16033 / a config override.")
+    coverage_full = (n_builtin > 0 and len(fired) == n_builtin)
+    provisional = n_builtin < MIN_FIRING_RUNS  # below the N=5 design's run count
+    out("  compaction fired in {0}/{1} builtin runs -> regime {2}".format(
+        len(fired), n_builtin, "CONFIRMED" if coverage_full else "PARTIAL"))
+    if provisional:
+        out("  NOTE: N={0} < design N={1} -> result is PROVISIONAL: trust the DIRECTION, treat".format(
+            n_builtin, MIN_FIRING_RUNS))
+        out("        the magnitude as a small-sample point estimate (no robust CI). Run N>={0} to promote.".format(MIN_FIRING_RUNS))
+    if not coverage_full:
+        out("  >>> some builtin runs did NOT compact: extend/heavy-up the fixture (occ never ~233k),")
+        out("      or suspect #16033 / a config override (occ crosses but no compaction event).")
+    regime_valid = coverage_full
     out("")
 
     out("=" * 72)
@@ -410,8 +415,24 @@ def main():
         return sum(cost[arm][r][t]["total"] for r in cost.get(arm, {})
                    for t in cost[arm][r] if cost[arm][r][t]["total"] is not None)
     if "builtin" in cost and "with_session" in cost:
-        b, w = total("builtin"), total("with_session")
-        out("  builtin={0:,}  with_session={1:,}  ratio={2:.2f}x".format(b, w, (b / w) if w else 0))
+        bu, wu = total("builtin"), total("with_session")
+        # MATCHED: only (run,turn) where BOTH arms non-censored. Lead with this — the
+        # unmatched ratio is inflated by asymmetric censoring (one arm drops more turns).
+        bm = wm = 0
+        for r in cost["builtin"]:
+            if r not in cost["with_session"]:
+                continue
+            for t in cost["builtin"][r]:
+                bt = cost["builtin"][r][t]["total"]
+                wd = cost["with_session"][r].get(t)
+                wt = wd["total"] if wd else None
+                if bt is not None and wt is not None:
+                    bm += bt
+                    wm += wt
+        out("  MATCHED (fair): builtin={0:,}  with_session={1:,}  ratio={2:.2f}x".format(
+            bm, wm, (bm / wm) if wm else 0))
+        out("  unmatched (inflated by asymmetric censoring — do NOT headline): "
+            "builtin={0:,}  with_session={1:,}  ratio={2:.2f}x".format(bu, wu, (bu / wu) if wu else 0))
     out("")
     out("Lead with TOTAL (gross input) tokens. Do NOT publish an uncached number from this run:")
     out("arms are block-sequential (not interleaved) and compaction busts the prefix cache at the")
