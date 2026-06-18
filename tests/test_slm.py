@@ -1104,3 +1104,30 @@ class TestResolveDownstreamClarifyGuard:
         out = resolve_downstream(spec, "orig")
         assert out == "rewritten act prompt"  # non-clarify unaffected even when autonomous
         assert spec.route == "act"
+
+
+class TestV2TokenHeadroom:
+    """Regression (PR #43): v2 normalizers emit a full JSON envelope (spec fields +
+    the full rewritten downstream_prompt + a memory_record), so they must NOT inherit
+    v1's small MAX_TOKENS -- the inherited 512 truncated elaborate specs mid-JSON
+    (finish_reason=length -> unterminated string -> parse_spec_json None -> silent
+    fallback to the RAW prompt, degrading with_session). slm_openai_v2 originally
+    inherited 512; this guards both v2 siblings against the inheritance trap."""
+
+    def test_openai_v2_has_envelope_headroom(self):
+        try:
+            from prpt.normalizers.slm_openai import OpenAISLMNormalizer
+            from prpt.normalizers.slm_openai_v2 import OpenAISLMNormalizerV2
+        except Exception as e:  # SDK not importable in this env
+            import pytest; pytest.skip("openai normalizer not importable: %s" % e)
+        assert OpenAISLMNormalizerV2.MAX_TOKENS > OpenAISLMNormalizer.MAX_TOKENS
+        assert OpenAISLMNormalizerV2.MAX_TOKENS >= 2048
+
+    def test_anthropic_v2_has_envelope_headroom(self):
+        try:
+            from prpt.normalizers.slm_anthropic import SLMNormalizer
+            from prpt.normalizers.slm_anthropic_v2 import AnthropicSLMNormalizerV2
+        except Exception as e:
+            import pytest; pytest.skip("anthropic normalizer not importable: %s" % e)
+        assert AnthropicSLMNormalizerV2.MAX_TOKENS > SLMNormalizer.MAX_TOKENS
+        assert AnthropicSLMNormalizerV2.MAX_TOKENS >= 2048

@@ -36,6 +36,14 @@ class OpenAISLMNormalizerV2(OpenAISLMNormalizer):
     decision object (routing, target_files, memory_record).
     """
 
+    # v2 emits a full JSON envelope (spec fields + the full rewritten
+    # downstream_prompt + a memory_record), so it needs far more headroom than
+    # v1's bare rewrite. The inherited 512 truncated elaborate specs mid-JSON
+    # (finish_reason=length -> unterminated string -> parse_spec_json None ->
+    # silent fallback to the RAW prompt, degrading with_session). slm_anthropic_v2
+    # already bumped for this; this sibling was missed. 2048 covers long rewrites.
+    MAX_TOKENS = 2048
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._last_spec: Optional[ExecutionSpec] = None
