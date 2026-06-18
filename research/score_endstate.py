@@ -375,7 +375,13 @@ def main():
     arms_arg = next((a for a in sys.argv[1:] if a.startswith('--arms')), None)
     arms = arms_arg.split('=', 1)[1].split(',') if arms_arg and '=' in arms_arg \
         else ['with_session', 'slm_native', 'builtin']
-    out_dir = out_base / 'codex' / 'chain1'
+    # --tool selects the subdir (default codex for the original re-test). The captured-artifact
+    # scorer (_score_run) is tool-agnostic, so claude-code gate experiments score here too.
+    tool_arg = next((a for a in sys.argv[1:] if a.startswith('--tool')), None)
+    tool = tool_arg.split('=', 1)[1] if tool_arg and '=' in tool_arg else 'codex'
+    chain_arg = next((a for a in sys.argv[1:] if a.startswith('--chain')), None)
+    chain = chain_arg.split('=', 1)[1] if chain_arg and '=' in chain_arg else 'chain1'
+    out_dir = out_base / tool / chain
 
     print(f'End-state re-score  (out={out_dir})')
     print('=' * 104)
