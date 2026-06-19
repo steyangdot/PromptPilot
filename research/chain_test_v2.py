@@ -452,6 +452,16 @@ CHAINS = [
     },
 ]
 
+# Long dependent chain for the compaction-regime test (docs/COMPACTION_REGIME_TEST.md).
+# Kept in a separate module to keep the literal above readable; appended here so it
+# participates in CHAINS selection exactly like the inline chains. Select with
+# `--chain long`.
+try:
+    from chain_long_fixture import CHAIN_LONG as _CHAIN_LONG
+    CHAINS.append(_CHAIN_LONG)
+except Exception as _e:  # pragma: no cover - fixture is optional
+    print("[chain_test_v2] warning: chain_long fixture not loaded: {0}".format(_e))
+
 
 # ---------------------------------------------------------------------------
 # Repo state helpers
@@ -1281,6 +1291,98 @@ def load_run(out_dir: Path, variant: str, run_idx: int) -> list[dict] | None:
         return None
 
 
+def reparse_timed_out_turns(out_dir: Path, tool: str, verbose: bool = True) -> list:
+    """Post-run recovery pass for the codex orphan-flush race.
+
+    A codex turn that hits CODEX_TIMEOUT_SEC has its DIRECT child killed and is
+    recorded rc=124 / input=0. But the codex grandchild (a separate process
+    group) keeps running and flushes the real `turn.completed` to the stream file
+    anywhere from seconds to ~13 min later (memory/audit_uncached_timeout_bug.md).
+    This pass runs AFTER the whole job, re-reads each timed-out turn's now-flushed
+    stream, and — if a real `turn.completed` with non-zero tokens is present —
+    recovers the true usage and CLEARS the censored flags (timed_out=False,
+    score.censored=False, plus a recovered_after_timeout=True tag) so the turn is
+    COUNTED instead of excluded. A genuine hang never emits turn.completed -> the
+    re-read yields 0 tokens -> the turn STAYS censored (we never mask a wedge).
+
+    Pure disk pass over {variant}_run{N}.json in out_dir, rewritten in place — the
+    published headline (analyze_compaction_regime.py) reads these files. `rc` is
+    left at 124 as historical truth; turn_timed_out()/is_censored() consult the
+    recovered_after_timeout flag, which precedes their rc==124 branch.
+
+    Returns [(variant, run_idx, turn, recovered_input_tokens), ...].
+    See docs/COMPACTION_TIMEOUT_FIX_PLAN.md.
+    """
+    ext = _ext(tool)
+    recovered = []
+    for jpath in sorted(out_dir.glob("*_run*.json")):
+        if jpath.name.startswith("endstate_"):
+            continue
+        # filename is {variant}_run{N}.json; variant may contain "_" (with_session)
+        # so split on the LAST "_run".
+        stem = jpath.name[:-len(".json")]
+        variant, sep, run_s = stem.rpartition("_run")
+        if not sep or not run_s.isdigit():
+            continue
+        run_idx = int(run_s)
+        try:
+            records = json.loads(jpath.read_text(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        if not isinstance(records, list):
+            continue
+        changed = False
+        for rec in records:
+            if not isinstance(rec, dict) or rec.get("recovered_after_timeout"):
+                continue
+            if not (rec.get("timed_out") is True or rec.get("rc") == 124):
+                continue
+            ti = rec.get("turn")
+            if ti is None:
+                continue
+            stream = out_dir / "run{0}_{1}_t{2}{3}".format(run_idx, variant, ti, ext)
+            if not stream.exists():
+                continue
+            usage = _parse_one(stream, tool)
+            if (usage.get("input_tokens") or 0) <= 0:
+                continue  # genuine hang: no flushed turn.completed -> stay censored
+            rec["usage"] = usage
+            rec["uncached_input"] = usage.get(
+                "uncached_tokens",
+                usage["input_tokens"] - usage.get("cached_tokens", 0))
+            rec["downstream_cost"] = (claude_cost(usage) if tool == "claude-code"
+                                      else codex_cost(usage))
+            rec["total_cost"] = rec["downstream_cost"] + rec.get("slm_cost", 0.0)
+            rec["recovered_after_timeout"] = True
+            rec["timed_out"] = False
+            sc = rec.get("score")
+            if isinstance(sc, dict):
+                sc["censored"] = False
+                # `bailed` was stamped True at kill time from the censored 0-tool-call
+                # usage; the recovered turn has its real tool-call count, so recompute it
+                # the same way score_turn does — else aggregate_runs' bail rate is
+                # inflated by recovered thrash turns. (wall_t is left as recorded: it's
+                # the harness-observed kill time, a LOWER BOUND on the grandchild's true
+                # duration — the real end time isn't in this stream — so wall_t_mean over
+                # recovered turns understates latency. Documented, not silently trusted.)
+                sc["bailed"] = (usage.get("tool_calls", 0) == 0)
+            recovered.append((variant, run_idx, ti, usage["input_tokens"]))
+            changed = True
+        if changed:
+            save_run(out_dir, variant, run_idx, records)
+    if verbose:
+        if recovered:
+            print("\n[reparse] recovered {0} timed-out turn(s) from flushed "
+                  "turn.completed events:".format(len(recovered)))
+            for v, r, t, tok in sorted(recovered):
+                print("  {0:<14} run{1} T{2:<2} input_tokens={3:,}".format(
+                    v, r, t, tok))
+        else:
+            print("\n[reparse] no timed-out turns needed recovery (none recorded "
+                  "rc=124, or none had a flushed turn.completed).")
+    return recovered
+
+
 def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  chain_id: str, tool: str, n_runs: int,
                  gated_agg: list[dict] | None = None,
@@ -1453,6 +1555,22 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
         print("  summary; the partial arm is discarded (no phantom 0-success).")
         print("!" * 72)
 
+    # Post-run recovery: re-read timed-out turns whose codex grandchild flushed a
+    # real turn.completed after the kill, so they are COUNTED not censored. The
+    # published headline reads the on-disk JSON (which this rewrites); re-sync the
+    # in-memory accumulators too so the live summary matches.
+    # See docs/COMPACTION_TIMEOUT_FIX_PLAN.md.
+    if reparse_timed_out_turns(out_dir, tool):
+        for _vname, _vruns in (("no_session", no_runs), ("with_session", with_runs),
+                               ("gated_session", gated_runs), ("builtin", builtin_runs),
+                               ("slm_native", slm_native_runs), ("stacked", stacked_runs)):
+            if not _vruns:
+                continue
+            for _idx in range(len(_vruns)):
+                _reloaded = load_run(out_dir, _vname, _idx + 1)
+                if _reloaded is not None:
+                    _vruns[_idx] = _reloaded
+
     no_agg = _agg_complete(no_runs) if no_runs is not None else None
     with_agg = _agg_complete(with_runs)
     gated_agg = _agg_complete(gated_runs) if include_gated else None
@@ -1474,7 +1592,9 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--chain", default="all", choices=["1", "2", "3", "4", "5", "all"])
+    parser.add_argument("--chain", default="all", choices=["1", "2", "3", "4", "5", "long", "all"],
+                        help="Which chain to run. '1'..'5' map to chainN; 'long' selects "
+                             "chain_long (the compaction-regime test fixture).")
     parser.add_argument("--tool", default="all", choices=["codex", "claude-code", "all"])
     parser.add_argument("--runs", type=int, default=3,
                         help="Number of runs per variant (default 3)")
@@ -1565,9 +1685,18 @@ def main() -> None:
     _NORMALIZER_NAME = args.normalizer
     print(f"[startup] normalizer={_NORMALIZER_NAME}")
 
-    targets = CHAINS if args.chain == "all" else [
-        c for c in CHAINS if c["id"] == "chain{0}".format(args.chain)
-    ]
+    if args.chain == "all":
+        targets = CHAINS
+    else:
+        _wanted = "chain_long" if args.chain == "long" else "chain{0}".format(args.chain)
+        targets = [c for c in CHAINS if c["id"] == _wanted]
+        if not targets:
+            extra = (" (the chain_long fixture failed to import — see the warning above)"
+                     if _wanted == "chain_long" else "")
+            raise SystemExit("[chain_test_v2] no chain matches --chain {0} -> '{1}'{2}. "
+                             "Available: {3}".format(
+                                 args.chain, _wanted, extra,
+                                 ", ".join(c["id"] for c in CHAINS)))
     tools = ["codex", "claude-code"] if args.tool == "all" else [args.tool]
 
     # Reap any orphaned claude.exe processes from prior killed/crashed runs.

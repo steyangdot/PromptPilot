@@ -60,7 +60,7 @@ def _turn(**kw):
         "slm_cost": 0.0,
         "downstream_cost": kw.get("total_cost", 0.1),
     }
-    for k in ("rc", "timed_out", "timeout_cap_sec"):
+    for k in ("rc", "timed_out", "timeout_cap_sec", "recovered_after_timeout"):
         if k in kw:
             t[k] = kw[k]
     return t
@@ -92,6 +92,13 @@ def test_classifier():
     # codex floor 295 catches the 300 peg; a 250s zero-usage turn does not
     check("codex 300 peg", turn_timed_out(_turn(wall_t=300.0, input_tokens=0), "codex"), True)
     check("codex sub-floor zero", turn_timed_out(_turn(wall_t=250.0, input_tokens=0), "codex"), False)
+    # (h) RECOVERY: a timed-out turn re-counted by the post-run reparse pass (real
+    # turn.completed flushed after the kill). recovered_after_timeout must win over
+    # BOTH explicit timed_out=True AND rc==124, so the turn is counted, not censored.
+    check("recovered overrides timed_out",
+          turn_timed_out(_turn(timed_out=True, recovered_after_timeout=True), "codex"), False)
+    check("recovered overrides rc124",
+          turn_timed_out(_turn(rc=124, recovered_after_timeout=True), "codex"), False)
 
 
 def test_aggregate_excludes_censored():
@@ -138,9 +145,61 @@ def test_analyzer_excludes_and_buckets_recovery():
     check("analyzer recovered uncached bucketed separately", st["recovered_uncached"], 134040)
 
 
+def test_reparse_recovers_and_recomputes_bailed():
+    # A codex turn killed at the cap (rc=124, censored, bailed=True, usage=0) whose
+    # stream later flushed a real turn.completed must be RECOVERED by the post-run
+    # reparse: usage rewritten, timed_out/score.censored cleared, recovered_after_timeout
+    # set, and score.bailed RECOMPUTED from the real tool-call count (not left True).
+    from pathlib import Path
+    from chain_test_v2 import reparse_timed_out_turns
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        rec = _turn(turn=3, rc=124, timed_out=True, input_tokens=0, success=0.5)
+        rec["score"]["bailed"] = True       # stamped at kill (0 tool calls)
+        rec["score"]["censored"] = True
+        (dp / "with_session_run1.json").write_text(json.dumps([rec]), encoding="utf-8")
+        # the codex grandchild's flushed stream: 2 command_executions + turn.completed
+        stream = [
+            {"type": "item.completed", "item": {"type": "command_execution"}},
+            {"type": "item.completed", "item": {"type": "command_execution"}},
+            {"type": "turn.completed",
+             "usage": {"input_tokens": 1_361_072, "cached_input_tokens": 1_000_000,
+                       "output_tokens": 5000}},
+        ]
+        with open(dp / "run1_with_session_t3.jsonl", "w", encoding="utf-8") as f:
+            for ev in stream:
+                f.write(json.dumps(ev) + "\n")
+        out = reparse_timed_out_turns(dp, "codex", verbose=False)
+        saved = json.loads((dp / "with_session_run1.json").read_text(encoding="utf-8"))[0]
+    check("reparse recovered one turn", len(out), 1)
+    check("reparse recovered tokens", saved["usage"]["input_tokens"], 1_361_072)
+    check("reparse cleared timed_out", saved["timed_out"], False)
+    check("reparse set recovered flag", saved["recovered_after_timeout"], True)
+    check("reparse cleared score.censored", saved["score"]["censored"], False)
+    check("reparse recomputed bailed (2 tool calls -> not bailed)", saved["score"]["bailed"], False)
+    check("recovered turn no longer classified timed-out", turn_timed_out(saved, "codex"), False)
+
+    # A genuine hang (no turn.completed flushed) must STAY censored — never masked.
+    with tempfile.TemporaryDirectory() as d:
+        dp = Path(d)
+        rec = _turn(turn=2, rc=124, timed_out=True, input_tokens=0, success=0.5)
+        rec["score"]["censored"] = True
+        (dp / "builtin_run1.json").write_text(json.dumps([rec]), encoding="utf-8")
+        with open(dp / "run1_builtin_t2.jsonl", "w", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "item.completed",
+                                "item": {"type": "command_execution"}}) + "\n")
+        out = reparse_timed_out_turns(dp, "codex", verbose=False)
+        saved = json.loads((dp / "builtin_run1.json").read_text(encoding="utf-8"))[0]
+    check("hang not recovered", len(out), 0)
+    check("hang stays timed_out", saved.get("timed_out"), True)
+    check("hang stays censored", saved["score"].get("censored"), True)
+    check("hang still classified timed-out", turn_timed_out(saved, "codex"), True)
+
+
 if __name__ == "__main__":
     for t in (test_classifier, test_aggregate_excludes_censored,
-              test_analyzer_excludes_and_buckets_recovery):
+              test_analyzer_excludes_and_buckets_recovery,
+              test_reparse_recovers_and_recomputes_bailed):
         t()
     if _failures:
         print("FAIL ({} assertion(s)):".format(len(_failures)))

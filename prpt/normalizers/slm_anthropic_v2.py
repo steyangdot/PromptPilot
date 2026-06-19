@@ -49,8 +49,10 @@ class AnthropicSLMNormalizerV2(SLMNormalizer):
     """
 
     # v2 returns a JSON envelope (spec fields + the full rewrite + a memory
-    # record), so it needs more headroom than v1's bare rewrite.
-    MAX_TOKENS = 1024
+    # record), so it needs more headroom than v1's bare rewrite. Bumped 1024->2048
+    # for parity with slm_openai_v2: long rewrites truncated at the lower cap
+    # (finish_reason=length -> unterminated JSON -> silent raw-prompt fallback).
+    MAX_TOKENS = 2048
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
