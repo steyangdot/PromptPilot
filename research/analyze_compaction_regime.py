@@ -68,6 +68,12 @@ def primary_type(o):
 
 
 def is_censored(turn: dict) -> bool:
+    # A recovered timeout (real turn.completed flushed after the kill, picked up
+    # by the post-run reparse pass) is NOT censored — count it. Belt-and-braces:
+    # the reparse also clears timed_out/score.censored, but honor the flag too so
+    # the analyzer is correct even on a record where only the flag was set.
+    if turn.get("recovered_after_timeout"):
+        return False
     if turn.get("timed_out"):
         return True
     sc = turn.get("score") or {}
@@ -308,9 +314,23 @@ def main():
     # segmentation mis-aligned turns (so the first-compaction turn `f` can't be trusted).
     nonmono = []
     for run in cost.get("builtin", {}):
-        seq = [occ["builtin"][run].get(t) for t in sorted(occ["builtin"][run])]
-        seq = [x for x in seq if x is not None]
-        if any(b < a * 0.9 for a, b in zip(seq, seq[1:])):  # >10% drop = suspicious
+        ts = sorted(occ["builtin"][run])
+        # Exempt the legitimate compaction sawtooth: compaction by design drops per-call
+        # occupancy ~70% (e.g. T10=222k -> T11=63k) — that is the SUCCESS signal, not a
+        # segmentation mis-alignment. The event is logged on the peak turn (T10) while the
+        # reset shows on the NEXT turn (T11), so exempt a drop when compaction fired at
+        # EITHER endpoint of the pair. A drop with no adjacent compaction is still flagged.
+        suspicious = False
+        for ta, tb in zip(ts, ts[1:]):
+            a, b = occ["builtin"][run].get(ta), occ["builtin"][run].get(tb)
+            if a is None or b is None:
+                continue
+            adjacent_compaction = (comp["builtin"][run].get(ta, 0) > 0
+                                   or comp["builtin"][run].get(tb, 0) > 0)
+            if b < a * 0.9 and not adjacent_compaction:
+                suspicious = True
+                break
+        if suspicious:
             nonmono.append(run)
     if nonmono:
         out("WARNING: builtin per-turn occupancy is non-monotonic in run(s) {0} — expected to "
@@ -346,7 +366,9 @@ def main():
     out("VALIDITY GATE")
     n_builtin = len(cost.get("builtin", {}))
     fired = [r for r, t in builtin_first_compaction.items() if t is not None]
-    coverage_full = (n_builtin > 0 and len(fired) == n_builtin)
+    # Pre-registered gate is >=4/5 firing (docs/COMPACTION_REGIME_TEST.md §2.3/§4.3),
+    # NOT all-fire. min(MIN_FIRING_RUNS, n_builtin) keeps small-N sane (N=2 needs 2/2).
+    coverage_full = (n_builtin > 0 and len(fired) >= min(MIN_FIRING_RUNS, n_builtin))
     provisional = n_builtin < MIN_FIRING_RUNS  # below the N=5 design's run count
     out("  compaction fired in {0}/{1} builtin runs -> regime {2}".format(
         len(fired), n_builtin, "CONFIRMED" if coverage_full else "PARTIAL"))

@@ -6,7 +6,7 @@ Design + rationale: [`docs/COMPACTION_REGIME_TEST.md`](../docs/COMPACTION_REGIME
 ## Files (all in this worktree)
 | File | Role |
 |---|---|
-| `research/chain_long_fixture.py` | The ~24-turn dependent fixture (`CHAIN_LONG`). |
+| `research/chain_long_fixture.py` | The 13-turn dependent fixture (`CHAIN_LONG`). |
 | `research/chain_test_v2.py` | Registers `chain_long` (select with `--chain long`); reuses the proven runner/arms/quota guard. |
 | `research/analyze_compaction_regime.py` | PRIMARY measurement: per-call occupancy, compaction timeline, **marginal in-regime ratio + CI + straddle rule**, cumulative secondary, validity gate. Read-only. |
 | `research/judge_continuity.py` | H4 QUALITY: LLM judge over end-state diffs for continuity (the default scorers can't see it). |

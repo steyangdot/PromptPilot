@@ -40,14 +40,15 @@ from chain_long_fixture import CHAIN_LONG  # noqa: E402
 
 DIFF_CHAR_CAP = 60_000  # keep the judge prompt within a sane size
 
-# The continuity rubric grades exactly these (tests carried forward, ResilienceConfig
-# refactor, both clients migrated). `git diff` is path-ordered, so head-truncation
-# drops `tests/` FIRST — the opposite of what we need (review #5). Float these to the
-# front by TIER so the continuity evidence survives even if reference files alone
-# exceed the cap. Tier 0 = the migration evidence the rubric weights most.
-_TIER0 = ("/test", "tests/", "_config.py")                       # tests carried forward + ResilienceConfig
-_TIER1 = ("_client.py", "_transports/default.py", "_stats.py",   # other reference files
-          "changelog", "docs/resilience")
+# The continuity rubric weights the late referential refactor most: the single
+# ResilienceConfig dataclass (httpx/_config.py) + both clients migrated to it
+# (httpx/_client.py). `git diff` is path-ordered, so head-truncation can drop these;
+# float them to the front by TIER so the continuity evidence survives even if the
+# other reference files alone exceed the cap. (The chain writes NO tests — the
+# fixture _GUARD forbids test work — so tests/ is intentionally NOT tier-0.)
+_TIER0 = ("_config.py", "_client.py")                            # ResilienceConfig + client migration
+_TIER1 = ("_transports/default.py", "_stats.py", "_models.py",   # other reference files
+          "_utils.py", "changelog", "docs/resilience")
 
 
 def _prioritize_diff(diff: str, cap: int) -> str:
@@ -67,21 +68,37 @@ def _prioritize_diff(diff: str, cap: int) -> str:
             return 1
         return 2
 
-    # stable sort by tier preserves path order within a tier
-    ordered = sorted(chunks, key=tier)
+    # Two passes so EVERY tier-0 chunk keeps continuity evidence, not just the first.
+    # (The old single greedy loop pinned used=cap after head-truncating one tier-0
+    # chunk, then silently dropped all later tier-0 chunks into the omitted bucket.)
+    t0 = [c for c in chunks if tier(c) == 0]                     # path order preserved
+    rest = sorted((c for c in chunks if tier(c) != 0), key=tier)  # tier1 before tier2
     kept, used, omitted = [], 0, 0
-    for c in ordered:
+    # Pass 1: tier-0 has first claim. If the tier-0 set alone exceeds the cap, split
+    # the budget evenly so each tier-0 chunk keeps a head slice (never whole-dropped).
+    if t0:
+        if sum(len(c) for c in t0) <= cap:
+            for c in t0:
+                kept.append(c)
+                used += len(c)
+        else:
+            share = cap // len(t0)
+            for c in t0:
+                if len(c) <= share:
+                    kept.append(c)
+                    used += len(c)
+                else:
+                    kept.append(c[:share] + "\n...[file diff truncated]...")
+                    used += share
+    # Pass 2: fill remaining budget with tier-1 then tier-2, whole chunks only.
+    for c in rest:
         if used + len(c) <= cap:
             kept.append(c)
             used += len(c)
-        elif tier(c) == 0 and (cap - used) > 2000:
-            # never drop continuity evidence whole — head-truncate it into the remaining budget
-            kept.append(c[: cap - used] + "\n...[file diff truncated]...")
-            used = cap
         else:
             omitted += 1
-    note = ("\n...[{0} file-diffs omitted for length; reference-critical files were "
-            "prioritized first]...".format(omitted)) if omitted else ""
+    note = ("\n...[{0} non-reference file-diff(s) omitted for length; the "
+            "continuity-critical files were prioritized first]...".format(omitted)) if omitted else ""
     return "".join(kept) + note
 
 
@@ -95,25 +112,31 @@ def _turn_summary() -> str:
 
 def _build_prompt(diff: str, new_files, pytest_passed) -> str:
     truncated = _prioritize_diff(diff, DIFF_CHAR_CAP)
+    n = len(CHAIN_LONG["turns"])
+    # pytest_passed is accepted for signature compatibility but NOT shown: chain_long
+    # writes no tests (the fixture _GUARD forbids test work), so a pytest signal would
+    # only mislead the judge.
+    _ = pytest_passed
     return (
-        "You are grading whether a coding agent completed a 24-step DEPENDENT task on the "
-        "httpx codebase and preserved CONTINUITY across back-references between steps.\n\n"
-        "The 24 steps (each builds on earlier ones; '[refers back]' = it depends on prior steps):\n"
+        "You are grading whether a coding agent completed a {0}-step DEPENDENT task on the "
+        "httpx codebase and preserved CONTINUITY across back-references between steps.\n\n".format(n)
+        + "The {0} steps (each builds on earlier ones; '[refers back]' = it depends on prior steps):\n".format(n)
         + _turn_summary()
-        + "\n\nThe agent's FINAL git diff (the cumulative result of all 24 steps):\n"
+        + "\n\nThe agent's FINAL git diff (the cumulative result of all {0} steps):\n".format(n)
         + "----- BEGIN DIFF -----\n" + truncated + "\n----- END DIFF -----\n"
-        + "new files created: {0}\n".format(new_files)
-        + "timeout regression pytest passed: {0}\n\n".format(pytest_passed)
+        + "new files created: {0}\n\n".format(new_files)
         + "Grade on this rubric and return ONLY JSON:\n"
         + "{\n"
-        + '  "implemented": <0.0-1.0: fraction of the intended feature set actually present in the diff '
-          '(timeout overrides, retry-after incl. http-date + delay cap, request timing + stats, pool size + '
-          'exhaustion warning)>,\n'
-        + '  "continuity": <0.0-1.0: did the heavily-referential late steps resolve correctly — '
-          'a single ResilienceConfig that unifies the timeout/retry/pool overrides AND both sync+async '
-          'clients migrated to it AND the earlier tests updated to it? 1.0 = fully resolved, '
-          '0.0 = the references were lost / the refactor does not reflect the earlier work>,\n'
-        + '  "tests_updated": <0.0-1.0: were the tests written in earlier steps carried forward / migrated>,\n'
+        + '  "implemented": <0.0-1.0: fraction of the intended feature set actually present in the diff: '
+          'per-request connect_timeout + read_timeout overrides on BOTH the sync and async client; '
+          'Retry-After support accepting delta-seconds AND an HTTP-date, with a configurable max delay cap '
+          '(default 60s); per-request elapsed timing on the Response + an optional event hook + an '
+          '_stats.py collector (count/mean/max); and a pool_size override wired through to the transport>,\n'
+        + '  "continuity": <0.0-1.0: did the heavily-referential late steps resolve correctly — a single '
+          'ResilienceConfig dataclass in _config.py that unifies the connect_timeout/read_timeout/retry/'
+          'pool_size overrides AND both the sync and async clients migrated to accept and use it instead of '
+          'the individual kwargs? 1.0 = fully resolved, 0.0 = the references were lost / the refactor does '
+          'not reflect the earlier work>,\n'
         + '  "evidence": "<one or two sentences citing what in the diff supports the scores>"\n'
         + "}\n"
     )
@@ -168,9 +191,9 @@ def main():
                 continue
             verdict["_run"] = run
             results[arm].append(verdict)
-            out("  run{0}: implemented={1} continuity={2} tests_updated={3}  — {4}".format(
+            out("  run{0}: implemented={1} continuity={2}  — {3}".format(
                 run, verdict.get("implemented"), verdict.get("continuity"),
-                verdict.get("tests_updated"), (verdict.get("evidence") or "")[:160]))
+                (verdict.get("evidence") or "")[:160]))
 
     out("\n" + "=" * 72)
     out("SUMMARY (mean per arm)")
@@ -178,9 +201,9 @@ def main():
         xs = [v[key] for v in results[arm] if isinstance(v.get(key), (int, float))]
         return statistics.mean(xs) if xs else None
     for arm in sorted(results):
-        out("  {0:14s} implemented={1} continuity={2} tests_updated={3}  (n={4})".format(
+        out("  {0:14s} implemented={1} continuity={2}  (n={3})".format(
             arm, _mean(arm, "implemented"), _mean(arm, "continuity"),
-            _mean(arm, "tests_updated"), len(results[arm])))
+            len(results[arm])))
 
     if "builtin" in results and "with_session" in results:
         bc = _mean("builtin", "continuity")

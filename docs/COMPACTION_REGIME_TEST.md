@@ -167,14 +167,14 @@ Instrument from the **rollout JSONL** (`~/.codex/sessions/**/rollout-*.jsonl`), 
 The test is **implemented** (2026-06-17) and **statically validated against existing data**; it has **not been run** (no codex agent runs, no model calls). Run guide: [`research/COMPACTION_REGIME_README.md`](../research/COMPACTION_REGIME_README.md).
 
 Files (this worktree):
-- `research/chain_long_fixture.py` — the 24-turn dependent fixture (22 referential), built to push per-call occupancy past ~233k.
+- `research/chain_long_fixture.py` — the 13-turn dependent fixture (11 referential), built to push per-call occupancy past ~233k.
 - `research/chain_test_v2.py` — registers `chain_long` (`--chain long`); reuses the proven runner/arms/quota guard. **No new runner code** (avoids reimplementing `codex exec resume` session handling).
 - `research/analyze_compaction_regime.py` — PRIMARY measurement: per-turn cost from the harness `turn.completed.usage`, per-call occupancy + compaction + window from the matched rollouts (by `thread_id`, segmented per turn), marginal in-regime ratio + CI + straddle rule, validity gate, cumulative secondary. Read-only.
 - `research/judge_continuity.py` — H4 quality (LLM judge over end-state diffs).
 - `research/run_compaction_pilot.ps1`, `research/run_compaction_regime.ps1` — launchers (`.ps1` to avoid the `.cmd` CRLF gotcha).
 
 Validation performed (no firing):
-- All files parse; fixture loads (24 turns / 22 referential).
+- All files parse; fixture loads (13 turns / 11 referential).
 - The analyzer was run against the **existing `chain_auth_v2total` data** and: (a) reproduced the published headline **exactly** — cumulative **4.19×** (`22,358,864 / 5,334,166`; per-run `4,471,773 / 1,066,833`) using gross-input total; (b) recovered per-call occupancy peak **~56k** (matching the manual baseline); (c) read **window=258,400** from the rollouts; (d) **correctly tripped the validity gate (0/5 compaction)** and withheld the PRIMARY metric — i.e. it correctly classifies sub-threshold data as not-in-regime, the discriminator the whole test depends on.
 
 Corrections applied after the PR #43 review (all pre-fire):
@@ -218,31 +218,31 @@ The censored turns the analyzer excluded were **not** cheap 0-token artifacts �
 - The **marginal in-regime ratio (12.2× below) is inflated for the same reason** — the excluded T13 pair is 13.3M/9.5M ≈ **1.4×**, not ~12×. Bounded **thrashes to multi-million on the heavy referential turns** (29–54 tool calls/turn re-discovering context), so its in-regime advantage is much softer than 12.2× — **do not cite 12.2×**.
 - **Still a win (≥1.5×), but ~5× cumulative, not ~10×**, and bounded's heavy-turn thrash is itself a real cost (the reliability caveat — now also a *token* caveat).
 
-This is exactly why the harness fix matters: the censored-exclusion didn't just drop recording artifacts — it dropped bounded's *most expensive* turns. The recovered **~5.5×** supersedes the 8.25×/12.2× figures below (kept for the record). **Fix the harness** (`CODEX_TIMEOUT_SEC=600` + reparse-after-timeout + recovery-gating so recovered turns are counted, not censored) and re-run **N≥5** for the real, clean number (expected ~5–6× cumulative).
+This is exactly why the harness fix matters: the censored-exclusion didn't just drop recording artifacts — it dropped bounded's *most expensive* turns. The recovered **~5.5×** supersedes the 8.25×/12.2× figures below (kept for the record). **The harness fix is now SHIPPED + free-validated (2026-06-18):** `CODEX_TIMEOUT_SEC=1200` + a **post-run reparse pass** + recovery-gating so recovered turns are counted, not censored — replayed on this N=2 data it reproduces **5.48×** with **0 censored** turns. (The reparse is a *post-run* pass, not an in-line grace-wait: the codex grandchild flushes `turn.completed` 25 s–13 min after the kill, so only a sweep after the job ends recovers it. See `docs/COMPACTION_TIMEOUT_FIX_PLAN.md`.) Re-run **N≥5** for the clean published number (expected ~5–6× cumulative).
 
 **Compaction (H1): confirmed 2/2** — builtin run1 compacted @T10 (occ 222k→63k), run2 @T8 & T13. with_session never neared the threshold (peak occ ~127–152k). The regime engaged.
 
 **Tokens (lead with TOTAL, gross input):**
-- **Matched cumulative (fair): 8.25×** (builtin 113.6M / with_session 13.8M, 20 kept pairs). Recomputed from raw independently: 8.2518×.
+- **Matched cumulative (fair): 8.25×** (builtin 113.6M / with_session 13.8M, 20 kept pairs). Recomputed from raw independently: 8.2518×. **[SUPERSEDED → 5.48× with recovered data; see CORRECTION above.]**
 - Unmatched cumulative: 10.84× — **inflated by asymmetric censoring** (5 with_session vs 1 builtin turn dropped; the dropped with_session turns include heavy work → its sum understated). Do not headline.
-- **PRIMARY — marginal in-regime per-turn ratio: 12.2×** (per-run 13.36×/11.03×; CI ~[9.9, 14.5]). Clears the ≥1.5× "holds" threshold by a wide margin.
+- **Marginal in-regime per-turn ratio: 12.2×** (per-run 13.36×/11.03×; CI ~[9.9, 14.5]). **[SUPERSEDED — do not cite: inflated by the same censored-exclusion; the recovered heaviest in-regime pair is ~1.4×. See CORRECTION above.]**
 - Uncached: matched **2.89×** (unmatched 3.61×) — **not publishable** (block-sequential + compaction busts the prefix cache → warmth-confounded).
 - **Mechanism:** compaction resets per-*call* occupancy but does **not** cap per-*turn* cost — the agent churns to recover dropped context, so native keeps climbing 10–17M/turn while bounded holds ~0.4–1.2M/turn. This is *why* bounding wins in-regime, and it strengthens the long-session case.
 - **Correction:** gross `input_tokens` climbs **monotonically** every turn; the sawtooth is in per-call **occupancy** only (the `~/.codex/sessions` rollout series), not the published total.
 
-**Quality / continuity (H4): rough PARITY (no hard oracle).** The LLM judge reported a continuity gap (with_session 0.28 < builtin 0.50), but hand-inspection of the diffs **overturns it**: the unified `ResilienceConfig` dataclass + sync/async client migration (the referential refactor) **landed in all 4 runs, both arms**; the −0.22 reduces to one weak with_session run missing early-turn features (retry-after/http-date), and the bounded arm did **more** test/doc carry-forward (tests_updated 0.625 vs builtin 0.0). `implemented` is ~identical (0.31/0.315). `pytest_passed=False` everywhere (no oracle for this test-free fixture). Confidence LOW on any gap; MODERATE-HIGH that the refactor carried forward in both arms.
+**Quality / continuity (H4): rough PARITY (no hard oracle).** The LLM judge reported a continuity gap (with_session 0.28 < builtin 0.50), but hand-inspection of the diffs **overturns it**: the unified `ResilienceConfig` dataclass + sync/async client migration (the referential refactor) **landed in all 4 runs, both arms**; the −0.22 reduces to one weak with_session run missing early-turn features (retry-after/http-date). `implemented` is ~identical (0.31/0.315). Confidence LOW on any gap; MODERATE-HIGH that the refactor carried forward in both arms. **(Judge caveat, 2026-06-18:** the as-run rubric also scored a `tests_updated` dimension + a `pytest_passed` signal — both **bogus for this fixture**, which writes **no tests** (the `_GUARD` forbids test work). The 0.625/0.0 measured spontaneous test-writing, not continuity; both were removed from `judge_continuity.py`, and the rubric was corrected to the actual 13-turn feature set. **Disregard the as-run `tests_updated`/`pytest` numbers.**)
 
-**Reliability: a real bounding cost, amplified by a measurement artifact.** with_session censored 5 turns vs builtin 1. The asymmetry is **structural** (~3.5/5 thrash-induced): the bounded arm re-discovers file layout + re-locates prior edits every turn (T8 40–54 cmds vs builtin 7–11) → several turns hit the 300s cap. **But all 6 "timeouts" actually COMPLETED** — recorded input=0 via the **orphan-flush race** (codex grandchild flushed `turn.completed` after the harness parsed; same as `audit_uncached_timeout_bug`), so **no work was lost** (end-state parity held). Mitigable: raise the codex cap to ~600s and/or fix the post-timeout reparse. One outlier (run2 T1 thrash with *no history* → 56 reads/1 edit) is agent-flailing-on-a-big-file, not a bounding defect.
+**Reliability: a real bounding cost, amplified by a measurement artifact.** with_session censored 5 turns vs builtin 1. The asymmetry is **structural** (~3.5/5 thrash-induced): the bounded arm re-discovers file layout + re-locates prior edits every turn (T8 40–54 cmds vs builtin 7–11) → several turns hit the 300s cap. **But all 6 "timeouts" actually COMPLETED** — recorded input=0 via the **orphan-flush race** (codex grandchild flushed `turn.completed` after the harness parsed; same as `audit_uncached_timeout_bug`), so **no work was lost** (end-state parity held). **Fixed (2026-06-18):** codex cap raised to 1200s + a post-run reparse pass + recovery-gating (free-validated to reproduce 5.48× with 0 censored; see `docs/COMPACTION_TIMEOUT_FIX_PLAN.md`). One outlier (run2 T1 thrash with *no history* → 56 reads/1 edit) is agent-flailing-on-a-big-file, not a bounding defect.
 
 **Why it stays PROVISIONAL (3 caveats):**
-1. **N=2 < the pre-registered ≥4-of-5 validity gate → INVALID/provisional.** Direction (≫1.5×) is robust to N=2; the magnitude (12.2×) is a 2-point estimate with no real CI.
+1. **N=2 < the design's N≥5 run count → provisional.** Direction (≥1.5×) is robust to N=2; the magnitude is a 2-point estimate with no real CI — carry the recovered cumulative **~5.5×**, not the superseded 12.2×. (With the ≥4/5 firing gate, N=2's 2/2 now passes coverage; the provisional flag is the run-count check.)
 2. The **reliability cost** (5× timeout asymmetry) sits alongside the token win — bounding trades cheaper tokens for more per-turn exploration that occasionally hits the cap.
 3. **No correctness oracle** — quality rests on LLM judge + diff forensics, not ground truth.
 
 **Decision:**
-- This doc records the **provisional N=2 result** (above). Lead with matched total (8.25×) + marginal in-regime (12.2×); never publish uncached or the unmatched 10.84×.
-- **`docs/BENCHMARKS.md`: NOT updated.** The published 4.19×/1.97× is the *valid N=5 interleaved end-state-parity sub-threshold* number; this compaction result is N=2 / block-sequential / no-oracle / fails its own gate — not at parity with the benchmark's standards.
-- **To promote an in-regime number:** N≥5 interleaved on the frozen 13-turn (or widened ~15-turn) fixture, with the codex cap raised to ~600s and/or the orphan-flush reparse fixed.
+- This doc records the **provisional N=2 result** (above). **Lead with the recovered cumulative ~5.5× (5.48×)** — the censored-exclusion figures (8.25× matched / 10.84× unmatched / **12.2× marginal**) are **superseded by the §10 CORRECTION** and must not be headlined; the heaviest in-regime pair is **~1.4×**, not 12×. Never publish uncached.
+- **`docs/BENCHMARKS.md`: NOT updated.** The published 4.19×/1.97× is the *valid N=5 interleaved end-state-parity sub-threshold* number; this compaction result is N=2 / block-sequential / no-oracle / provisional — not at parity with the benchmark's standards.
+- **To promote an in-regime number:** N≥5 interleaved on the frozen 13-turn (or widened ~15-turn) fixture, on the **shipped timeout-safe harness** (1200s cap + post-run reparse, already free-validated).
 
 ---
 

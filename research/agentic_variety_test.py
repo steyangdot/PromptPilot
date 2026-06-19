@@ -384,6 +384,13 @@ def turn_timed_out(turn: dict, tool: str) -> bool:
       (d) neither field (OLD frozen files): absolute floor
           wall >= _TIMEOUT_WALL_FLOOR[tool] AND uncached<=0  -> heuristic
     """
+    # Recovery override (post-run reparse): a turn that hit the cap but whose
+    # codex grandchild later flushed a real turn.completed is RE-COUNTED, not
+    # censored. Must precede the rc==124 branch — the subprocess was still killed
+    # so rc stays 124 as historical truth. See reparse_timed_out_turns() in
+    # chain_test_v2.py and docs/COMPACTION_TIMEOUT_FIX_PLAN.md.
+    if turn.get("recovered_after_timeout"):
+        return False
     if turn.get("timed_out") is True or turn.get("rc") == 124:
         return True
     if turn.get("timed_out") is False:

@@ -18,6 +18,12 @@ if (-not (Test-Path (Join-Path $repo ".env"))) {
     Write-Warning "copy it in or set OPENAI_API_KEY, or the harness will loud-fail."
 }
 
+# Raise the codex per-turn cap 300 -> 1200s so the pilot calibrates against the SAME
+# cap as the full run (run_compaction_regime.ps1 / run_compaction_detached.ps1).
+# Otherwise a 300s pilot would censor slow in-regime turns that complete fine at 1200s
+# and mis-size the turn count. CODEX_TIMEOUT_SEC is read once at module import, so set
+# it before python starts. See docs/COMPACTION_TIMEOUT_FIX_PLAN.md.
+$env:CODEX_TIMEOUT_SEC = "1200"
 # Calibration: N=1, with_session (default) + builtin; skip no_session.
 python research/chain_test_v2.py --chain long --tool codex --runs 1 `
     --skip-no-session --include-builtin --normalizer slm-openai-v2

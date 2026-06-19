@@ -22,6 +22,15 @@ if (-not (Test-Path (Join-Path $repo ".env"))) {
 # Quota note: builtin in-regime turns are the expensive ones; if you hit the
 # ChatGPT limit mid-run the QuotaExhausted guard aborts cleanly (no phantom 0s).
 # Re-run after the window resets, or see the design §5 quota mitigations.
+#
+# Raise the codex per-turn cap 300 -> 1200s so slow-but-completing in-regime turns
+# finish under the cap instead of censoring (bi2 T12 ~636s, ws1 T13 ~1099s blew
+# past 600s). CODEX_TIMEOUT_SEC is read once at module import, so it MUST be set
+# here before python starts. Turns still exceeding 1200s are recovered by the
+# post-run reparse pass. See docs/COMPACTION_TIMEOUT_FIX_PLAN.md.
+# NOTE: this launcher runs in the FOREGROUND — a Claude session reset would kill
+# it. For unattended runs use research/run_compaction_detached.ps1 (Scheduled Task).
+$env:CODEX_TIMEOUT_SEC = "1200"
 python research/chain_test_v2.py --chain long --tool codex --runs 5 `
     --skip-no-session --include-builtin --normalizer slm-openai-v2
 if ($LASTEXITCODE -ne 0) { Write-Error "[full] harness exited $LASTEXITCODE"; exit $LASTEXITCODE }
