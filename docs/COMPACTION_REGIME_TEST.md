@@ -208,7 +208,21 @@ Two pilots were needed before the real run.
 
 ---
 
-## 10. RESULT — N=2 run (2026-06-18, provisional)
+## 10. RESULT
+
+### ✅ N=5 CLEAN (2026-06-19) — the definitive result (supersedes the N=2 below)
+
+Clean N=5 on the 13-turn `chain_long`, codex, on the timeout-safe harness (1200s cap + post-run reparse; ran ~8PM→6AM riding the 5:17 quota refresh, never exhausted). **5/5 builtin runs fired compaction → regime CONFIRMED, 0 censored.**
+
+- **Tokens — THESIS HOLDS (above the compaction threshold):** cumulative **9.69×** (builtin 602,086,843 / with_session 62,148,057); PRIMARY marginal in-regime **13.59×, 95% CI [10.73, 16.46]**. (Per-run builtin 155/119/106/113/109M; with_session 11.4/9.9/14.3/8.1/18.4M.)
+- **Continuity (H4) — near-parity with a small, *verified* tax.** The LLM judge gap (builtin 0.26 vs with_session 0.134) is **mostly artifact** — an 11-agent forensic sweep + human eyeball found builtin 30/30 feature-cells present, with_session 27/30 (3 partial, **0 absent**, 3/5 runs flawless), and the ResilienceConfig refactor landed in **both** arms — **plus a real residual**: 2 genuine continuity defects in 2/5 with_session runs (run3 orphaned timeout-kwarg tests → TypeError; run4 lost Retry-After header parsing) vs **0/5 native** (both human-confirmed).
+- **Honest headline:** *once compaction engages, the bounded session runs the task on ~9.7× fewer tokens (13.6× marginal) at near-parity quality, with a small verified continuity tax.*
+- **Root cause + fix:** the tax traces to the bounded session's `MAX_TURNS=4` recency window — early-turn contracts fall out before late refactors; a bigger window only moves the cliff. Finding + the memory-system fix (contracts/ledger + refactor guard, not recency) are in [`SESSION_MEMORY_ARCHITECTURE.md`](SESSION_MEMORY_ARCHITECTURE.md); the MVP is `research/memory_ledger.py` (+ the `with_memory` harness arm). Full record in the `compaction_regime_n5_clean` memory.
+- Data: `research/data/chain_results_v2/codex/chain_long/` (N=2 archived in `chain_long_n2_recovered/`).
+
+> The N=2 section below is the earlier provisional run, **SUPERSEDED** by the N=5 above. Its 5.48× / 8.25× / 12.2× figures are obsolete — cite **9.69× / 13.59×**.
+
+### N=2 run (2026-06-18, provisional — SUPERSEDED by the N=5 above)
 
 Ran N=2 both arms (`builtin` vs `with_session`) on the 13-turn `chain_long`, via a detached Windows Scheduled Task (survives Claude session resets — the N=3 attempt died overnight when the session reset). Analyzed by `analyze_compaction_regime.py` + an ultracode workflow (timeout forensics, continuity judge, adversarial math re-verification, synthesis). **Verdict: thesis HOLDS-WITH-CAVEATS — directional signal (~5×), NOT yet a publishable headline.**
 

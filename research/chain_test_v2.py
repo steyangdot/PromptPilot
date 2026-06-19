@@ -104,6 +104,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
 from prpt.repo.collector import RepoContextCollector
 from prpt.session import append_turn, clear_session, load_recent_turns
+from memory_ledger import memory_prefix, update_ledger, clear_ledger  # MVP memory-system backend
 
 from agentic_variety_test import (
     _ext, _parse_one, _run_one,
@@ -727,6 +728,29 @@ def prepare_with_session(raw: str, cwd: str, tool: str) -> dict:
     return result
 
 
+def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
+    """MVP memory-system backend (A/B vs prepare_with_session's recency window):
+    SLM rewrite with NO recency window, plus a bounded ProjectState ledger + the
+    refactor guard prepended to the prompt. The ledger is updated AFTER the turn by
+    record_to_memory(). See research/memory_ledger.py + docs/SESSION_MEMORY_ARCHITECTURE.md."""
+    prepared = prepare_no_session(raw, cwd, tool)
+    spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
+    prefix = memory_prefix(cwd, raw, spec)
+    if prefix:
+        prepared["optimized"] = prefix + "\n\n" + prepared["optimized"]
+    prepared["had_history"] = bool(prefix)
+    prepared["referential"] = None
+    prepared["gate_skipped"] = False
+    return prepared
+
+
+def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> None:
+    """AFTER-turn hook for with_memory: extract this turn's durable contracts into the
+    bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session."""
+    spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
+    update_ledger(cwd, raw, spec, changed_files or [], turn=turn)
+
+
 # Lazy singleton: avoids spinning up an Anthropic client at import time
 # (matters when ANTHROPIC_API_KEY isn't set, e.g. for --reprint runs).
 _referential_classifier = None
@@ -887,6 +911,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     except Exception:
         pass
     clear_session(HTTPX_DIR)
+    clear_ledger(HTTPX_DIR)   # with_memory: start each run with an empty ledger (no-op otherwise)
     reset_repo(HTTPX_DIR)
 
     # Track claude-code built-in session ID across turns for variants that use it
@@ -928,6 +953,10 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             # Item #3: promptpilot session, but skip load_recent_turns() on
             # non-referential prompts (Haiku classifier).
             prepared = prepare_gated_session(raw, HTTPX_DIR, tool)
+        elif variant == "with_memory":
+            # MVP memory system: SLM rewrite + bounded ProjectState ledger +
+            # refactor guard (relevance, not the recency window). A/B vs with_session.
+            prepared = prepare_with_memory(raw, HTTPX_DIR, tool)
         else:
             prepared = prepare_with_session(raw, HTTPX_DIR, tool)
 
@@ -989,6 +1018,8 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # Record to promptpilot session for variants that use it
         if variant in ("with_session", "stacked", "gated_session"):
             record_to_session(HTTPX_DIR, raw, prepared)
+        elif variant == "with_memory":
+            record_to_memory(HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
 
         slm_cost = 0.0 if variant in ("raw", "builtin") else slm_cost_estimate(raw, prepared["grounded"])
         # gated_session pays for one extra Haiku classifier call per turn (~$0.00017).
@@ -1388,7 +1419,8 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  gated_agg: list[dict] | None = None,
                  builtin_agg: list[dict] | None = None,
                  slm_native_agg: list[dict] | None = None,
-                 stacked_agg: list[dict] | None = None) -> None:
+                 stacked_agg: list[dict] | None = None,
+                 memory_agg: list[dict] | None = None) -> None:
     summary = {
         "chain": chain_id,
         "tool": tool,
@@ -1404,6 +1436,8 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
         summary["slm_native_agg"] = slm_native_agg
     if stacked_agg is not None:
         summary["stacked_agg"] = stacked_agg
+    if memory_agg is not None:
+        summary["with_memory_agg"] = memory_agg
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
@@ -1458,6 +1492,7 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                    skip_with_session: bool = False,
                    include_slm_native: bool = False,
                    include_stacked: bool = False,
+                   include_memory: bool = False,
                    ) -> tuple[list[dict] | None, list[dict] | None, list[dict] | None]:
     """Run N passes of NO_SESSION (unless `skip_no_session`) + N of WITH_SESSION
     (+ optionally GATED_SESSION when `include_gated=True`, + optionally the
@@ -1475,6 +1510,7 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     builtin_runs: list = []
     slm_native_runs: list = []
     stacked_runs: list = []
+    memory_runs: list = []
     quota_hit = False
 
     def _agg_complete(runs):
@@ -1513,6 +1549,18 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 results = run_chain_once(chain, tool, "gated_session", r, out_dir)
                 save_run(out_dir, "gated_session", r, results)
                 gated_runs.append(results)
+
+        if include_memory:
+            print("\n--- WITH_MEMORY ({0} runs) — ledger + refactor guard (no recency window) ---".format(n_runs))
+            for r in range(1, n_runs + 1):
+                cached = load_run(out_dir, "with_memory", r)
+                if cached is not None:
+                    print("  [resume] with_memory run {0} already complete -> load".format(r))
+                    memory_runs.append(cached)
+                    continue
+                results = run_chain_once(chain, tool, "with_memory", r, out_dir)
+                save_run(out_dir, "with_memory", r, results)
+                memory_runs.append(results)
 
         # Native-resume arms (builtin / slm_native / stacked) all gate native
         # resume on USE_BUILTIN_SESSION=1, so set it for the arm and restore
@@ -1563,7 +1611,8 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     if reparse_timed_out_turns(out_dir, tool):
         for _vname, _vruns in (("no_session", no_runs), ("with_session", with_runs),
                                ("gated_session", gated_runs), ("builtin", builtin_runs),
-                               ("slm_native", slm_native_runs), ("stacked", stacked_runs)):
+                               ("slm_native", slm_native_runs), ("stacked", stacked_runs),
+                               ("with_memory", memory_runs)):
             if not _vruns:
                 continue
             for _idx in range(len(_vruns)):
@@ -1577,9 +1626,11 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     builtin_agg = _agg_complete(builtin_runs) if include_builtin else None
     slm_native_agg = _agg_complete(slm_native_runs) if include_slm_native else None
     stacked_agg = _agg_complete(stacked_runs) if include_stacked else None
+    memory_agg = _agg_complete(memory_runs) if include_memory else None
     save_summary(out_dir, no_agg, with_agg, chain["id"], tool, n_runs,
                  gated_agg=gated_agg, builtin_agg=builtin_agg,
-                 slm_native_agg=slm_native_agg, stacked_agg=stacked_agg)
+                 slm_native_agg=slm_native_agg, stacked_agg=stacked_agg,
+                 memory_agg=memory_agg)
     if quota_hit:
         print("\n[saved] arms completed: " + ", ".join(
             name for name, agg in [("no", no_agg), ("with", with_agg),
@@ -1647,6 +1698,14 @@ def main() -> None:
         help="Also run the stacked DOUBLE-MEMORY arm — SLM rewrite + PromptPilot "
              "bounded session + native resume layered together. Distinct from "
              "--include-slm-native. Sets USE_BUILTIN_SESSION=1.",
+    )
+    parser.add_argument(
+        "--include-memory", action="store_true",
+        help="Also run the WITH_MEMORY arm — the MVP memory system (bounded "
+             "ProjectState ledger + refactor guard, relevance not recency) replacing "
+             "the with_session recency window. A/B vs with_session for the continuity "
+             "fix (docs/SESSION_MEMORY_ARCHITECTURE.md). Fresh exec each turn; one "
+             "extra cheap gpt-5.4-nano ledger-extraction call per turn.",
     )
     args = parser.parse_args()
 
@@ -1726,12 +1785,13 @@ def main() -> None:
                 continue
 
             print("\n" + "=" * 60)
-            print("Running {0} with {1} ({2} runs){3}{4}{5}{6}{7}{8}".format(
+            print("Running {0} with {1} ({2} runs){3}{4}{5}{6}{7}{8}{9}".format(
                 chain["id"], tool, args.runs,
                 " [+gated]" if args.include_gated else "",
                 " [+builtin]" if args.include_builtin else "",
                 " [+slm_native]" if args.include_slm_native else "",
                 " [+stacked]" if args.include_stacked else "",
+                " [+memory]" if args.include_memory else "",
                 " [no-NO]" if args.skip_no_session else "",
                 " [no-WITH]" if args.skip_with_session else ""))
             no_agg, with_agg, gated_agg = run_chain_full(
@@ -1742,6 +1802,7 @@ def main() -> None:
                 skip_with_session=args.skip_with_session,
                 include_slm_native=args.include_slm_native,
                 include_stacked=args.include_stacked,
+                include_memory=args.include_memory,
             )
             if with_agg is None:
                 # Quota abort before WITH_SESSION completed — nothing to chart.
