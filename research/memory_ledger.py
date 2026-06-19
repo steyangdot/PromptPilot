@@ -129,15 +129,16 @@ _EXTRACT_INSTR = (
 )
 
 
-def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judge=None) -> list:
-    """Return a list of contract dicts via the cheap SLM. `judge` is injectable for tests
-    (any callable returning (text, cost, walltime)). Fail-soft -> [] on any error/no key."""
+def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judge=None) -> tuple:
+    """Return (contracts, cost_usd, ok). ok=False means the SLM call did NOT run (e.g.
+    missing OPENAI_API_KEY -> empty output) — distinct from ok=True with an empty list
+    ("nothing durable this turn"). `judge` is injectable for tests."""
     if judge is None:
         try:
             from prpt.judges import OpenAiJudge
             judge = OpenAiJudge()
         except Exception:
-            return []
+            return [], 0.0, False
     prompt = (
         _EXTRACT_INSTR + "\n\n"
         "[Turn request]\n{raw}\n\n"
@@ -155,23 +156,32 @@ def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judg
     )
     try:
         from prpt.judges import extract_json
-        text, _cost, _wt = judge(prompt)
-        data = extract_json(text) or {}
+        text, cost, _wt = judge(prompt)
     except Exception:
-        return []
+        return [], 0.0, False
+    cost = float(cost or 0.0)
+    if not (text or "").strip():
+        return [], cost, False   # empty output => the SLM call did not run (no key / SDK)
+    data = extract_json(text) or {}
     out = data.get("contracts") if isinstance(data, dict) else None
-    return out if isinstance(out, list) else []
+    return (out if isinstance(out, list) else []), cost, True
 
 
-def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> dict:
-    """AFTER-turn hook: extract this turn's contracts and merge into the session ledger."""
+def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> tuple:
+    """AFTER-turn hook: extract this turn's contracts and merge into the session ledger.
+    Returns (ledger, cost_usd, ok). Warns LOUDLY when ok=False so a with_memory run can
+    never silently degrade into a no-memory run (the harness also guards on the key upfront)."""
     memory_record = (getattr(spec, "memory_record", "") or "") if spec is not None else ""
     target_files = (getattr(spec, "target_files", []) or []) if spec is not None else []
-    new = _slm_extract_contracts(raw, memory_record, changed_files or [], target_files, judge=judge)
+    new, cost, ok = _slm_extract_contracts(raw, memory_record, changed_files or [], target_files, judge=judge)
+    if not ok:
+        print("  [ledger] WARNING: contract extraction produced no output (missing "
+              "OPENAI_API_KEY / SLM unavailable) — this turn recorded NO contracts; "
+              "with_memory is degrading toward a no-memory run.")
     ledger = load_ledger(cwd)
     merge_contracts(ledger, new, turn=turn)
     save_ledger(cwd, ledger)
-    return ledger
+    return ledger, cost, ok
 
 
 # ---------------------------------------------------------------------------

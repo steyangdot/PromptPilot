@@ -744,11 +744,13 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
     return prepared
 
 
-def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> None:
+def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> float:
     """AFTER-turn hook for with_memory: extract this turn's durable contracts into the
-    bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session."""
+    bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session. Returns the
+    ledger-extraction SLM cost so the harness can fold it into the turn's slm_cost."""
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
-    update_ledger(cwd, raw, spec, changed_files or [], turn=turn)
+    _led, cost, _ok = update_ledger(cwd, raw, spec, changed_files or [], turn=turn)
+    return cost
 
 
 # Lazy singleton: avoids spinning up an Anthropic client at import time
@@ -895,7 +897,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     Run all turns of `chain` once. variant ∈ {"no_session", "with_session"}.
     Returns per-turn result dicts.
     """
-    assert variant in ("no_session", "with_session", "raw", "builtin", "stacked", "slm_native", "gated_session")
+    assert variant in ("no_session", "with_session", "raw", "builtin", "stacked", "slm_native", "gated_session", "with_memory")
     # Print the resolved model up front so wrong-model invocations are visible
     # on the first turn rather than after the rolled-up analysis. (FIX_PLAN P1 #3)
     if tool == "claude-code":
@@ -1016,12 +1018,14 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         score["censored"] = timed_out
 
         # Record to promptpilot session for variants that use it
+        ledger_slm_cost = 0.0
         if variant in ("with_session", "stacked", "gated_session"):
             record_to_session(HTTPX_DIR, raw, prepared)
         elif variant == "with_memory":
-            record_to_memory(HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
+            ledger_slm_cost = record_to_memory(HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
 
         slm_cost = 0.0 if variant in ("raw", "builtin") else slm_cost_estimate(raw, prepared["grounded"])
+        slm_cost += ledger_slm_cost   # with_memory: count the per-turn ledger-extraction call
         # gated_session pays for one extra Haiku classifier call per turn (~$0.00017).
         if variant == "gated_session":
             slm_cost += 0.00017
@@ -1077,6 +1081,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "usage": usage,
             "uncached_input": uncached_input,
             "slm_cost": slm_cost,
+            "ledger_slm_cost": ledger_slm_cost,
             "downstream_cost": downstream_cost,
             "total_cost": downstream_cost + slm_cost,
             "score": score,
@@ -1551,6 +1556,11 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 gated_runs.append(results)
 
         if include_memory:
+            if not os.environ.get("OPENAI_API_KEY"):
+                raise RuntimeError(
+                    "--include-memory needs OPENAI_API_KEY: the ledger extracts contracts via "
+                    "gpt-5.4-nano (OpenAiJudge). Aborting rather than silently running with_memory "
+                    "as a NO-memory arm. Set OPENAI_API_KEY (the worktree .env) and re-run.")
             print("\n--- WITH_MEMORY ({0} runs) — ledger + refactor guard (no recency window) ---".format(n_runs))
             for r in range(1, n_runs + 1):
                 cached = load_run(out_dir, "with_memory", r)

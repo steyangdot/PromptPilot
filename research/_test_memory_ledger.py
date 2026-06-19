@@ -82,11 +82,21 @@ def test_update_ledger_with_fake_slm():
                         "contract": "sync+async client request APIs accept connect_timeout/read_timeout",
                         "files": ["httpx/_client.py"], "tests": ["tests/client/test_client.py"],
                         "symbols": ["connect_timeout", "read_timeout"]}])
-        led = ml.update_ledger(d, "add a connect_timeout override to the sync client",
-                               _spec(target_files=["httpx/_client.py"]),
-                               ["httpx/_client.py"], turn=1, judge=j)
+        led, cost, ok = ml.update_ledger(d, "add a connect_timeout override to the sync client",
+                                         _spec(target_files=["httpx/_client.py"]),
+                                         ["httpx/_client.py"], turn=1, judge=j)
+        truthy("update_ledger reports ok on a successful extraction", ok)
+        check("cost is a float", isinstance(cost, float), True)
         truthy("ledger persisted to sidecar", ml._ledger_path(d).exists())
         truthy("contract recorded via SLM path", "timeout-overrides" in led["contracts"])
+
+    # ok=False path: a judge that returns empty text (simulates missing OPENAI_API_KEY)
+    with tempfile.TemporaryDirectory() as d2:
+        class EmptyJudge:
+            def __call__(self, prompt, timeout=90):
+                return "", 0.0, 0.0
+        _led, _c, ok2 = ml.update_ledger(d2, "x", _spec(), [], turn=1, judge=EmptyJudge())
+        check("empty SLM output -> ok=False (loud no-op, not silent)", ok2, False)
         check("reload matches", ml.load_ledger(d)["contracts"].keys() == led["contracts"].keys(), True)
 
 
