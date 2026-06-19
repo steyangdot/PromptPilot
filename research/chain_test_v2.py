@@ -729,10 +729,18 @@ def prepare_with_session(raw: str, cwd: str, tool: str) -> dict:
 
 
 def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
-    """MVP memory-system backend (A/B vs prepare_with_session's recency window):
-    SLM rewrite with NO recency window, plus a bounded ProjectState ledger + the
-    refactor guard prepended to the prompt. The ledger is updated AFTER the turn by
-    record_to_memory(). See research/memory_ledger.py + docs/SESSION_MEMORY_ARCHITECTURE.md."""
+    """MVP memory-system backend (compared against prepare_with_session's recency window):
+    SLM rewrite with NO recency window, plus a bounded ProjectState ledger + the refactor
+    guard prepended to the DOWNSTREAM prompt (so the coding agent — not the rewrite SLM —
+    sees the obligations the guard surfaces). The ledger is updated AFTER the turn by
+    record_to_memory(). See research/memory_ledger.py + docs/SESSION_MEMORY_ARCHITECTURE.md.
+
+    NOTE (PR #44 review): this is NOT a pure backend swap with the rewrite held identical.
+    with_session prepends recency history BEFORE the SLM rewrite (so its rewrite is shaped by
+    memory); with_memory rewrites the raw request first and injects ledger memory AFTER, into
+    the downstream prompt. That asymmetry is deliberate (the refactor-guard checklist must
+    reach the coding agent), but it means with_session vs with_memory compares two memory
+    ARCHITECTURES — not "same rewrite, swapped memory payload"."""
     prepared = prepare_no_session(raw, cwd, tool)
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
     prefix = memory_prefix(cwd, raw, spec)
@@ -747,9 +755,16 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
 def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> float:
     """AFTER-turn hook for with_memory: extract this turn's durable contracts into the
     bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session. Returns the
-    ledger-extraction SLM cost so the harness can fold it into the turn's slm_cost."""
+    ledger-extraction SLM cost so the harness can fold it into the turn's slm_cost.
+
+    Uses the REAL git-modified file set (_git_modified_files — same as record_to_session),
+    unioned with the scorer's expected-and-changed list — NOT the scorer list alone — so the
+    ledger's feature->files/tests map captures side files/tests/docs the agent actually
+    touched (the scorer only sees fixture-expected files). (PR #44 review.)"""
+    from prpt.adapters.shell import _git_modified_files
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
-    _led, cost, _ok = update_ledger(cwd, raw, spec, changed_files or [], turn=turn)
+    modified = list(dict.fromkeys(list(_git_modified_files(cwd) or []) + list(changed_files or [])))
+    _led, cost, _ok = update_ledger(cwd, raw, spec, modified, turn=turn)
     return cost
 
 
@@ -1509,6 +1524,15 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     out_dir = OUT_DIR / tool / chain["id"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Validity guard UP FRONT — before any paid arm runs (PR #44 review). The with_memory
+    # ledger extracts contracts via gpt-5.4-nano (OpenAiJudge); abort now rather than burn
+    # quota on NO/WITH/GATED and only fail at the WITH_MEMORY arm.
+    if include_memory and not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "--include-memory needs OPENAI_API_KEY: the ledger extracts contracts via "
+            "gpt-5.4-nano (OpenAiJudge). Aborting BEFORE any arm runs rather than silently "
+            "running with_memory as a NO-memory arm. Set OPENAI_API_KEY (the worktree .env).")
+
     no_runs: list | None = None
     with_runs: list = []
     gated_runs: list = []
@@ -1556,11 +1580,7 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 gated_runs.append(results)
 
         if include_memory:
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError(
-                    "--include-memory needs OPENAI_API_KEY: the ledger extracts contracts via "
-                    "gpt-5.4-nano (OpenAiJudge). Aborting rather than silently running with_memory "
-                    "as a NO-memory arm. Set OPENAI_API_KEY (the worktree .env) and re-run.")
+            # (OPENAI_API_KEY validity guard runs up front in run_chain_full — see top.)
             print("\n--- WITH_MEMORY ({0} runs) — ledger + refactor guard (no recency window) ---".format(n_runs))
             for r in range(1, n_runs + 1):
                 cached = load_run(out_dir, "with_memory", r)
