@@ -104,7 +104,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from prpt.normalizers.base import build_final_downstream_prompt, build_output_suffix, create_normalizer
 from prpt.repo.collector import RepoContextCollector
 from prpt.session import append_turn, clear_session, load_recent_turns
-from memory_ledger import memory_prefix, update_ledger, clear_ledger  # MVP memory-system backend
+from memory_ledger import (  # MVP memory-system backend
+    memory_prefix, update_ledger, clear_ledger, ledger_judge_available)
+
+_warned_memory_no_spec = False  # warn-once when with_memory runs on a spec-less (v1) normalizer
 
 from agentic_variety_test import (
     _ext, _parse_one, _run_one,
@@ -741,8 +744,14 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
     the downstream prompt. That asymmetry is deliberate (the refactor-guard checklist must
     reach the coding agent), but it means with_session vs with_memory compares two memory
     ARCHITECTURES — not "same rewrite, swapped memory payload"."""
+    global _warned_memory_no_spec
     prepared = prepare_no_session(raw, cwd, tool)
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
+    if spec is None and not _warned_memory_no_spec:
+        _warned_memory_no_spec = True
+        print("  [with_memory] WARNING: normalizer exposes no _last_spec (v1/heuristic) — the "
+              "ledger guard loses target_files + scope signals and degrades to keyword/regex "
+              "matching only. Use a v2 normalizer (the default --normalizer slm auto-selects v2).")
     prefix = memory_prefix(cwd, raw, spec)
     if prefix:
         prepared["optimized"] = prefix + "\n\n" + prepared["optimized"]
@@ -752,10 +761,11 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
     return prepared
 
 
-def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> float:
+def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> tuple:
     """AFTER-turn hook for with_memory: extract this turn's durable contracts into the
-    bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session. Returns the
-    ledger-extraction SLM cost so the harness can fold it into the turn's slm_cost.
+    bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session. Returns
+    (ledger_extraction_cost, ok) — `ok=False` flags a failed extraction/persist so the
+    harness can mark the with_memory arm degraded (PR #44 #2).
 
     Uses the REAL git-modified file set (_git_modified_files — same as record_to_session),
     unioned with the scorer's expected-and-changed list — NOT the scorer list alone — so the
@@ -764,8 +774,8 @@ def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=Non
     from prpt.adapters.shell import _git_modified_files
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
     modified = list(dict.fromkeys(list(_git_modified_files(cwd) or []) + list(changed_files or [])))
-    _led, cost, _ok = update_ledger(cwd, raw, spec, modified, turn=turn)
-    return cost
+    _led, cost, ok = update_ledger(cwd, raw, spec, modified, turn=turn)
+    return cost, ok
 
 
 # Lazy singleton: avoids spinning up an Anthropic client at import time
@@ -1034,10 +1044,14 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
 
         # Record to promptpilot session for variants that use it
         ledger_slm_cost = 0.0
+        ledger_ok = True
         if variant in ("with_session", "stacked", "gated_session"):
             record_to_session(HTTPX_DIR, raw, prepared)
-        elif variant == "with_memory":
-            ledger_slm_cost = record_to_memory(HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
+        elif variant == "with_memory" and not timed_out:
+            # PR#44 #10: skip the paid ledger call on a censored/timed-out turn (it would be
+            # excluded from aggregation anyway, and would mutate the ledger from a partial turn).
+            ledger_slm_cost, ledger_ok = record_to_memory(
+                HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
 
         slm_cost = 0.0 if variant in ("raw", "builtin") else slm_cost_estimate(raw, prepared["grounded"])
         slm_cost += ledger_slm_cost   # with_memory: count the per-turn ledger-extraction call
@@ -1097,6 +1111,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "uncached_input": uncached_input,
             "slm_cost": slm_cost,
             "ledger_slm_cost": ledger_slm_cost,
+            "ledger_ok": ledger_ok,
             "downstream_cost": downstream_cost,
             "total_cost": downstream_cost + slm_cost,
             "score": score,
@@ -1203,6 +1218,38 @@ def _pct_delta(no_val: float, with_val: float) -> float:
     if no_val == 0:
         return 0.0
     return (with_val - no_val) / no_val * 100
+
+
+def print_memory_ab(with_agg: list[dict], memory_agg: list[dict], tool: str) -> None:
+    """PR#44 #13: with_memory A/Bs against with_session with the SLM rewrite held
+    constant, isolating the memory ARCHITECTURE (ledger + refactor guard, relevance-
+    not-recency) from the recency-window session. Print the head-to-head so the new
+    arm's numbers are visible in the run output, not buried in summary.json."""
+    if not memory_agg or not with_agg:
+        return
+
+    def _sum(agg, key):
+        return sum(t.get(key, 0.0) for t in agg)
+
+    def _ratio(a, b):
+        return (a / b) if b else float("nan")
+
+    w_tot, m_tot = _sum(with_agg, "input_tokens_mean"), _sum(memory_agg, "input_tokens_mean")
+    w_unc, m_unc = _sum(with_agg, "uncached_input_mean"), _sum(memory_agg, "uncached_input_mean")
+    w_succ = _sum(with_agg, "success_mean") / len(with_agg)
+    m_succ = _sum(memory_agg, "success_mean") / len(memory_agg)
+    print()
+    print("=" * 96)
+    print("  WITH_MEMORY vs WITH_SESSION  (tool={0}; SLM rewrite held constant — memory backend only)"
+          .format(tool))
+    print("=" * 96)
+    print("  metric                    with_session     with_memory     ratio (with/mem)")
+    print("  total input tokens     {0:>15,.0f} {1:>15,.0f}     {2:>6.2f}x".format(
+        w_tot, m_tot, _ratio(w_tot, m_tot)))
+    print("  uncached input tokens  {0:>15,.0f} {1:>15,.0f}     {2:>6.2f}x".format(
+        w_unc, m_unc, _ratio(w_unc, m_unc)))
+    print("  mean success           {0:>15.3f} {1:>15.3f}".format(w_succ, m_succ))
+    print("  (ratio >1 => with_memory is cheaper; success should be >= with_session for a win)")
 
 
 def print_chain_summary(chain: dict, no_agg: list[dict], with_agg: list[dict],
@@ -1505,6 +1552,19 @@ def dry_run_chain(chain: dict, tool: str) -> None:
 # Main runner: per chain x tool, runs N passes per variant, aggregates
 # ---------------------------------------------------------------------------
 
+def _warn_ledger_degraded(run_results, r: int) -> None:
+    """PR#44 #2: if any non-censored turn in a with_memory run had a FAILED ledger
+    extraction/persist (`ledger_ok` is False), the memory was not maintained for that run
+    so its A/B vs with_session is invalid. Warn loudly (don't silently average it in)."""
+    failed = sum(1 for t in run_results
+                 if t.get("ledger_ok") is False and not t.get("timed_out"))
+    if failed:
+        print("  [with_memory] WARNING: run {0}: {1}/{2} turns had a FAILED ledger "
+              "extraction/persist -> this run is DEGRADED (memory not maintained); its "
+              "A/B vs with_session is INVALID. Investigate before trusting the aggregate."
+              .format(r, failed, len(run_results)))
+
+
 def run_chain_full(chain: dict, tool: str, n_runs: int,
                    include_gated: bool = False,
                    skip_no_session: bool = False,
@@ -1513,7 +1573,8 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                    include_slm_native: bool = False,
                    include_stacked: bool = False,
                    include_memory: bool = False,
-                   ) -> tuple[list[dict] | None, list[dict] | None, list[dict] | None]:
+                   ) -> tuple[list[dict] | None, list[dict] | None,
+                              list[dict] | None, list[dict] | None]:
     """Run N passes of NO_SESSION (unless `skip_no_session`) + N of WITH_SESSION
     (+ optionally GATED_SESSION when `include_gated=True`, + optionally the
     native BUILTIN session arm when `include_builtin=True`). Returns aggregated
@@ -1525,13 +1586,14 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Validity guard UP FRONT — before any paid arm runs (PR #44 review). The with_memory
-    # ledger extracts contracts via gpt-5.4-nano (OpenAiJudge); abort now rather than burn
-    # quota on NO/WITH/GATED and only fail at the WITH_MEMORY arm.
-    if include_memory and not os.environ.get("OPENAI_API_KEY"):
+    # ledger extracts contracts via a cheap SLM (gpt-5.4-nano preferred, else any default
+    # judge); abort now rather than burn quota on NO/WITH/GATED and only fail at WITH_MEMORY.
+    if include_memory and not ledger_judge_available():
         raise RuntimeError(
-            "--include-memory needs OPENAI_API_KEY: the ledger extracts contracts via "
-            "gpt-5.4-nano (OpenAiJudge). Aborting BEFORE any arm runs rather than silently "
-            "running with_memory as a NO-memory arm. Set OPENAI_API_KEY (the worktree .env).")
+            "--include-memory needs a usable ledger judge — OPENAI_API_KEY (cheap gpt-5.4-nano), "
+            "OR any default judge via get_default_judge() (max/codex/anthropic). Aborting BEFORE "
+            "any arm runs rather than silently running with_memory as a NO-memory arm. (PR#44 #14: "
+            "no OpenAI-only lock-in.)")
 
     no_runs: list | None = None
     with_runs: list = []
@@ -1587,10 +1649,12 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 if cached is not None:
                     print("  [resume] with_memory run {0} already complete -> load".format(r))
                     memory_runs.append(cached)
+                    _warn_ledger_degraded(cached, r)
                     continue
                 results = run_chain_once(chain, tool, "with_memory", r, out_dir)
                 save_run(out_dir, "with_memory", r, results)
                 memory_runs.append(results)
+                _warn_ledger_degraded(results, r)
 
         # Native-resume arms (builtin / slm_native / stacked) all gate native
         # resume on USE_BUILTIN_SESSION=1, so set it for the arm and restore
@@ -1666,9 +1730,9 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
             name for name, agg in [("no", no_agg), ("with", with_agg),
                                     ("gated", gated_agg), ("builtin", builtin_agg),
                                     ("slm_native", slm_native_agg),
-                                    ("stacked", stacked_agg)]
+                                    ("stacked", stacked_agg), ("with_memory", memory_agg)]
             if agg is not None) or "(none)")
-    return no_agg, with_agg, gated_agg
+    return no_agg, with_agg, gated_agg, memory_agg
 
 
 def main() -> None:
@@ -1824,7 +1888,7 @@ def main() -> None:
                 " [+memory]" if args.include_memory else "",
                 " [no-NO]" if args.skip_no_session else "",
                 " [no-WITH]" if args.skip_with_session else ""))
-            no_agg, with_agg, gated_agg = run_chain_full(
+            no_agg, with_agg, gated_agg, memory_agg = run_chain_full(
                 chain, tool, args.runs,
                 include_gated=args.include_gated,
                 skip_no_session=args.skip_no_session,
@@ -1853,9 +1917,13 @@ def main() -> None:
                 print("(NO_SESSION arm skipped; columns labeled NO read as 0 below)")
                 print_chain_summary(chain, placeholder, with_agg, tool, args.runs,
                                     gated_agg=gated_agg)
+                if memory_agg is not None:
+                    print_memory_ab(with_agg, memory_agg, tool)
             else:
                 print_chain_summary(chain, no_agg, with_agg, tool, args.runs,
                                     gated_agg=gated_agg)
+                if memory_agg is not None:
+                    print_memory_ab(with_agg, memory_agg, tool)
 
     print("\nOutput files:", OUT_DIR)
 

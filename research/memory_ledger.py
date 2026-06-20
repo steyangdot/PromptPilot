@@ -10,16 +10,15 @@ distance continuity on a 100/1000-turn job.
 
 WHAT: replace recency with RELEVANCE, organised around durable code *contracts*, not prose.
   1. ProjectState Ledger  — bounded, structured contracts (feature -> obligation + files/
-     tests/symbols), SLM-updated each turn (compress-don't-drop: a contract is never
-     dropped merely for being old).  This is also the FeatureMap (feature -> artifacts).
+     tests/symbols), SLM-updated each turn (compress-don't-drop).  Also the FeatureMap.
   2. Refactor Guard       — before a refactor/migrate turn (or one whose impacted files/
-     symbols overlap an existing contract), surface the obligations that must be preserved
-     or intentionally migrated.  Aimed exactly at where continuity breaks (late refactors).
+     symbols overlap an existing contract), surface the obligations to preserve/migrate.
 
-All bounded -> the token win survives.  Marginal cost ≈ one cheap gpt-5.4-nano call/turn.
-
-This module is pure-Python + a single lazy SLM call (injectable for tests). It persists a
-per-session JSON sidecar next to prpt's session JSONL (same cwd-hash key).
+Hardening (PR #44 /code-review, 2026-06-19): word-boundary matching (no substring over-fire),
+empty/scalar payload sanitization (no crash, no ''-always-fires), bounded guard/state output,
+top-level-array + parse-failure detection, save-failure surfacing, OpenAI->default judge
+fallback (no provider lock-in).  All matching/serialization is pure-Python + one lazy,
+injectable SLM call.  Persists a per-session JSON sidecar (same cwd-hash key as session.py).
 """
 from __future__ import annotations
 
@@ -31,19 +30,74 @@ import tempfile
 from pathlib import Path
 
 LEDGER_VERSION = 1
-MAX_CONTRACTS = 40          # bound the ledger (keep most-recently-touched if exceeded)
-STATE_SUMMARY_MAX_CHARS = 1800
+MAX_CONTRACTS = 40              # bound the ledger (keep most-recently-touched if exceeded)
+STATE_SUMMARY_MAX_CHARS = 1800  # cap the always-on ProjectState header
+GUARD_MAX_CHARS = 2200          # cap the refactor-guard checklist (PR#44 #4: was uncapped)
 
-# Refactor/migration trigger words. NOTE (per review): keyword detection alone misses
-# "change the clients to use one config" — so the guard ALSO fires on impacted-file/symbol
-# overlap with an existing contract, and on a broad/new SLM scope. See _is_refactor / guard_hits.
+# Refactor/migration trigger words, matched on WORD BOUNDARIES (PR#44 #6: 'merge' must not
+# fire on 'submerged'). The guard ALSO fires on impacted-file/symbol overlap + broad/new
+# SLM scope, so keyword recall is a backstop, not the sole signal.
 REFACTOR_KW = (
     "refactor", "migrate", "migration", "consolidate", "replace", "unify", "merge",
     "extract", "rename", "reorganize", "reorganise", "inline", "move to", "switch to",
     "fold into", "rework", "restructure",
 )
 
-_PY_FILE_RE = re.compile(r"[A-Za-z0-9_./-]+\.py")
+# Files named in a raw prompt — broadened beyond *.py (PR#44 #12: config/doc contracts like
+# setup.cfg / pyproject.toml / *.md were never surfaced). Restricted to known extensions so
+# version strings like "1.5" are not mistaken for files.
+_FILE_RE = re.compile(
+    r"[A-Za-z0-9_./-]+\.(?:py|pyi|pyx|toml|cfg|ini|md|rst|txt|json|ya?ml|sh|ps1|cmd)\b")
+
+
+# ---------------------------------------------------------------------------
+# Small pure helpers
+# ---------------------------------------------------------------------------
+def _clean_list(items) -> list:
+    """Order-preserving dedup that strips whitespace and drops empties (PR#44 #3). Reuses
+    prpt.core.utils.unique_preserve_order when importable; falls back to a local impl so the
+    module stays importable (and unit-testable) without prpt."""
+    coerced = [str(x) for x in (items or [])]
+    try:
+        from prpt.core.utils import unique_preserve_order
+        return unique_preserve_order(coerced)
+    except Exception:
+        seen, out = set(), []
+        for x in coerced:
+            s = x.strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return out
+
+
+def _mentions(token, low: str) -> bool:
+    """Word-boundary membership of `token` in the lowercased prompt `low` (PR#44 #5: replaces
+    raw `token in low` substring matching that over-fired on 'id'∈'invalid', 'a.py'∈'data.py',
+    and '' ∈ anything). Underscores/dots in code symbols/filenames are handled by re.escape +
+    non-alnum lookarounds (so 'connect_timeout' / 'a.py' match as whole tokens)."""
+    t = (str(token) or "").strip().lower()
+    if not t:
+        return False
+    return re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", low) is not None
+
+
+def _join_capped(lines, max_chars, omit_label="line(s)") -> str:
+    """Join lines on '\\n' keeping WHOLE lines within max_chars (PR#44 #4/#11: no mid-word
+    slice, no unbounded payload). The first line (a header) is always kept."""
+    out, total = [], 0
+    for i, ln in enumerate(lines):
+        add = len(ln) + 1
+        if out and total + add > max_chars:
+            out.append("  ...[{0} more {1} omitted for length]".format(len(lines) - i, omit_label))
+            break
+        out.append(ln)
+        total += add
+    return "\n".join(out)
+
+
+def _norm_feature(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
 
 
 # ---------------------------------------------------------------------------
@@ -67,11 +121,14 @@ def load_ledger(cwd: str) -> dict:
         return {"version": LEDGER_VERSION, "contracts": {}}
 
 
-def save_ledger(cwd: str, ledger: dict) -> None:
+def save_ledger(cwd: str, ledger: dict) -> bool:
+    """Persist the sidecar. Returns False on write failure (PR#44 #9: was silently swallowed,
+    causing a stale-ledger continuity loss with ok=True reported)."""
     try:
         _ledger_path(cwd).write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+        return True
     except Exception:
-        pass
+        return False
 
 
 def clear_ledger(cwd: str) -> None:
@@ -82,16 +139,11 @@ def clear_ledger(cwd: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Ledger merge (compress-don't-drop upsert)
+# Ledger merge (compress-don't-drop upsert; payload-sanitizing)
 # ---------------------------------------------------------------------------
-def _norm_feature(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
-
-
 def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) -> dict:
-    """Upsert extracted contracts. Lists (files/tests/symbols) union-merge; the obligation
-    text is replaced by the latest; `turn` records recency for the bound. A contract is
-    NEVER dropped for being old — only the least-recently-touched are evicted past the cap."""
+    """Upsert extracted contracts. files/tests/symbols union-merge with strip+drop-empty
+    (PR#44 #3) and tolerate scalar/None/non-iterable values without crashing (PR#44 #1)."""
     contracts = ledger.setdefault("contracts", {})
     for c in new_contracts or []:
         if not isinstance(c, dict):
@@ -101,10 +153,12 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
             continue
         cur = contracts.get(feat) or {"feature": feat, "files": [], "tests": [], "symbols": []}
         for k in ("files", "tests", "symbols"):
-            incoming = c.get(k) or []
+            incoming = c.get(k)
             if isinstance(incoming, str):
                 incoming = [incoming]
-            cur[k] = list(dict.fromkeys([*cur.get(k, []), *[str(x) for x in incoming]]))
+            elif not isinstance(incoming, (list, tuple)):
+                incoming = []          # PR#44 #1: scalar/dict/None -> ignore, never iterate it
+            cur[k] = _clean_list([*cur.get(k, []), *incoming])
         if c.get("contract"):
             cur["contract"] = str(c["contract"]).strip()
         if turn is not None:
@@ -129,14 +183,30 @@ _EXTRACT_INSTR = (
 )
 
 
+def ledger_judge_available() -> bool:
+    """True iff the ledger can extract contracts (PR#44 #14: don't lock to OpenAI). Prefers
+    OPENAI_API_KEY (cheap gpt-5.4-nano) but accepts any default judge (Max/codex/anthropic)."""
+    if os.environ.get("OPENAI_API_KEY"):
+        return True
+    try:
+        from prpt.judges import get_default_judge
+        return get_default_judge() is not None
+    except Exception:
+        return False
+
+
 def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judge=None) -> tuple:
-    """Return (contracts, cost_usd, ok). ok=False means the SLM call did NOT run (e.g.
-    missing OPENAI_API_KEY -> empty output) — distinct from ok=True with an empty list
-    ("nothing durable this turn"). `judge` is injectable for tests."""
+    """Return (contracts, cost_usd, ok). ok=False means the call did NOT yield usable JSON
+    (no judge / empty output / unparseable / wrong shape) — distinct from ok=True with an
+    empty list ("nothing durable this turn"). `judge` is injectable for tests."""
     if judge is None:
         try:
-            from prpt.judges import OpenAiJudge
-            judge = OpenAiJudge()
+            if os.environ.get("OPENAI_API_KEY"):
+                from prpt.judges import OpenAiJudge       # cheap gpt-5.4-nano (intended default)
+                judge = OpenAiJudge()
+            else:
+                from prpt.judges import get_default_judge  # PR#44 #14: fall back, no OpenAI lock-in
+                judge = get_default_judge()
         except Exception:
             return [], 0.0, False
     prompt = (
@@ -161,26 +231,38 @@ def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judg
         return [], 0.0, False
     cost = float(cost or 0.0)
     if not (text or "").strip():
-        return [], cost, False   # empty output => the SLM call did not run (no key / SDK)
-    data = extract_json(text) or {}
-    out = data.get("contracts") if isinstance(data, dict) else None
-    return (out if isinstance(out, list) else []), cost, True
+        return [], cost, False          # empty output => the SLM call did not run
+    data = extract_json(text)
+    if data is None:
+        return [], cost, False          # PR#44 #7: non-empty text but no parseable JSON => failure
+    if isinstance(data, list):
+        out = data                      # PR#44 #7: SLM returned a bare top-level contracts array
+    elif isinstance(data, dict):
+        out = data.get("contracts")
+    else:
+        out = None
+    if not isinstance(out, list):
+        return [], cost, False          # parseable JSON but wrong shape => failure (warn), not silent-empty
+    return out, cost, True
 
 
 def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> tuple:
     """AFTER-turn hook: extract this turn's contracts and merge into the session ledger.
-    Returns (ledger, cost_usd, ok). Warns LOUDLY when ok=False so a with_memory run can
-    never silently degrade into a no-memory run (the harness also guards on the key upfront)."""
+    Returns (ledger, cost_usd, ok). Warns LOUDLY when extraction OR persistence fails so a
+    with_memory run can never silently degrade into a no-memory run."""
     memory_record = (getattr(spec, "memory_record", "") or "") if spec is not None else ""
     target_files = (getattr(spec, "target_files", []) or []) if spec is not None else []
     new, cost, ok = _slm_extract_contracts(raw, memory_record, changed_files or [], target_files, judge=judge)
     if not ok:
-        print("  [ledger] WARNING: contract extraction produced no output (missing "
-              "OPENAI_API_KEY / SLM unavailable) — this turn recorded NO contracts; "
-              "with_memory is degrading toward a no-memory run.")
+        print("  [ledger] WARNING: contract extraction produced no usable JSON (missing judge / "
+              "SLM error / wrong-shape output) — this turn recorded NO contracts; with_memory is "
+              "degrading toward a no-memory run.")
     ledger = load_ledger(cwd)
     merge_contracts(ledger, new, turn=turn)
-    save_ledger(cwd, ledger)
+    if not save_ledger(cwd, ledger):    # PR#44 #9: surface persist failures
+        print("  [ledger] WARNING: failed to persist the ledger sidecar — the next turn will "
+              "read a stale/empty ledger (silent continuity loss).")
+        ok = False
     return ledger, cost, ok
 
 
@@ -189,7 +271,7 @@ def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> tuple
 # ---------------------------------------------------------------------------
 def _is_refactor(raw: str, spec) -> bool:
     low = (raw or "").lower()
-    if any(k in low for k in REFACTOR_KW):
+    if any(_mentions(k, low) for k in REFACTOR_KW):   # PR#44 #6: word-boundary, not substring
         return True
     if spec is not None and getattr(spec, "scope", "") in ("broad", "new"):
         return True
@@ -198,21 +280,23 @@ def _is_refactor(raw: str, spec) -> bool:
 
 def _impacted_files(raw: str, spec) -> set:
     files = set((getattr(spec, "target_files", []) or []) if spec is not None else [])
-    files |= set(_PY_FILE_RE.findall(raw or ""))
-    return files
+    files |= set(_FILE_RE.findall(raw or ""))
+    return {f for f in files if f}
 
 
 def guard_hits(ledger: dict, raw: str, spec) -> dict:
-    """Contracts whose files OR symbols the current turn impacts (relevance, not recency)."""
+    """Contracts whose files OR symbols the current turn impacts (relevance, not recency).
+    File/symbol membership uses exact set-intersection plus WORD-BOUNDARY prompt mentions
+    (PR#44 #5: no substring/empty over-fire)."""
     low = (raw or "").lower()
     impacted = _impacted_files(raw, spec)
-    impacted_base = {f.rsplit("/", 1)[-1].lower() for f in impacted}
+    impacted_base = {f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower() for f in impacted}
     hits = {}
     for feat, c in ledger.get("contracts", {}).items():
         cfiles = set(c.get("files", []))
-        cbase = {f.rsplit("/", 1)[-1].lower() for f in cfiles}
-        file_hit = bool(cfiles & impacted) or bool(cbase & impacted_base) or any(b in low for b in cbase)
-        sym_hit = any(str(s).lower() in low for s in c.get("symbols", []))
+        cbase = {f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower() for f in cfiles if f}
+        file_hit = bool(cfiles & impacted) or bool(cbase & impacted_base) or any(_mentions(b, low) for b in cbase)
+        sym_hit = any(_mentions(s, low) for s in c.get("symbols", []))
         if file_hit or sym_hit:
             hits[feat] = c
     return hits
@@ -220,8 +304,8 @@ def guard_hits(ledger: dict, raw: str, spec) -> dict:
 
 def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
     """Build the preserve-or-migrate checklist of obligations the current turn endangers.
-    Fires on: file/symbol overlap with a contract, OR a refactor with no explicit overlap
-    (surface all — a broad refactor can touch anything; the ledger is bounded)."""
+    Fires on file/symbol overlap, OR a refactor with no explicit overlap (surface all —
+    bounded). Output is char-capped (PR#44 #4)."""
     ledger = load_ledger(cwd)
     contracts = ledger.get("contracts", {})
     if not contracts:
@@ -243,18 +327,19 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
         lines.append(
             "This turn is a refactor/migration: do NOT silently drop the above — migrate their "
             "call-sites + tests to the new design, or explicitly state why each is removed.")
-    return "\n".join(lines)
+    return _join_capped(lines, GUARD_MAX_CHARS, omit_label="contract line(s)")
 
 
 def ledger_state_summary(cwd: str, max_chars: int = STATE_SUMMARY_MAX_CHARS) -> str:
-    """Always-on bounded overview of established contracts (the ProjectState header)."""
+    """Always-on bounded overview of established contracts (the ProjectState header).
+    Line-boundary truncation (PR#44 #11: no mid-word slice)."""
     contracts = load_ledger(cwd).get("contracts", {})
     if not contracts:
         return ""
     lines = ["[PROJECT STATE — established contracts so far]"]
     for feat, c in contracts.items():
         lines.append("- {0}: {1}".format(feat, c.get("contract", "")).rstrip())
-    return "\n".join(lines)[:max_chars]
+    return _join_capped(lines, max_chars, omit_label="contract(s)")
 
 
 def memory_prefix(cwd: str, raw: str, spec) -> str:

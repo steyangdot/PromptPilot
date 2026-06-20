@@ -188,11 +188,133 @@ def test_clear():
         check("empty ledger after clear", ml.load_ledger(d)["contracts"], {})
 
 
+# --- hardening (PR#44 /code-review) -----------------------------------------
+def test_merge_tolerates_scalar_and_empty_payloads():
+    # PR#44 #1/#3: untrusted SLM output with scalar/None files + a bare string + empties
+    # must NOT crash and must be sanitized (strip, drop empty), never iterated as chars.
+    led = {"version": 1, "contracts": {}}
+    ml.merge_contracts(led, [
+        {"feature": "f-scalar", "contract": "c", "files": "a.py",          # str, not list
+         "symbols": 123, "tests": None},                                   # int + None
+        {"feature": "f-empty", "contract": "c", "files": ["  ", "", "b.py", "b.py"]},
+        "not-a-dict", 42, None,                                             # non-dict items skipped
+    ], turn=1)
+    check("scalar file string coerced to single-element list", led["contracts"]["f-scalar"]["files"], ["a.py"])
+    check("int symbols ignored (not iterated as digits)", led["contracts"]["f-scalar"]["symbols"], [])
+    check("None tests ignored", led["contracts"]["f-scalar"]["tests"], [])
+    check("empties stripped + deduped", led["contracts"]["f-empty"]["files"], ["b.py"])
+    check("non-dict contract items skipped", len(led["contracts"]), 2)
+
+
+def test_merge_tolerates_non_list_new_contracts():
+    # PR#44 #1: a top-level non-list (e.g. SLM returned a dict or scalar) must not crash merge.
+    led = {"version": 1, "contracts": {}}
+    ml.merge_contracts(led, "garbage", turn=1)   # str is iterable-of-chars but each char is not a dict
+    check("string new_contracts -> no contracts, no crash", led["contracts"], {})
+
+
+def test_mentions_word_boundary():
+    # PR#44 #5: substring matching over-fired. _mentions must be whole-token.
+    check("'id' does not fire inside 'invalid'", ml._mentions("id", "an invalid value"), False)
+    check("empty token never fires", ml._mentions("", "anything at all"), False)
+    truthy("whole word fires", ml._mentions("timeout", "set the timeout now"))
+    truthy("code symbol with underscore fires", ml._mentions("connect_timeout", "use connect_timeout here"))
+    truthy("filename with dot fires", ml._mentions("a.py", "edit a.py please"))
+    check("a.py does not fire inside data.py", ml._mentions("a.py", "edit data.py please"), False)
+
+
+def test_guard_no_false_fire_from_substring():
+    # the concrete over-fire the review flagged: a symbol 'id' must not match 'invalid' in an
+    # unrelated prompt and drag its contract into the guard.
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "ident", "contract": "id field", "files": ["x.py"],
+                        "symbols": ["id"]}])])
+        raw = "Reject an invalid header in httpx/_status_codes.py."   # 'id' ⊂ 'invalid' but no real hit
+        spec = _spec(target_files=["httpx/_status_codes.py"], scope="localized")
+        check("substring 'id' in 'invalid' does NOT fire the guard",
+              ml.refactor_guard_checklist(d, raw, spec), "")
+
+
+def test_slm_accepts_top_level_array():
+    # PR#44 #7: SLM may return a bare [ ... ] instead of {"contracts": [...]}.
+    class ArrayJudge:
+        def __call__(self, prompt, timeout=90):
+            return json.dumps([{"feature": "f", "contract": "c", "files": ["a.py"]}]), 0.0, 0.0
+    out, cost, ok = ml._slm_extract_contracts("raw", "", [], [], judge=ArrayJudge())
+    truthy("top-level array accepted -> ok", ok)
+    check("contracts parsed from bare array", out[0]["feature"], "f")
+
+
+def test_slm_prose_is_failure_not_empty():
+    # PR#44 #7: non-empty, non-JSON output (model refused / chatted) => ok=False, not silent empty.
+    class ProseJudge:
+        def __call__(self, prompt, timeout=90):
+            return "Sorry, I cannot find any durable contracts in this turn.", 0.0, 0.0
+    out, cost, ok = ml._slm_extract_contracts("raw", "", [], [], judge=ProseJudge())
+    check("unparseable prose -> ok=False", ok, False)
+    check("no phantom contracts", out, [])
+
+
+def test_slm_wrong_shape_is_failure():
+    # PR#44 #7: parseable JSON of the wrong shape (contracts not a list) => failure.
+    class WrongShapeJudge:
+        def __call__(self, prompt, timeout=90):
+            return json.dumps({"contracts": "a string not a list"}), 0.0, 0.0
+    _out, _c, ok = ml._slm_extract_contracts("raw", "", [], [], judge=WrongShapeJudge())
+    check("wrong-shape contracts -> ok=False", ok, False)
+
+
+def test_guard_output_is_capped():
+    # PR#44 #4: the refactor guard must be bounded — the bounded-token claim depends on it.
+    with tempfile.TemporaryDirectory() as d:
+        big = [(t, [{"feature": "feat-{0}".format(t),
+                     "contract": "obligation " + ("x" * 400),
+                     "files": ["httpx/_client.py"],
+                     "tests": ["tests/test_{0}.py".format(t)],
+                     "symbols": ["sym_{0}".format(t)]}]) for t in range(1, ml.MAX_CONTRACTS + 1)]
+        _seed(d, big)
+        raw = "Refactor httpx/_client.py to unify everything."   # refactor + file overlap -> all hit
+        spec = _spec(target_files=["httpx/_client.py"], scope="broad")
+        cl = ml.refactor_guard_checklist(d, raw, spec)
+        truthy("guard fired", bool(cl))
+        truthy("guard output capped at GUARD_MAX_CHARS (+ omission note slack)",
+               len(cl) <= ml.GUARD_MAX_CHARS + 120)
+        truthy("omission note present when truncated", "omitted for length" in cl)
+
+
+def test_state_summary_is_capped():
+    # PR#44 #11: the always-on ProjectState header must be bounded too.
+    with tempfile.TemporaryDirectory() as d:
+        big = [(t, [{"feature": "feat-{0}".format(t),
+                     "contract": "obligation " + ("y" * 300)}]) for t in range(1, ml.MAX_CONTRACTS + 1)]
+        _seed(d, big)
+        summ = ml.ledger_state_summary(d)
+        truthy("state summary capped",
+               len(summ) <= ml.STATE_SUMMARY_MAX_CHARS + 120)
+
+
+def test_file_regex_broadened():
+    # PR#44 #12: config/doc contracts must be detectable, version numbers must not.
+    impacted = ml._impacted_files("bump the version in setup.cfg and pyproject.toml; see README.md",
+                                  _spec())
+    truthy("setup.cfg detected", "setup.cfg" in impacted)
+    truthy("pyproject.toml detected", "pyproject.toml" in impacted)
+    truthy("README.md detected", "README.md" in impacted)
+    no_files = ml._impacted_files("upgrade to version 1.5 and 2.0", _spec())
+    check("version numbers are not files", no_files, set())
+
+
 if __name__ == "__main__":
     for t in (test_merge_upsert, test_recency_bound, test_update_ledger_with_fake_slm,
               test_run3_distance_independent, test_run4_retry_after_surfaced,
               test_no_false_fire_on_unrelated_turn, test_overlap_fires_without_keyword,
-              test_is_refactor_signals, test_clear):
+              test_is_refactor_signals, test_clear,
+              test_merge_tolerates_scalar_and_empty_payloads,
+              test_merge_tolerates_non_list_new_contracts, test_mentions_word_boundary,
+              test_guard_no_false_fire_from_substring, test_slm_accepts_top_level_array,
+              test_slm_prose_is_failure_not_empty, test_slm_wrong_shape_is_failure,
+              test_guard_output_is_capped, test_state_summary_is_capped,
+              test_file_regex_broadened):
         t()
     if _failures:
         print("FAIL ({0} assertion(s)):".format(len(_failures)))
@@ -200,4 +322,6 @@ if __name__ == "__main__":
             print("  -", m)
         sys.exit(1)
     print("PASS: ledger merge/bound, SLM-path (mocked), distance-independent run3/run4 recall, "
-          "no-false-fire, keyword-free overlap, clear.")
+          "no-false-fire, keyword-free overlap, clear, + PR#44 hardening (scalar/empty/non-list "
+          "payloads, word-boundary matching, top-level-array, prose/wrong-shape => ok=False, "
+          "capped guard/state output, broadened file regex).")
