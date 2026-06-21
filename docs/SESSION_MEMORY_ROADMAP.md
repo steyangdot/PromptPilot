@@ -113,53 +113,56 @@ degradation fallback; pytest as eval truth. SLM provides only the *semantic ceil
 
 ---
 
-## 6. Build order — cost-gated, so the heavy machinery is built only if a cheap fix fails
+## 6. Build order — measurement first, heavy machinery only if the data demands it
 
-The guiding rule (user directive): **keep the flow light — gate the heavy parts behind a cheap control.** Build
-in stages; a decision gate after the cheap arms decides whether the SLM machinery is built at all.
+The guiding rule (user directive): **keep the flow light.** Stage 0 makes the measurement trustworthy; a decision
+gate then decides whether the SLM machinery is built at all. **Item 1 (the policy guard reword) was DROPPED** — it
+is a Level-2, migration-family-only fix with little long-term value; the real lever is the schema/reasoning path
+(Stage 2), not a guard string.
 
-### Stage 0 — DO NOW (cheap, not chain_long-specific, no SLM machinery)
-1. **Policy guard wording** — additive/back-compat default; explicit removal ⇒ update all call-sites/tests.
-2. `print_memory_ab` — drop "rewrite held constant" → "architecture vs architecture" (review P3b).
-3. Report `ledger_ok=False` + no-edit-bail runs **separately** from real regressions (review P1; classes `destructive_migration`/`execution_miss`/`agent_bail`/`ledger_degraded`).
-4. **Fixture-text fix** in `chain_long_fixture.py` — inspection/search commands allowed; only test *execution* forbidden (caused run-4's bail). Apply to both arms.
-5. **Oracle fix** (review P2a) — expand the end-state oracle beyond `pytest -k timeout` (it missed pool_size orphans); treat `pytest_no_match` (rc=5) as **invalid, not clean**; give each fixture an **oracle manifest** (`oracle_commands` + `static_checks` + `expected_failure_class`).
-6. Lock the new guard wording with a `_test_memory_ledger.py` unit test.
+### Stage 0 — measurement-validity + hygiene  (✅ IMPLEMENTED — this PR)
+- ~~**Policy guard wording**~~ — **DROPPED** (migration-family band-aid; see above).
+- ✅ `print_memory_ab` — drop "rewrite held constant" → "architecture-vs-architecture" (review P3b).
+- ✅ `classify_run()` — report `ledger_degraded` / `no_edit_bail` runs **separately** from real regressions, so a degraded/bailed run isn't averaged in as clean (review P1).
+- ✅ **Fixture-text fix** (`chain_long_fixture.py`) — inspection/search allowed; only test *execution* forbidden (caused run-4's bail). Both arms.
+- ✅ **Oracle fix** (review P2a) — broaden `-k timeout` → `_ORACLE_K` (catches non-timeout orphans, e.g. pool_size); treat rc 5/124/125 as `pytest_valid=False` (**invalid, not clean**); `k_expr` = per-fixture oracle-manifest hook.
+- ✅ `research/_test_stage0_fixes.py` — unit tests for `_pytest_flags`, the broadened oracle, and `classify_run`.
 
-### Stage 1 — run the cheap arms, then DECIDE
-Reuse the A/B rig (chain_long, N=5, codex, slm-openai-v2, clean-main prpt, baseline `d764bfc`):
-- **A0** — archived current mechanical baseline (today's 4/5-taxed run; already on disk).
-- **A1** — mechanical ledger **+ the Stage-0 cheap fixes** only.
-- **C** — `A1` **+ policy guard wording** (the prompt-only fix).
+### Stage 1 — re-measure HONESTLY, then DECIDE
+With item 1 dropped there is no cheap *fix* arm; Stage 1 is a corrected *measurement* of the existing tax:
+- **Re-score (free, no paid run):** apply `classify_run()` + the broadened oracle to the existing A/B data → the honest, mode-separated taxed count (run2 was `ledger_degraded`, run4 a `no_edit_bail` — both drop out of the destructive-migration tally, likely pulling with_memory toward parity).
+- **A1 (optional fresh run):** mechanical ledger + Stage-0 fixes, N=5, to confirm the honest tax on a clean run.
 
-**Decision gate:** if **C reaches ≤2/5 taxed** (pre-registered bar), **STOP — the SLM machinery is not built.** A
-prompt change captured the fix. Only if **C falls short** proceed to Stage 2.
+**Decision gate:** if the honest tax is already ~parity with native (the degraded/bail runs were inflating "4/5"),
+the continuity gap is largely a *measurement* artifact and **no further machinery is built.** Only if a **real
+residual destructive-migration tax remains** proceed to Stage 2.
 
-### Stage 2 — ONLY IF Stage 1 fails (the heavy path, gated behind the gate above)
-1. **Schema-carry** (review P1c) — extend `merge_contracts` + persistence to keep `kind`/`anchorless`/`watch_for` (+ `call_sites`/`consumers`); unit-test that intended fields round-trip and junk is sanitized.
-2. **Evidence plumbing** (review P1b) — rename the after-turn call `_slm_extract_and_audit()`; snapshot the **prior ledger before merge**; capture a **bounded `git diff`** (reuse `capture_end_state`'s) + removed/added-symbol summary; pass *relevant prior contracts + bounded evidence*. Return `{contracts:[…], audits:[{feature,status,evidence,suggested_repair}]}`.
-3. **Verifier** (#1) with anti-leniency + mandatory diff-substring evidence + the budgets/reporting from §5.
-4. **Light gated repair** (lightened from review P1a — *not* an always-on loop): on a **high-confidence `violated`** verdict at a modifiable turn — and **immediately on the final turn** (no N+1 there) — fire **one** targeted repair turn, then re-capture end-state. Measure **`violations_detected` vs `violations_repaired`** separately; the fix is not "successful" if it only improves labeling.
-5. **B** — `A1` + miner-slice + verifier + gated repair.
+### Stage 2 — ONLY IF a real residual tax remains (the SLM-reasoning path, gated)
+1. **Schema-carry** (review P1c) — extend `merge_contracts` + persistence to keep `kind`/`anchorless`/`watch_for` (+ `call_sites`/`consumers`); unit-test round-trip + junk-sanitization.
+2. **Evidence plumbing** (review P1b) — `_slm_extract_and_audit()`; snapshot the **prior ledger before merge**; capture a **bounded `git diff`** (reuse `capture_end_state`'s) + removed/added-symbol summary; return `{contracts:[…], audits:[{feature,status,evidence,suggested_repair}]}`.
+3. **Verifier** (instrument-first) with anti-leniency + mandatory diff-substring evidence + the budgets/reporting from §5.
+4. **Light gated repair** (review P1a, lightened — *not* an always-on loop): on a **high-confidence `violated`** verdict at a modifiable turn — and **immediately on the final turn** (no N+1 there) — fire **one** targeted repair turn, then re-capture end-state. Measure `violations_detected` vs `violations_repaired` separately.
+5. **B** — `A1` + schema-slice + verifier + gated repair.
 
 ### The deciding comparison & metrics
-- **Arms:** `A0` (archived) · `A1` (mech+cheap) · `C` (A1+guard wording) · `B` (A1+verifier+repair). **B vs C** decides whether the SLM machinery beats a prompt-only fix; A0/A1 isolate the cheap-fix effect (review P2b).
-- **Primary metric = taxed-run count via the oracle manifest** (pytest on clean-baseline-applied diffs for the orphan class — non-circular), **not** tokens, **not** end-state (ceilings at 1.000).
-- **Secondary:** total tokens within warmth-noise of `A1` (win held); verifier precision/recall vs the pytest oracle; `verifier_input_tokens`/latency/parse-fail/degraded-turn (the budgeted-invariant report).
-- **Static divergent-fixture eval** (off the chain): ~10 hand-labeled cases per class (ms-drift / cents-invariant / ruled-out-lead), graded by a **different tier** (mini/Haiku) against a fixed key — the only way to score the anchorless classes pytest can't see.
-- **Pre-register** the threshold ("C or B must reach ≤2/5 to beat A1") before running (n3-noise lesson).
+- **Arms:** `A0` (archived) · `A1` (mech + Stage-0 fixes) · `B` (A1 + verifier + gated repair). **B vs A1** decides whether the SLM machinery reduces the residual tax. *(No Arm C — the guard-reword fix was dropped.)*
+- **Primary metric = taxed-run count via the oracle** (`_ORACLE_K` / pytest on clean-baseline-applied diffs — non-circular), **not** tokens, **not** end-state (ceilings at 1.000), with `classify_run` excluding degraded/bail runs.
+- **Secondary:** total tokens within warmth-noise of `A1`; verifier precision/recall vs the pytest oracle; `verifier_input_tokens`/latency/parse-fail/degraded-turn.
+- **Static divergent-fixture eval** (off the chain): ~10 hand-labeled cases per class (ms-drift / cents-invariant / ruled-out-lead), graded by a **different tier** (mini/Haiku) against a fixed key.
+- **Pre-register** the threshold ("B must reach ≤2/5 to beat A1") before running (n3-noise lesson).
 
 ### Generalization (after the chain_long experiment)
 Build matrix fixture **#1 (data-semantic drift)** — medium effort, deterministic oracle — the first real test of
-whether the tax/fix generalize beyond code contracts (and the one that shows the guard wording *misdirects*).
+whether the tax/fix generalize beyond code contracts (and the one that shows a migration-style guard *misdirects*).
 
 ---
 
 ## 7. One-line summary
 
-`with_memory` is a confirmed **token win** and a **continuity non-improvement**. Fix it **cheapest-first**: try
-the **policy guard reword (Arm C)** before any SLM machinery, and only if that falls short build the heavier path
-— a post-turn **SLM verifier (measurement first, fix-enabler second) + a light gated repair turn**, fed real
-**diff + prior-ledger evidence**, on a **schema that carries non-code contracts** — validated by **non-circular
-oracles** (pytest + hand-labeled fixtures, graded by a different model tier) and proven on **structurally
-different repos/tasks**, not just chain_long. Cost isn't the blocker, but treat it as a **budgeted invariant**.
+`with_memory` is a confirmed **token win** and a **continuity non-improvement**. First **re-measure honestly**
+(the Stage-0 fixes — corrected oracle + degraded/bail classification — shipped in this PR) to see how much of the
+"4/5" tax is real vs measurement artifact; **only if a real residual tax remains** build the heavier path — a
+post-turn **SLM verifier (instrument-first) + a light gated repair**, fed real **diff + prior-ledger evidence**,
+on a **schema that carries non-code contracts** — validated by **non-circular oracles** (pytest + hand-labeled
+fixtures, graded by a different tier) and proven on **structurally different repos/tasks**, not just chain_long.
+The migration-family guard reword was dropped. Cost isn't the blocker, but treat it as a **budgeted invariant**.
