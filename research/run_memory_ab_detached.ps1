@@ -23,6 +23,10 @@ $env:PATH = "C:\Users\magicQ\AppData\Roaming\npm;" + $env:PATH
 $env:CODEX_TIMEOUT_SEC = "1200"
 $runs = 5
 $py  = "C:\Users\magicQ\AppData\Local\Programs\Python\Python311\python.exe"
+# research/data/ is gitignored, so on a clean checkout it does not exist yet and
+# Start-Process cannot open the redirect targets before python starts. Create it first.
+$dataDir = Join-Path $root "research\data"
+if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Force -Path $dataDir | Out-Null }
 $out = "$root\research\data\memory_ab_n$runs.log"
 $err = "$root\research\data\memory_ab_n$runs.err"
 $pa  = "-u research\chain_test_v2.py --chain long --tool codex --runs $runs --skip-no-session --include-memory --normalizer slm-openai-v2"
