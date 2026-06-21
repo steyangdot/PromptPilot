@@ -31,7 +31,13 @@ persists, and for `with_session` (fresh exec/turn) each turn carries its own.
 """
 from __future__ import annotations
 
-_GUARD = " Edit the code/files only — do NOT run pytest, the test suite, or any tests."
+# Stage-0 fix: the old wording ("Edit the code/files only — do NOT run ... any tests")
+# was misread by an agent as "run NO commands at all" and it bailed on the final
+# refactor (with_memory run4, T13) rather than inspecting the file. Disambiguate:
+# inspection/search is allowed; only test EXECUTION is forbidden (the load-bearing
+# intent — httpx's network tests hang with no server, the pilot-1 wedge).
+_GUARD = (" You MAY read, grep, and inspect any files to do this well; "
+          "do NOT EXECUTE tests (no pytest or test-suite runs).")
 
 def _t(raw, files, action="modify", ref=True):
     return {"raw": raw + _GUARD, "expected_files": files,
