@@ -205,14 +205,18 @@ REFERENT_CASES = [
 # The non-circular oracle
 # ---------------------------------------------------------------------------
 def _pytest(cwd: Path, timeout_s: int = 60) -> bool:
-    """Run the case's pytest; return True iff it PASSED (rc==0). Bounded."""
+    """Run the case's pytest; return True iff it PASSED (rc==0), False if it RAN and did
+    not pass (incl. a bounded timeout). Infra failures (python/pytest missing, OSError)
+    are NOT swallowed — they propagate so run_orphan_oracle marks the case 'error' instead
+    of silently fabricating an 'orphaned': the old bare `except: return False` turned an
+    infra break on the AFTER run into a False, which reads as a fabricated orphan."""
     try:
         p = subprocess.run([sys.executable, "-m", "pytest", "test_lib.py", "-q",
                             "--no-header", "-p", "no:cacheprovider"],
                            cwd=str(cwd), capture_output=True, text=True, timeout=timeout_s)
-        return p.returncode == 0
-    except Exception:
+    except subprocess.TimeoutExpired:
         return False
+    return p.returncode == 0
 
 
 def run_orphan_oracle(case: dict) -> dict:
@@ -223,10 +227,16 @@ def run_orphan_oracle(case: dict) -> dict:
         root = Path(d)
         for path, src in case["before"].items():
             (root / path).write_text(src, encoding="utf-8")
-        before_passed = _pytest(root)
-        for path, src in case["change"].items():           # apply the migration
-            (root / path).write_text(src, encoding="utf-8")
-        after_passed = _pytest(root)
+        try:
+            before_passed = _pytest(root)
+            for path, src in case["change"].items():        # apply the migration
+                (root / path).write_text(src, encoding="utf-8")
+            after_passed = _pytest(root)
+        except Exception as e:
+            # An infra failure is NOT a test result — surface it as 'error' rather than
+            # let a broken environment masquerade as an 'orphaned' (false ground truth).
+            return {"id": case["id"], "before_passed": None, "after_passed": None,
+                    "verdict": "error", "error": str(e)}
     verdict = "orphaned" if (before_passed and not after_passed) else \
               ("clean" if (before_passed and after_passed) else "malformed")
     return {"id": case["id"], "before_passed": before_passed,
@@ -237,17 +247,33 @@ def run_orphan_oracle(case: dict) -> dict:
 # Scorers — grade a candidate verifier/retriever against the gold labels
 # ---------------------------------------------------------------------------
 def score_orphan_predictions(preds: dict) -> dict:
-    """preds: {case_id: 'orphaned'|'clean'}. Precision/recall for the 'orphaned' class vs gold."""
-    tp = fp = fn = tn = 0
+    """preds: {case_id: 'orphaned'|'clean'}. Precision/recall for the 'orphaned' class vs gold.
+
+    A prediction that is neither 'orphaned' nor 'clean' (None, a crash, 'malformed',
+    'UNKNOWN', ...) is counted as `invalid` and is NEVER credited as a true negative — a
+    verifier that crashes on a clean case must not silently inflate specificity. (Bug this
+    guards: the old `g=='clean' and p != 'orphaned'` branch scored ANY non-orphaned
+    prediction — including a crash/None — as a correct rejection, fabricating precision.)"""
+    tp = fp = fn = tn = invalid = 0
     for c in ORPHAN_CASES:
         g, p = c["gold"], preds.get(c["id"])
-        if g == "orphaned" and p == "orphaned": tp += 1
-        elif g == "clean" and p == "orphaned": fp += 1
-        elif g == "orphaned" and p != "orphaned": fn += 1
-        elif g == "clean" and p != "orphaned": tn += 1
+        if p not in ("orphaned", "clean"):
+            invalid += 1
+        if g == "orphaned":
+            if p == "orphaned":
+                tp += 1
+            else:                          # clean OR invalid prediction on an orphan = missed
+                fn += 1
+        else:  # g == "clean"
+            if p == "orphaned":
+                fp += 1
+            elif p == "clean":
+                tn += 1
+            # an invalid prediction on a clean case is counted in `invalid` only — not a TN
     prec = tp / (tp + fp) if (tp + fp) else None
     rec = tp / (tp + fn) if (tp + fn) else None
-    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "precision": prec, "recall": rec}
+    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "invalid": invalid,
+            "precision": prec, "recall": rec}
 
 
 def score_referent_predictions(preds: dict) -> dict:
@@ -277,9 +303,12 @@ if __name__ == "__main__":
     # The oracle, fed the TRUE labels, must reproduce them perfectly (it IS the truth here).
     oracle_self = {c["id"]: run_orphan_oracle(c)["verdict"] for c in ORPHAN_CASES}
     s = score_orphan_predictions(oracle_self)
-    print("  oracle vs gold: precision={0} recall={1} (must be 1.0/1.0)".format(s["precision"], s["recall"]))
+    print("  oracle vs gold: precision={0} recall={1} (must be 1.0/1.0); invalid={2}".format(
+        s["precision"], s["recall"], s["invalid"]))
     if s["precision"] != 1.0 or s["recall"] != 1.0:
         fails.append("oracle did not perfectly reproduce the by-construction labels")
+    if s["invalid"]:
+        fails.append("oracle produced {0} invalid verdict(s) (neither orphaned nor clean)".format(s["invalid"]))
 
     print("\n=== REFERENT ground-truth set (labels; scored once a retriever exists) ===")
     for c in REFERENT_CASES:

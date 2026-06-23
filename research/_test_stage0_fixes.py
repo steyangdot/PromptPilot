@@ -50,8 +50,10 @@ def test_oracle_k_broadened():
 
 
 # --- classify_run ------------------------------------------------------------
-def _turn(turn, changed, ledger_ok=True, timed_out=False, censored=False):
+def _turn(turn, changed, ledger_ok=True, timed_out=False, censored=False,
+          expected_action="modify"):
     return {"turn": turn, "ledger_ok": ledger_ok, "timed_out": timed_out,
+            "expected_action": expected_action,
             "score": {"changed": changed, "censored": censored}}
 
 
@@ -92,11 +94,49 @@ def test_classify_degraded_precedence():
     check("degraded takes precedence over bail", ct.classify_run(runs)["class"], "ledger_degraded")
 
 
+def test_classify_explain_final_not_bail():
+    # an 'explain' final turn that edits nothing is CORRECT, not a bail (review: expected_action)
+    runs = [_turn(1, ["a.py"]), _turn(2, ["b.py"]), _turn(3, [], expected_action="explain")]
+    check("explain final no-edit != bail", ct.classify_run(runs)["class"], "clean")
+
+
+def test_classify_empty_run():
+    # an empty run is malformed -> 'unknown', never silently 'clean' (review)
+    check("empty run is unknown not clean", ct.classify_run([])["class"], "unknown")
+
+
+def test_score_orphan_tn_requires_clean():
+    # The oracle scorer must NOT credit a crashed/None prediction on a clean case as a true
+    # negative (the old `p != 'orphaned'` branch fabricated specificity). (review, _oracle_groundtruth)
+    import _oracle_groundtruth as og
+    clean_ids = [c["id"] for c in og.ORPHAN_CASES if c["gold"] == "clean"]
+    orph_ids = [c["id"] for c in og.ORPHAN_CASES if c["gold"] == "orphaned"]
+    truthy("fixture has >=2 clean cases for the crash test", len(clean_ids) >= 2)
+    # all orphans caught; one clean predicted correctly; the rest CRASH (None)
+    preds = {cid: "orphaned" for cid in orph_ids}
+    preds[clean_ids[0]] = "clean"
+    for cid in clean_ids[1:]:
+        preds[cid] = None
+    s = og.score_orphan_predictions(preds)
+    check("tn counts only the clean-predicted clean case", s["tn"], 1)
+    check("crashed clean preds counted as invalid, not tn", s["invalid"], len(clean_ids) - 1)
+    check("no false positives", s["fp"], 0)
+    check("recall still perfect (all orphans caught)", s["recall"], 1.0)
+    # a verifier that crashes on EVERY clean case must score tn=0 (no fabricated specificity)
+    all_crash = {cid: "orphaned" for cid in orph_ids}
+    for cid in clean_ids:
+        all_crash[cid] = None
+    s2 = og.score_orphan_predictions(all_crash)
+    check("all-crash clean -> tn=0 (no fabricated specificity)", s2["tn"], 0)
+    check("all-crash clean -> invalid==#clean", s2["invalid"], len(clean_ids))
+
+
 if __name__ == "__main__":
     for t in (test_pytest_flags, test_oracle_k_broadened, test_classify_clean,
               test_classify_ledger_degraded, test_classify_no_edit_bail,
               test_classify_final_timeout_is_not_bail, test_classify_early_empty_is_not_bail,
-              test_classify_degraded_precedence):
+              test_classify_degraded_precedence, test_classify_explain_final_not_bail,
+              test_classify_empty_run, test_score_orphan_tn_requires_clean):
         t()
     if _fail:
         print("FAIL ({0} assertion(s)):".format(len(_fail)))
@@ -105,4 +145,5 @@ if __name__ == "__main__":
         sys.exit(1)
     print("PASS: _pytest_flags (rc->valid; no-match/hang/error = INVALID not clean), "
           "broadened oracle keywords, classify_run (clean/ledger_degraded/no_edit_bail; "
-          "final-only bail; timeout != bail; degraded precedence).")
+          "final-only bail; timeout != bail; degraded precedence; explain-final != bail; "
+          "empty run = unknown), score_orphan_predictions (crash/None != true-negative).")
