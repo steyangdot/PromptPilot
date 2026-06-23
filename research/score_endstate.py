@@ -251,6 +251,8 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
         'diff_says_fixed': diff_says_fixed,
         'test_files': test_files, 'any_test_written': any_test_written,
         'tests_pass': tests_pass,
+        'tests_valid': None,   # mined path can't assert oracle validity -> None (schema parity
+                               # with the captured path; endstate_score treats None as "assume valid")
         'timeout_test_evidence': 'targeted-green' if timeout_test_passed else (
             'named-PASS' if timeout_pytest else 'none'),
         'last_pytest': last_pytest,
@@ -341,6 +343,9 @@ def score_captured_endstate(es: dict, arm: str = '', run: int = 0) -> dict:
     # never a definite fail. Derive validity for artifacts written before the flag existed.
     pytest_valid = es.get('pytest_valid')
     if pytest_valid is None and has_pytest:
+        # Back-compat for artifacts written before the flag. This rc->valid rule MUST match
+        # chain_test_v2._pytest_flags (the canonical writer: pytest_valid = rc in (0,1)); keep
+        # them in sync if either changes. Not imported, to keep this re-scorer dependency-free.
         pytest_valid = es.get('pytest_rc') in (0, 1)
     tests_valid = bool(pytest_valid) if has_pytest else None
     if has_pytest and pytest_valid is False:

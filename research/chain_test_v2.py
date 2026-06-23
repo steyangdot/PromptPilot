@@ -1212,7 +1212,10 @@ def aggregate_runs(runs: list[list[dict]], tool: str,
                 "bailed_rate_clean": _mean([1 if pr["score"]["bailed"] else 0 for pr in per_run_clean]),
             }
         else:
-            clean_extra = {}
+            # keep the schema STABLE: emit the clean-view keys as None when classification
+            # wasn't supplied, so a consumer never hits a sometimes-absent key.
+            clean_extra = {"n_clean_runs": None, "success_mean_clean": None,
+                           "bailed_rate_clean": None}
 
         success_vals = [pr["score"]["success"] for pr in per_run]
         bailed_vals = [1 if pr["score"]["bailed"] else 0 for pr in per_run]
@@ -1557,6 +1560,8 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
     if run_classes:
         # Stage-0 (review P1): per-run continuity class for every arm, so the honest,
         # mode-separated re-score can EXCLUDE ledger_degraded/no_edit_bail runs from the tax.
+        # Keys are the run_chain_once VARIANT names (no_session/with_session/builtin/
+        # with_memory/...), NOT the "<arm>_agg" summary keys — join a re-score on the variant.
         summary["run_classes"] = run_classes
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, default=str), encoding="utf-8")
@@ -1605,6 +1610,15 @@ def dry_run_chain(chain: dict, tool: str) -> None:
 # Main runner: per chain x tool, runs N passes per variant, aggregates
 # ---------------------------------------------------------------------------
 
+# Final-turn actions that legitimately produce NO file edit — a no-edit final turn here is
+# CORRECT, not a bail. Everything NOT in this set (modify/add/edit/refactor/create/...) expects
+# an edit; a MISSING/empty expected_action also counts as edit-expecting so re-scoring older run
+# data (saved before the key existed) keeps the original bail behavior. Vocabularies in use:
+# chain_test_v2 = {modify, explain}; _smoke_with_memory = {add, refactor, edit}.
+_NON_EDIT_ACTIONS = frozenset({"explain", "verify", "review", "read", "inspect", "answer",
+                               "none", "noop"})
+
+
 def classify_run(run_results) -> dict:
     """Stage-0 (review P1): deterministic per-run continuity class, so a DEGRADED or
     BAILED run is reported separately and never silently averaged into a 'clean'
@@ -1614,10 +1628,11 @@ def classify_run(run_results) -> dict:
     works when re-scoring existing run data.
 
       - ledger_degraded : a non-timeout turn whose ledger extraction failed (ledger_ok False)
-      - no_edit_bail    : the FINAL turn EXPECTED an edit (expected_action=="modify"), ran
-                          (not timed-out/censored), but produced no edits (changed==[]) — an
-                          execution miss / bail. An 'explain' final turn that edits nothing is
-                          CORRECT, not a bail (review: was ignoring expected_action).
+      - no_edit_bail    : the FINAL turn EXPECTED an edit (expected_action NOT in the read-only
+                          set _NON_EDIT_ACTIONS; missing key counts as edit-expecting), ran (not
+                          timed-out / censored / recovered-timeout), but produced no edits
+                          (changed==[]) — an execution miss / bail. An 'explain' (or other
+                          read-only) final turn that edits nothing is CORRECT, not a bail.
       - clean           : none of the above
       - unknown         : empty run_results (no turns) — malformed, NOT clean
 
@@ -1631,8 +1646,10 @@ def classify_run(run_results) -> dict:
     final = run_results[-1]
     final_no_edit = bool(
         not final.get("timed_out")
+        and not final.get("recovered_after_timeout")   # a recovered TIMEOUT is not an execution bail
         and not (final.get("score") or {}).get("censored")
-        and final.get("expected_action") == "modify"   # only an edit-expecting final turn can bail
+        # edit-expecting iff not a read-only action; missing/empty -> assume edit (re-score old data)
+        and (final.get("expected_action") or "modify") not in _NON_EDIT_ACTIONS
         and not (final.get("score") or {}).get("changed"))
     cls = "ledger_degraded" if led_fail else ("no_edit_bail" if final_no_edit else "clean")
     return {"class": cls, "ledger_failed_turns": led_fail, "final_no_edit": final_no_edit}

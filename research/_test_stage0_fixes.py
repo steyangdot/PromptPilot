@@ -131,12 +131,38 @@ def test_score_orphan_tn_requires_clean():
     check("all-crash clean -> invalid==#clean", s2["invalid"], len(clean_ids))
 
 
+def test_classify_missing_action_still_bails():
+    # re-scoring OLD run data (records predating expected_action): a no-edit final turn must
+    # STILL flag no_edit_bail — a missing key defaults to edit-expecting (review).
+    runs = [{"turn": 1, "ledger_ok": True, "timed_out": False,
+             "score": {"changed": ["a.py"], "censored": False}},
+            {"turn": 2, "ledger_ok": True, "timed_out": False,
+             "score": {"changed": [], "censored": False}}]   # no expected_action key
+    check("missing expected_action -> still bails", ct.classify_run(runs)["class"], "no_edit_bail")
+
+
+def test_classify_edit_vocab_bails():
+    # a non-"modify" EDIT action (smoke vocab: add/edit/refactor) with no edits is a bail (review)
+    runs = [_turn(1, ["a.py"]), _turn(2, [], expected_action="add")]
+    check("'add' final no-edit -> bail", ct.classify_run(runs)["class"], "no_edit_bail")
+
+
+def test_classify_recovered_timeout_final_not_bail():
+    # a RECOVERED timeout on the final turn is a timeout, not an execution bail (review)
+    runs = [_turn(1, ["a.py"]),
+            {"turn": 2, "ledger_ok": True, "timed_out": False, "recovered_after_timeout": True,
+             "expected_action": "modify", "score": {"changed": [], "censored": False}}]
+    check("recovered-timeout final != bail", ct.classify_run(runs)["class"], "clean")
+
+
 if __name__ == "__main__":
     for t in (test_pytest_flags, test_oracle_k_broadened, test_classify_clean,
               test_classify_ledger_degraded, test_classify_no_edit_bail,
               test_classify_final_timeout_is_not_bail, test_classify_early_empty_is_not_bail,
               test_classify_degraded_precedence, test_classify_explain_final_not_bail,
-              test_classify_empty_run, test_score_orphan_tn_requires_clean):
+              test_classify_empty_run, test_score_orphan_tn_requires_clean,
+              test_classify_missing_action_still_bails, test_classify_edit_vocab_bails,
+              test_classify_recovered_timeout_final_not_bail):
         t()
     if _fail:
         print("FAIL ({0} assertion(s)):".format(len(_fail)))
@@ -146,4 +172,5 @@ if __name__ == "__main__":
     print("PASS: _pytest_flags (rc->valid; no-match/hang/error = INVALID not clean), "
           "broadened oracle keywords, classify_run (clean/ledger_degraded/no_edit_bail; "
           "final-only bail; timeout != bail; degraded precedence; explain-final != bail; "
-          "empty run = unknown), score_orphan_predictions (crash/None != true-negative).")
+          "empty run = unknown; missing-action still bails; edit-vocab bails; recovered-timeout "
+          "!= bail), score_orphan_predictions (crash/None != true-negative).")

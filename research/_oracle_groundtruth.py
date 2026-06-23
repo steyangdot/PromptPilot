@@ -205,17 +205,15 @@ REFERENT_CASES = [
 # The non-circular oracle
 # ---------------------------------------------------------------------------
 def _pytest(cwd: Path, timeout_s: int = 60) -> bool:
-    """Run the case's pytest; return True iff it PASSED (rc==0), False if it RAN and did
-    not pass (incl. a bounded timeout). Infra failures (python/pytest missing, OSError)
-    are NOT swallowed — they propagate so run_orphan_oracle marks the case 'error' instead
-    of silently fabricating an 'orphaned': the old bare `except: return False` turned an
-    infra break on the AFTER run into a False, which reads as a fabricated orphan."""
-    try:
-        p = subprocess.run([sys.executable, "-m", "pytest", "test_lib.py", "-q",
-                            "--no-header", "-p", "no:cacheprovider"],
-                           cwd=str(cwd), capture_output=True, text=True, timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        return False
+    """Run the case's pytest; return True iff it PASSED (rc==0), False if it RAN and FAILED
+    (rc != 0). Does NOT swallow exceptions: a bounded-timeout (TimeoutExpired) or infra
+    failure (python/pytest missing, OSError) PROPAGATES so run_orphan_oracle records the case
+    as 'error' instead of fabricating an 'orphaned' — a swallowed False on the AFTER run reads
+    as a fabricated orphan, and on these sub-second by-construction cases a 60s timeout means
+    the ENVIRONMENT is wrong, not that the change broke the test."""
+    p = subprocess.run([sys.executable, "-m", "pytest", "test_lib.py", "-q",
+                        "--no-header", "-p", "no:cacheprovider"],
+                       cwd=str(cwd), capture_output=True, text=True, timeout=timeout_s)
     return p.returncode == 0
 
 
@@ -232,9 +230,11 @@ def run_orphan_oracle(case: dict) -> dict:
             for path, src in case["change"].items():        # apply the migration
                 (root / path).write_text(src, encoding="utf-8")
             after_passed = _pytest(root)
-        except Exception as e:
-            # An infra failure is NOT a test result — surface it as 'error' rather than
-            # let a broken environment masquerade as an 'orphaned' (false ground truth).
+        except (subprocess.SubprocessError, OSError) as e:
+            # A timeout or infra failure is NOT a test result — surface it as 'error' rather
+            # than let a broken/slow environment masquerade as an 'orphaned' (false ground
+            # truth). Programming errors (KeyError, malformed case dict, ...) are deliberately
+            # NOT caught — they crash loudly so a bug can't hide behind a benign 'error'.
             return {"id": case["id"], "before_passed": None, "after_passed": None,
                     "verdict": "error", "error": str(e)}
     verdict = "orphaned" if (before_passed and not after_passed) else \
