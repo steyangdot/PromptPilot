@@ -316,23 +316,26 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
         hits = dict(contracts)
     if not hits:
         return ""
-    lines = ["[MEMORY — prior contracts to PRESERVE (prefer back-compat); migrate only if required]"]
+    lines = ["[MEMORY — prior contracts you MUST preserve; prefer back-compat, migrate only if required]"]
+    if refactor:
+        # Stage-2-lite ADDITIVE-BIAS reword (validated: research/stage2_guard_experiment.py). The prior
+        # "migrate ... to the new design / state why removed" framing was a ~no-op that let destructive
+        # kwarg removal through (the chain_long tax — memory_ab_result / ROADMAP Stage 2).
+        # Emit this directive FIRST (right after the header), NOT appended last: _join_capped drops whole
+        # TRAILING lines at GUARD_MAX_CHARS, so a last-appended directive silently vanished under many
+        # surfaced contracts — exactly the multi-contract refactor regime it exists to fix (code-review #1).
+        # Front-placement keeps the load-bearing instruction; the per-contract list truncates instead.
+        lines.append(
+            "This turn is a refactor/migration. PREFER ADDITIVE / back-compat: keep the existing public "
+            "names listed below WORKING and ADD the new form alongside them. Remove a public name ONLY if "
+            "truly required, and if you do you MUST update every listed call-site and test in THIS change "
+            "so none are orphaned. Do not silently drop any of them.")
     for feat, c in hits.items():
         lines.append("- {0}: {1}".format(feat, c.get("contract", "")).rstrip())
         if c.get("tests"):
             lines.append("    tests/call-sites that LOCK this — keep them GREEN: " + ", ".join(c["tests"]))
         if c.get("symbols"):
             lines.append("    symbols: " + ", ".join(str(s) for s in c["symbols"]))
-    if refactor:
-        # Stage-2-lite ADDITIVE-BIAS reword: the prior "migrate ... to the new design, or state why
-        # removed" framing plausibly NUDGED destructive kwarg removal (the chain_long tax — see
-        # memory_ab_result / SESSION_MEMORY_ROADMAP Stage 2). Bias explicitly toward back-compat;
-        # validated against research/_oracle_groundtruth.py via research/stage2_guard_experiment.py.
-        lines.append(
-            "This turn is a refactor/migration. PREFER ADDITIVE / back-compat: keep the existing public "
-            "names above WORKING and ADD the new form alongside them. Remove a public name ONLY if truly "
-            "required, and if you do you MUST update every listed call-site and test in THIS change so none "
-            "are orphaned. Do not silently drop any of the above.")
     return _join_capped(lines, GUARD_MAX_CHARS, omit_label="contract line(s)")
 
 
