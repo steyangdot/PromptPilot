@@ -107,8 +107,10 @@ def _print(out_dir: Path) -> None:
     wm_excl = [(x["run"], x["class"]) for x in wm if x["class"] != "clean"]
     wm_clean = [x["run"] for x in wm if x["class"] == "clean"]
     ws_clean = [x["run"] for x in ws if x["class"] == "clean"]
-    # Is the STORED in-place endstate pytest discriminative? (same rc on clean+excluded => no)
-    rcs = {x["pytest_rc"] for x in wm + ws}
+    # Is the STORED in-place endstate pytest discriminative? (same rc on clean+excluded => no).
+    # Exclude None: a missing pytest_rc means "not measured", not a value that separates taxed/clean
+    # (code-review: None mixed with a real rc would falsely read as DISCRIMINATIVE).
+    rcs = {x["pytest_rc"] for x in wm + ws if x["pytest_rc"] is not None}
     discriminative = len(rcs) > 1
     print(f"- classify_run EXCLUDES {len(wm_excl)}/{len(wm)} with_memory runs as non-valid tests of the "
           f"destructive-migration guard: {wm_excl}.")

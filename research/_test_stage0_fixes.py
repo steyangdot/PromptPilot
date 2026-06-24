@@ -155,6 +155,25 @@ def test_classify_recovered_timeout_final_not_bail():
     check("recovered-timeout final != bail", ct.classify_run(runs)["class"], "clean")
 
 
+def test_guard_framing_survives_many_contracts():
+    # code-review #1: the additive-bias directive must NOT be truncated away by GUARD_MAX_CHARS
+    # when many contracts are surfaced (the multi-contract refactor regime it exists for). It is
+    # emitted FIRST (after the header) precisely so the trailing-line cap can't drop it.
+    import tempfile
+    import memory_ledger as ml
+    d = tempfile.mkdtemp(prefix="s0guard_")
+    ml.clear_ledger(d)
+    led = ml.load_ledger(d)
+    ml.merge_contracts(led, [{"feature": "feat-%02d" % k,
+                              "contract": "contract %02d preserves the public kwarg_%02d argument" % (k, k),
+                              "tests": ["test_feat_%02d_kwarg" % k]} for k in range(20)], turn=1)
+    ml.save_ledger(d, led)
+    out = ml.refactor_guard_checklist(d, "refactor everything into one config dataclass", None)
+    ml.clear_ledger(d)
+    truthy("guard truncates SOMETHING at 20 contracts (cap exercised)", "omitted" in out)
+    truthy("additive-bias directive PRESENT even with 20 contracts", "PREFER ADDITIVE" in out)
+
+
 if __name__ == "__main__":
     for t in (test_pytest_flags, test_oracle_k_broadened, test_classify_clean,
               test_classify_ledger_degraded, test_classify_no_edit_bail,
@@ -162,7 +181,8 @@ if __name__ == "__main__":
               test_classify_degraded_precedence, test_classify_explain_final_not_bail,
               test_classify_empty_run, test_score_orphan_tn_requires_clean,
               test_classify_missing_action_still_bails, test_classify_edit_vocab_bails,
-              test_classify_recovered_timeout_final_not_bail):
+              test_classify_recovered_timeout_final_not_bail,
+              test_guard_framing_survives_many_contracts):
         t()
     if _fail:
         print("FAIL ({0} assertion(s)):".format(len(_fail)))
