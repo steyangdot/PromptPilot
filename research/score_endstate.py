@@ -251,6 +251,8 @@ def extract_run(out_dir: Path, arm: str, run: int) -> dict:
         'diff_says_fixed': diff_says_fixed,
         'test_files': test_files, 'any_test_written': any_test_written,
         'tests_pass': tests_pass,
+        'tests_valid': None,   # mined path can't assert oracle validity -> None (schema parity
+                               # with the captured path; endstate_score treats None as "assume valid")
         'timeout_test_evidence': 'targeted-green' if timeout_test_passed else (
             'named-PASS' if timeout_pytest else 'none'),
         'last_pytest': last_pytest,
@@ -266,17 +268,21 @@ def endstate_score(r: dict):
     fixed = lambda v: v == 'FIXED'
     both_fixed = fixed(r['sync']) and fixed(r['async'])
     any_unknown = 'UNKNOWN' in (r['sync'], r['async'])
-    if both_fixed and r['any_test_written'] and r['tests_pass']:
+    tests_valid = r.get('tests_valid', True)   # mined path has no oracle-validity flag -> assume valid
+    if both_fixed and r['any_test_written'] and r.get('tests_pass') is True:
         score = 1.0
     elif both_fixed:
-        score = 0.75            # bug fully fixed, tests partial/unverified
+        score = 0.75            # bug fully fixed; tests partial / unverified / oracle-invalid
     elif fixed(r['sync']) or fixed(r['async']):
         score = 0.5             # one transport fixed
     elif any_unknown:
         score = None            # insufficient evidence
     else:
         score = 0.0
-    conf = 'low' if any_unknown else 'high'
+    # low confidence when a transport verdict is unknown OR the test oracle did not actually
+    # evaluate the contract (rc 5/124/125): a 0.75 from an invalid oracle is not the same as a
+    # 0.75 from a green-but-no-regression-test run.
+    conf = 'low' if (any_unknown or tests_valid is False) else 'high'
     return score, conf
 
 
@@ -331,12 +337,30 @@ def score_captured_endstate(es: dict, arm: str = '', run: int = 0) -> dict:
         if ln.startswith('+++ ') and 'test' in ln.lower() and ln.rstrip().endswith('.py'):
             tf.add(Path(ln[4:].strip()).name)
     test_files = sorted(tf)
-    tests_pass = bool(es.get('pytest_passed'))     # real run, -k timeout, rc == 0
     has_pytest = 'pytest_rc' in es
+    # Stage-0 (review): CONSUME pytest_valid. rc 5 (no-match) / 124 (hang) / 125 (error) mean the
+    # oracle did NOT evaluate the contract -> the test outcome is UNKNOWN (None), never a pass and
+    # never a definite fail. Derive validity for artifacts written before the flag existed.
+    pytest_valid = es.get('pytest_valid')
+    if pytest_valid is None and has_pytest:
+        # Back-compat for artifacts written before the flag. This rc->valid rule MUST match
+        # chain_test_v2._pytest_flags (the canonical writer: pytest_valid = rc in (0,1)); keep
+        # them in sync if either changes. Not imported, to keep this re-scorer dependency-free.
+        pytest_valid = es.get('pytest_rc') in (0, 1)
+    tests_valid = bool(pytest_valid) if has_pytest else None
+    if has_pytest and pytest_valid is False:
+        tests_pass = None                           # ran but didn't evaluate the contract -> UNKNOWN
+    else:
+        tests_pass = bool(es.get('pytest_passed'))  # rc == 0 on a valid run (or no-pytest back-compat)
     last_pytest = None
     if has_pytest:
         tail = (es.get('pytest_tail', '') or '').splitlines()
-        last_pytest = (0, 1 if tests_pass else 0, 0 if tests_pass else 1, 0, tail[-1] if tail else '')
+        if tests_pass is True:
+            last_pytest = (0, 1, 0, 0, tail[-1] if tail else '')
+        elif tests_pass is None:
+            last_pytest = (0, 0, 0, 0, tail[-1] if tail else '')   # oracle invalid -> unknown
+        else:
+            last_pytest = (0, 0, 1, 0, tail[-1] if tail else '')
 
     return {
         'arm': arm, 'run': run, 'turns_present': 1,
@@ -344,10 +368,11 @@ def score_captured_endstate(es: dict, arm: str = '', run: int = 0) -> dict:
         'sync_state': 'captured', 'async_state': 'captured',
         'diff_says_fixed': fix['sync'] or fix['async'],
         'test_files': test_files, 'any_test_written': bool(test_files),
-        'tests_pass': tests_pass,
-        'timeout_test_evidence': 'live-pytest-green' if tests_pass else (
-            'no-timeout-test' if es.get('pytest_no_match') else
-            ('live-pytest-fail' if has_pytest else 'none')),
+        'tests_pass': tests_pass, 'tests_valid': tests_valid,
+        'timeout_test_evidence': 'live-pytest-green' if tests_pass is True else (
+            'no-timeout-test' if es.get('pytest_no_match') else (
+                'oracle-invalid' if (has_pytest and tests_valid is False) else (
+                    'live-pytest-fail' if has_pytest else 'none'))),
         'last_pytest': last_pytest,
         'n_fix_obs': sum(fix.values()), 'n_diff_obs': len(diff.splitlines()),
         'n_pytest': 1 if has_pytest else 0,

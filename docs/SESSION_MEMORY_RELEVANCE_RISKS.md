@@ -110,6 +110,21 @@ ratifies coherent fabrications.
 
 ---
 
+## Transcript-distillation — added risks (2026-06-23)
+Grounding the ledger in the codex rollout transcript (architecture §8) adds source-specific risks on
+top of the register. It also *extends* existing entries: **8/19** (the SLM may return literal `NEW` →
+`_norm_feature("NEW")`=`"new"` collapses every new contract → allocate a deterministic id before
+merge), **23** (run-isolation), **28** (cost).
+
+| # | sev/lik | dimension | risk | one-line mitigation |
+|---|---|---|---|---|
+| 36 | H/M | persistence | Wrong rollout selected — out-of-band `~/.codex/sessions`, stale survives the per-run reset, desktop-app interleave, and `with_memory` ∉ `uses_builtin` so thread_id isn't captured → ingest another run's diffs/tests | triple-key locate (`cwd==abspath` AND `id==thread_id` AND `mtime≥turn-t0`) + loud fallback; add per-turn thread_id capture for with_memory; never bare newest-mtime |
+| 37 | H/M | extraction | Turn-local mis-attribution — repo resets per *run*, not per *turn*, so cumulative git state credits earlier turns' edits to this one → false removal/preservation | derive turn-local changes from the rollout's own `patch_apply_end`; pre-turn `git diff HEAD` snapshot before `_run_one`; don't union cumulative `_git_modified_files` as turn-local |
+| 38 | M/M | schema | `patch_apply_end.changes` shape varies by kind (add→`content`, update→`unified_diff`, rename→`move_path`) and drifts by codex version (0.130→0.142) → silent empty bundle → guard goes quiet on a refactor turn | parser handles both `content`+`unified_diff`; `move_path`=migration; checked-in positive-control fixture fails LOUD on empty extraction |
+| 39 | M/L | extraction | Dual-stream hazard — distilling the lossy `--json` stdout (`file_change`=path+kind only) instead of the rich rollout | target the on-disk rollout only; assert presence of patch/diff evidence |
+
+---
+
 ## Coverage gaps (classes the 6 lanes *under*-surfaced)
 1. **Concurrency / lost-update race** — two arms or parallel runs writing the same `promptpilot_ledger_<hash>.json` (no file lock; `update_ledger` is read→merge→save) → lost updates.
 2. **Content-sourced prompt injection** — chain_long reads large httpx modules each turn; a symbol/comment mined from file content flows **unsanitized** into the pre-rewrite prompt / ledger.

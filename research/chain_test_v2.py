@@ -1165,7 +1165,8 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
 # Aggregation across N runs
 # ---------------------------------------------------------------------------
 
-def aggregate_runs(runs: list[list[dict]], tool: str) -> list[dict]:
+def aggregate_runs(runs: list[list[dict]], tool: str,
+                   run_classes: list[dict] | None = None) -> list[dict]:
     """
     Average per-turn metrics across N runs of the same chain+variant.
     Each `runs[k]` is a list of per-turn dicts.
@@ -1176,11 +1177,20 @@ def aggregate_runs(runs: list[list[dict]], tool: str) -> list[dict]:
     the arm's uncached total. `n_runs` is the count of NON-censored runs (the
     real denominator). If every run timed out for a turn, the turn is emitted
     with n_runs=0 / all_timed_out=True and zeroed means (no statistics.mean([])).
+
+    Stage-0 (review P1): when `run_classes` (per-run classify_run dicts, aligned
+    to `runs`) is supplied, each turn ALSO gets a CLEAN-ONLY success view
+    (`success_mean_clean`/`bailed_rate_clean`/`n_clean_runs`) that excludes
+    ledger_degraded/no_edit_bail runs — so a degraded run isn't averaged into the
+    headline continuity number. Token/cost means stay over all non-censored runs
+    (the spend was real); only the CONTINUITY view is clean-filtered.
     """
     if not runs:
         return []
     n_turns = len(runs[0])
     aggregated = []
+    clean_idx = ({k for k, c in enumerate(run_classes) if (c or {}).get("class") == "clean"}
+                 if run_classes is not None else None)
 
     def _mean(xs):
         return statistics.mean(xs) if xs else 0.0
@@ -1192,6 +1202,20 @@ def aggregate_runs(runs: list[list[dict]], tool: str) -> list[dict]:
         all_run = [r[i] for r in runs]
         per_run = [pr for pr in all_run if not turn_timed_out(pr, tool)]
         timed_out_count = len(all_run) - len(per_run)
+
+        if clean_idx is not None:
+            per_run_clean = [r[i] for k, r in enumerate(runs)
+                             if k in clean_idx and not turn_timed_out(r[i], tool)]
+            clean_extra = {
+                "n_clean_runs": len(per_run_clean),
+                "success_mean_clean": _mean([pr["score"]["success"] for pr in per_run_clean]),
+                "bailed_rate_clean": _mean([1 if pr["score"]["bailed"] else 0 for pr in per_run_clean]),
+            }
+        else:
+            # keep the schema STABLE: emit the clean-view keys as None when classification
+            # wasn't supplied, so a consumer never hits a sometimes-absent key.
+            clean_extra = {"n_clean_runs": None, "success_mean_clean": None,
+                           "bailed_rate_clean": None}
 
         success_vals = [pr["score"]["success"] for pr in per_run]
         bailed_vals = [1 if pr["score"]["bailed"] else 0 for pr in per_run]
@@ -1226,6 +1250,7 @@ def aggregate_runs(runs: list[list[dict]], tool: str) -> list[dict]:
             "output_tokens_stdev": _stdev(out_toks),
             "total_cost_mean": _mean(total_cost),       # cache-aware $/turn (claude real; codex notional)
             "wall_t_mean": _mean(wall),
+            **clean_extra,
         })
     return aggregated
 
@@ -1477,6 +1502,11 @@ def reparse_timed_out_turns(out_dir: Path, tool: str, verbose: bool = True) -> l
             sc = rec.get("score")
             if isinstance(sc, dict):
                 sc["censored"] = False
+                # `score.changed`/`success` are NOT recomputed here: they were captured at turn
+                # time from the real before/after file snapshot (edits that landed BEFORE the
+                # kill), and that snapshot is gone after the between-run reset — so the turn-time
+                # value is authoritative. Only token-derived fields (usage/cost, and `bailed`
+                # below) are recovered from the flushed stream.
                 # `bailed` was stamped True at kill time from the censored 0-tool-call
                 # usage; the recovered turn has its real tool-call count, so recompute it
                 # the same way score_turn does — else aggregate_runs' bail rate is
@@ -1508,7 +1538,8 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
                  builtin_agg: list[dict] | None = None,
                  slm_native_agg: list[dict] | None = None,
                  stacked_agg: list[dict] | None = None,
-                 memory_agg: list[dict] | None = None) -> None:
+                 memory_agg: list[dict] | None = None,
+                 run_classes: dict | None = None) -> None:
     summary = {
         "chain": chain_id,
         "tool": tool,
@@ -1526,6 +1557,12 @@ def save_summary(out_dir: Path, no_agg: list[dict] | None, with_agg: list[dict],
         summary["stacked_agg"] = stacked_agg
     if memory_agg is not None:
         summary["with_memory_agg"] = memory_agg
+    if run_classes:
+        # Stage-0 (review P1): per-run continuity class for every arm, so the honest,
+        # mode-separated re-score can EXCLUDE ledger_degraded/no_edit_bail runs from the tax.
+        # Keys are the run_chain_once VARIANT names (no_session/with_session/builtin/
+        # with_memory/...), NOT the "<arm>_agg" summary keys — join a re-score on the variant.
+        summary["run_classes"] = run_classes
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
@@ -1573,6 +1610,15 @@ def dry_run_chain(chain: dict, tool: str) -> None:
 # Main runner: per chain x tool, runs N passes per variant, aggregates
 # ---------------------------------------------------------------------------
 
+# Final-turn actions that legitimately produce NO file edit — a no-edit final turn here is
+# CORRECT, not a bail. Everything NOT in this set (modify/add/edit/refactor/create/...) expects
+# an edit; a MISSING/empty expected_action also counts as edit-expecting so re-scoring older run
+# data (saved before the key existed) keeps the original bail behavior. Vocabularies in use:
+# chain_test_v2 = {modify, explain}; _smoke_with_memory = {add, refactor, edit}.
+_NON_EDIT_ACTIONS = frozenset({"explain", "verify", "review", "read", "inspect", "answer",
+                               "none", "noop"})
+
+
 def classify_run(run_results) -> dict:
     """Stage-0 (review P1): deterministic per-run continuity class, so a DEGRADED or
     BAILED run is reported separately and never silently averaged into a 'clean'
@@ -1582,19 +1628,28 @@ def classify_run(run_results) -> dict:
     works when re-scoring existing run data.
 
       - ledger_degraded : a non-timeout turn whose ledger extraction failed (ledger_ok False)
-      - no_edit_bail    : the FINAL turn ran (not timed-out/censored) but produced no edits
-                          (changed==[]) — an execution miss / bail on the migration
-      - clean           : neither
+      - no_edit_bail    : the FINAL turn EXPECTED an edit (expected_action NOT in the read-only
+                          set _NON_EDIT_ACTIONS; missing key counts as edit-expecting), ran (not
+                          timed-out / censored / recovered-timeout), but produced no edits
+                          (changed==[]) — an execution miss / bail. An 'explain' (or other
+                          read-only) final turn that edits nothing is CORRECT, not a bail.
+      - clean           : none of the above
+      - unknown         : empty run_results (no turns) — malformed, NOT clean
 
     Returns {class, ledger_failed_turns, final_no_edit}. (Only the FINAL turn is used for
     the bail signal — an early changed==[] turn is often legitimately recovered later, so
     flagging every empty turn would over-fire.)"""
+    if not run_results:                       # an empty run is malformed, never 'clean'
+        return {"class": "unknown", "ledger_failed_turns": [], "final_no_edit": False}
     led_fail = [t.get("turn") for t in run_results
                 if t.get("ledger_ok") is False and not t.get("timed_out")]
-    final = run_results[-1] if run_results else None
+    final = run_results[-1]
     final_no_edit = bool(
-        final and not final.get("timed_out")
+        not final.get("timed_out")
+        and not final.get("recovered_after_timeout")   # a recovered TIMEOUT is not an execution bail
         and not (final.get("score") or {}).get("censored")
+        # edit-expecting iff not a read-only action; missing/empty -> assume edit (re-score old data)
+        and (final.get("expected_action") or "modify") not in _NON_EDIT_ACTIONS
         and not (final.get("score") or {}).get("changed"))
     cls = "ledger_degraded" if led_fail else ("no_edit_bail" if final_no_edit else "clean")
     return {"class": cls, "ledger_failed_turns": led_fail, "final_no_edit": final_no_edit}
@@ -1656,10 +1711,13 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
     memory_runs: list = []
     quota_hit = False
 
-    def _agg_complete(runs):
+    def _agg_complete(runs, classes=None):
         """Aggregate an arm only if it ran the full n_runs — a partially-failed
-        arm (quota abort mid-arm) is discarded rather than reported."""
-        return aggregate_runs(runs, tool) if runs and len(runs) == n_runs else None
+        arm (quota abort mid-arm) is discarded rather than reported. `classes`
+        (per-run classify_run dicts) lets the aggregate carry a CLEAN-only success
+        view so degraded/bail runs aren't averaged in as clean (review P1)."""
+        return (aggregate_runs(runs, tool, run_classes=classes)
+                if runs and len(runs) == n_runs else None)
 
     try:
         if skip_no_session:
@@ -1766,17 +1824,32 @@ def run_chain_full(chain: dict, tool: str, n_runs: int,
                 if _reloaded is not None:
                     _vruns[_idx] = _reloaded
 
-    no_agg = _agg_complete(no_runs) if no_runs is not None else None
-    with_agg = _agg_complete(with_runs)
-    gated_agg = _agg_complete(gated_runs) if include_gated else None
-    builtin_agg = _agg_complete(builtin_runs) if include_builtin else None
-    slm_native_agg = _agg_complete(slm_native_runs) if include_slm_native else None
-    stacked_agg = _agg_complete(stacked_runs) if include_stacked else None
-    memory_agg = _agg_complete(memory_runs) if include_memory else None
+    def _run_classes(runs):
+        return [classify_run(r) for r in runs] if runs else None
+    no_classes = _run_classes(no_runs)
+    with_classes = _run_classes(with_runs)
+    gated_classes = _run_classes(gated_runs)
+    builtin_classes = _run_classes(builtin_runs)
+    slm_native_classes = _run_classes(slm_native_runs)
+    stacked_classes = _run_classes(stacked_runs)
+    memory_classes = _run_classes(memory_runs)
+    no_agg = _agg_complete(no_runs, no_classes) if no_runs is not None else None
+    with_agg = _agg_complete(with_runs, with_classes)
+    gated_agg = _agg_complete(gated_runs, gated_classes) if include_gated else None
+    builtin_agg = _agg_complete(builtin_runs, builtin_classes) if include_builtin else None
+    slm_native_agg = _agg_complete(slm_native_runs, slm_native_classes) if include_slm_native else None
+    stacked_agg = _agg_complete(stacked_runs, stacked_classes) if include_stacked else None
+    memory_agg = _agg_complete(memory_runs, memory_classes) if include_memory else None
+    run_classes = {k: v for k, v in {
+        "no_session": no_classes, "with_session": with_classes,
+        "gated_session": gated_classes, "builtin": builtin_classes,
+        "slm_native": slm_native_classes, "stacked": stacked_classes,
+        "with_memory": memory_classes,
+    }.items() if v}
     save_summary(out_dir, no_agg, with_agg, chain["id"], tool, n_runs,
                  gated_agg=gated_agg, builtin_agg=builtin_agg,
                  slm_native_agg=slm_native_agg, stacked_agg=stacked_agg,
-                 memory_agg=memory_agg)
+                 memory_agg=memory_agg, run_classes=run_classes)
     if quota_hit:
         print("\n[saved] arms completed: " + ", ".join(
             name for name, agg in [("no", no_agg), ("with", with_agg),

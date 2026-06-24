@@ -128,16 +128,31 @@ is a Level-2, migration-family-only fix with little long-term value; the real le
 - ✅ **Oracle fix** (review P2a) — broaden `-k timeout` → `_ORACLE_K` (catches non-timeout orphans, e.g. pool_size); treat rc 5/124/125 as `pytest_valid=False` (**invalid, not clean**); `k_expr` = per-fixture oracle-manifest hook.
 - ✅ `research/_test_stage0_fixes.py` — unit tests for `_pytest_flags`, the broadened oracle, and `classify_run`.
 
-### Stage 1 — re-measure HONESTLY, then DECIDE
-With item 1 dropped there is no cheap *fix* arm; Stage 1 is a corrected *measurement* of the existing tax:
-- **Re-score (free, no paid run):** apply `classify_run()` + the broadened oracle to the existing A/B data → the honest, mode-separated taxed count (run2 was `ledger_degraded`, run4 a `no_edit_bail` — both drop out of the destructive-migration tally, likely pulling with_memory toward parity).
-- **A1 (optional fresh run):** mechanical ledger + Stage-0 fixes, N=5, to confirm the honest tax on a clean run.
+### Stage 1 — re-measure HONESTLY, then DECIDE  (✅ DONE 2026-06-23 — `research/stage1_rescore.py`)
+Free, no paid run: re-scored the existing chain_long A/B with the committed Stage-0 fixes.
 
-**Decision gate:** if the honest tax is already ~parity with native (the degraded/bail runs were inflating "4/5"),
-the continuity gap is largely a *measurement* artifact and **no further machinery is built.** Only if a **real
-residual destructive-migration tax remains** proceed to Stage 2.
+- **The "4/5" WAS inflated.** `classify_run` reproduces the mode separation deterministically:
+  with_memory clean={1,3,5}, EXCLUDED **run2=`ledger_degraded`** (ledger failed at T3) + **run4=`no_edit_bail`**
+  (final migration produced no edits); with_session 5/5 clean.
+- **But the residual is REAL — NOT a measurement artifact.** The stored in-place end-state pytest is `rc=1` for
+  **all 10 runs (taxed and clean alike) → NON-DISCRIMINATIVE**, so chain_long's *in-place* oracle is the disabled
+  one (and diff-token presence is too coarse — with_session shows 0/5 token-drops despite being 2/5 taxed). The
+  per-run tax was instead established by the forensic **apply-diff-to-clean-baseline** oracle (memory
+  `memory_ab_result`): **2/3 clean with_memory runs taxed** — run1 (17 orphaned-test TypeErrors) + run3 (`limits=`
+  → orphaned `test_pool_timeout`, isolated/reproduced) — vs with_session ~1/5 destructive. with_memory is NOT
+  rescued to parity, and was **less reliable** (2/5 degraded/bail vs 0/5).
+
+**Decision (gate → "real residual tax" branch):** proceed to a **Stage-2-LITE** fix first — the **additive-bias
+guard rewording** (prefer ADD-alongside + update call-sites/tests, not "migrate/replace") — and **validate it on
+the test-writing oracle fixtures** (`research/_oracle_groundtruth.py`), where pytest is discriminative in-place.
+**NOT** more chain_long mining (it structurally can't grade the fix). The full Stage-2 SLM machinery (below) stays
+gated behind that oracle-fixture result. (A fresh A1 run is moot — the free re-score already decided the gate.)
 
 ### Stage 2 — ONLY IF a real residual tax remains (the SLM-reasoning path, gated)
+> **Gate OPEN (Stage-1, 2026-06-23):** a real residual destructive-migration tax IS present (2/3 clean
+> with_memory runs). Start with the Stage-2-LITE additive-guard fix scored on the oracle fixtures; build the
+> heavier machinery below only if the lite fix proves insufficient there.
+
 1. **Schema-carry** (review P1c) — extend `merge_contracts` + persistence to keep `kind`/`anchorless`/`watch_for` (+ `call_sites`/`consumers`); unit-test round-trip + junk-sanitization.
 2. **Evidence plumbing** (review P1b) — `_slm_extract_and_audit()`; snapshot the **prior ledger before merge**; capture a **bounded `git diff`** (reuse `capture_end_state`'s) + removed/added-symbol summary; return `{contracts:[…], audits:[{feature,status,evidence,suggested_repair}]}`.
 3. **Verifier** (instrument-first) with anti-leniency + mandatory diff-substring evidence + the budgets/reporting from §5.
@@ -154,6 +169,18 @@ residual destructive-migration tax remains** proceed to Stage 2.
 ### Generalization (after the chain_long experiment)
 Build matrix fixture **#1 (data-semantic drift)** — medium effort, deterministic oracle — the first real test of
 whether the tax/fix generalize beyond code contracts (and the one that shows a migration-style guard *misdirects*).
+
+### Stage 2 evidence source — transcript distillation (codex, gated)
+Stage 2's evidence plumbing (P1b) can be grounded in the **codex rollout transcript** rather than a
+separate git-diff capture: the rollout records what the turn actually DID (real `apply_patch`/diff,
+pytest PASS/FAIL, exact usage), so the ledger's `files/tests/symbols` become parser-grounded facts
+instead of SLM guesses from the prompt — the direct attack on the ASKED-vs-DONE gap (architecture §8).
+A **refinement of Stage 2, not a new track**; it does not change the Stage-1 decision gate.
+
+Cost-gated (each gate before the next):
+1. Pure-Python `distill_rollout()` over one current (0.142) rollout — zero model. *Gate:* ≥1 file/symbol/test extracted from **both** `content` (add) and `unified_diff` (update) shapes.
+2. Score the deterministic additive-vs-destructive classifier against `_oracle_groundtruth.py` (5 labeled cases + controls). *Gate:* all correct; renames (`move_path`) scored as migration. **Proves the premise at zero model/harness cost.**
+3. Demote the extractor SLM to `{feature, contract, watch_for}` (+ deterministic NEW-id allocation; different family than the rewriter) → schema v2 + additive guard + importance-aware retention → harness wire-up (per-turn `thread_id` capture for `with_memory` + a pre-turn snapshot; triple-key rollout locator) → N=5 A/B on an oracle/test-writing fixture, continuity scored against the oracle.
 
 ---
 
