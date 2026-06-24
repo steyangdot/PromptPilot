@@ -70,3 +70,8 @@ multirun_results/
 
 # Local-only workspace (notes, defense docs, drafts — never committed)
 _workspace/
+
+# Local-only design scratch: exploratory design docs + their third-party reviews.
+# These are working drafts; their durable conclusions are folded into the tracked
+# canonical docs (SESSION_MEMORY_ARCHITECTURE/ROADMAP/RELEVANCE_RISKS), not committed.
+docs/SESSION_MEMORY_TRANSCRIPT_DISTILL*.md

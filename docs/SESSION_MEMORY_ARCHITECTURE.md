@@ -164,6 +164,22 @@ Rationale: broad semantic retrieval is the fuzziest/noisiest/hardest-to-eval lay
 
 ---
 
+## 8. Grounding the ledger in the transcript — DONE, not ASKED
+
+The MVP extractor `_slm_extract_contracts` (`research/memory_ledger.py:198`) is fed only the turn **prompt**, our own `spec.memory_record` summary, and predicted/changed file **paths** — so every `files/tests/symbols` field is inferred from what the turn was *asked* to do. That is recall≠action one layer down: a contract built from the request can't carry the API surface a later refactor must preserve.
+
+**Fix:** distill the **codex rollout transcript** — what the turn actually *did* — into the fact bundle the extractor consumes.
+
+**Verified schema (codex-cli 0.130.0 → 0.142.0-alpha.6).** Codex writes two streams: the harness-captured `codex exec --json` stdout (`run…jsonl`, **lossy** — `file_change` is path+kind only, no diff) and the on-disk rollout (`~/.codex/sessions/**/rollout-*.jsonl`, **rich**). The rollout carries the real edit in `patch_apply_end.changes` (shaped by kind: add→`content`, update→`unified_diff`, rename→`move_path`, plus a `success` flag) and `custom_tool_call.input` (the `*** Begin Patch` envelope); real pytest PASS/FAIL in `function_call_output`; exact per-turn usage in `token_count`; the baseline commit in `session_meta.git`. `reasoning` is **encrypted** — intent is unrecoverable.
+
+**Floor / ceiling split.** A pure-Python `distill_rollout()` fills `files/tests/symbols` true-by-construction (the safety floor); the SLM is **demoted** to emitting only `{feature, contract, watch_for}` over that bundle, so it can no longer hallucinate a non-existent file/symbol/test.
+
+**Honest scope.** This closes the *guessed-fields* gap; it does **not**, by itself, close recall≠action (a richer reminder is still a reminder). It is a **precondition** for the §5 ObligationVerifier — which now gets real diff+test evidence sourced from the transcript rather than a separate capture.
+
+Cost-gated build order lives in `SESSION_MEMORY_ROADMAP.md` §6; source-specific risks (wrong-rollout selection, turn-local mis-attribution, schema-by-kind drift) in `SESSION_MEMORY_RELEVANCE_RISKS.md`. Detailed working notes are kept as local scratch (not committed).
+
+---
+
 ## Appendix — key figures (clean N=5, 2026-06-19)
 
 | Metric | Value |
