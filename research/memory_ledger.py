@@ -316,17 +316,23 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
         hits = dict(contracts)
     if not hits:
         return ""
-    lines = ["[MEMORY — prior contracts you MUST preserve or intentionally migrate]"]
+    lines = ["[MEMORY — prior contracts to PRESERVE (prefer back-compat); migrate only if required]"]
     for feat, c in hits.items():
         lines.append("- {0}: {1}".format(feat, c.get("contract", "")).rstrip())
         if c.get("tests"):
-            lines.append("    tests/call-sites to keep or migrate: " + ", ".join(c["tests"]))
+            lines.append("    tests/call-sites that LOCK this — keep them GREEN: " + ", ".join(c["tests"]))
         if c.get("symbols"):
             lines.append("    symbols: " + ", ".join(str(s) for s in c["symbols"]))
     if refactor:
+        # Stage-2-lite ADDITIVE-BIAS reword: the prior "migrate ... to the new design, or state why
+        # removed" framing plausibly NUDGED destructive kwarg removal (the chain_long tax — see
+        # memory_ab_result / SESSION_MEMORY_ROADMAP Stage 2). Bias explicitly toward back-compat;
+        # validated against research/_oracle_groundtruth.py via research/stage2_guard_experiment.py.
         lines.append(
-            "This turn is a refactor/migration: do NOT silently drop the above — migrate their "
-            "call-sites + tests to the new design, or explicitly state why each is removed.")
+            "This turn is a refactor/migration. PREFER ADDITIVE / back-compat: keep the existing public "
+            "names above WORKING and ADD the new form alongside them. Remove a public name ONLY if truly "
+            "required, and if you do you MUST update every listed call-site and test in THIS change so none "
+            "are orphaned. Do not silently drop any of the above.")
     return _join_capped(lines, GUARD_MAX_CHARS, omit_label="contract line(s)")
 
 
