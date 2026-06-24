@@ -478,16 +478,37 @@ def reset_repo(cwd: str) -> None:
     print("  [git] reset to HEAD")
 
 
-def _run_timeout_pytest(cwd: str, timeout_s: int = 180) -> dict:
-    """Run the timeout-targeted regression against the LIVE working tree.
+# Stage-0 fix (oracle, review P2a): `-k timeout` ALONE was BLIND to non-timeout
+# orphans — the matched-rigor forensics found removed-kwarg regressions (e.g.
+# pool_size) the timeout selection never ran, so the scorer called a taxed run
+# "clean". Broaden to chain_long's contract surface while staying KEYWORD-SCOPED
+# (never the whole suite — httpx's network tests hang with no server, the pilot-1
+# wedge); the hard timeout below is the hang guard.
+_ORACLE_K = "timeout or pool or limit or retry or elapsed or stats or resilience or retry_after"
 
-    `-k timeout` positively selects the seeded-bug regression (same spirit as the
-    end-state scorer's _pytest_exercises_timeout guard: trust a green run only when
-    it actually exercises a timeout test). pytest return codes:
-      0 = selected tests passed   1 = failures   5 = no test matched `-k timeout`
+
+def _pytest_flags(rc: int) -> dict:
+    """Map a pytest return code to outcome flags. rc: 0=pass, 1=failures, 5=no test
+    matched, 124=hard-timeout kill, 125=harness error. Only 0/1 are VALID signals;
+    5/124/125 mean the oracle did NOT actually evaluate the contracts -> `pytest_valid`
+    is False = INVALID, not clean (review P2a: never treat no-match/hang as a pass)."""
+    return {
+        "pytest_passed": rc == 0,
+        "pytest_no_match": rc == 5,
+        "pytest_valid": rc in (0, 1),
+    }
+
+
+def _run_timeout_pytest(cwd: str, timeout_s: int = 180, k_expr: str = _ORACLE_K) -> dict:
+    """Run the contract-regression selection against the LIVE working tree.
+
+    `k_expr` (default `_ORACLE_K`) positively selects the seeded-bug + contract tests
+    (timeout/pool/limit/retry/elapsed/stats/resilience). pytest return codes:
+      0 = selected passed   1 = failures   5 = NO test matched (INVALID, not clean)
+    Per-fixture callers may pass a narrower/broader `k_expr` (oracle-manifest hook).
     Bounded by a hard timeout so a wedged/hanging tree can't stall the harness.
     """
-    cmd = [sys.executable, "-m", "pytest", "-k", "timeout", "-q",
+    cmd = [sys.executable, "-m", "pytest", "-k", k_expr, "-q",
            "--no-header", "-p", "no:cacheprovider"]
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
@@ -500,8 +521,8 @@ def _run_timeout_pytest(cwd: str, timeout_s: int = 180) -> dict:
     return {
         "pytest_cmd": " ".join(cmd),
         "pytest_rc": rc,
-        "pytest_passed": rc == 0,          # 0 = a selected timeout test ran green
-        "pytest_no_match": rc == 5,        # 5 = no timeout test in the tree
+        "pytest_k": k_expr,
+        **_pytest_flags(rc),
         "pytest_tail": "\n".join(out.splitlines()[-20:]),
     }
 
@@ -1240,7 +1261,7 @@ def print_memory_ab(with_agg: list[dict], memory_agg: list[dict], tool: str) -> 
     m_succ = _sum(memory_agg, "success_mean") / len(memory_agg)
     print()
     print("=" * 96)
-    print("  WITH_MEMORY vs WITH_SESSION  (tool={0}; SLM rewrite held constant — memory backend only)"
+    print("  WITH_MEMORY vs WITH_SESSION  (tool={0}; architecture-vs-architecture — rewrite NOT held identical)"
           .format(tool))
     print("=" * 96)
     print("  metric                    with_session     with_memory     ratio (with/mem)")
@@ -1552,17 +1573,48 @@ def dry_run_chain(chain: dict, tool: str) -> None:
 # Main runner: per chain x tool, runs N passes per variant, aggregates
 # ---------------------------------------------------------------------------
 
+def classify_run(run_results) -> dict:
+    """Stage-0 (review P1): deterministic per-run continuity class, so a DEGRADED or
+    BAILED run is reported separately and never silently averaged into a 'clean'
+    continuity result. This does NOT decide `destructive_migration` — that needs the
+    pytest oracle (the forensic pass); it only flags the runs that must be EXCLUDED
+    from the guard-effect comparison. Pure over the saved per-turn records, so it also
+    works when re-scoring existing run data.
+
+      - ledger_degraded : a non-timeout turn whose ledger extraction failed (ledger_ok False)
+      - no_edit_bail    : the FINAL turn ran (not timed-out/censored) but produced no edits
+                          (changed==[]) — an execution miss / bail on the migration
+      - clean           : neither
+
+    Returns {class, ledger_failed_turns, final_no_edit}. (Only the FINAL turn is used for
+    the bail signal — an early changed==[] turn is often legitimately recovered later, so
+    flagging every empty turn would over-fire.)"""
+    led_fail = [t.get("turn") for t in run_results
+                if t.get("ledger_ok") is False and not t.get("timed_out")]
+    final = run_results[-1] if run_results else None
+    final_no_edit = bool(
+        final and not final.get("timed_out")
+        and not (final.get("score") or {}).get("censored")
+        and not (final.get("score") or {}).get("changed"))
+    cls = "ledger_degraded" if led_fail else ("no_edit_bail" if final_no_edit else "clean")
+    return {"class": cls, "ledger_failed_turns": led_fail, "final_no_edit": final_no_edit}
+
+
 def _warn_ledger_degraded(run_results, r: int) -> None:
-    """PR#44 #2: if any non-censored turn in a with_memory run had a FAILED ledger
-    extraction/persist (`ledger_ok` is False), the memory was not maintained for that run
-    so its A/B vs with_session is invalid. Warn loudly (don't silently average it in)."""
-    failed = sum(1 for t in run_results
-                 if t.get("ledger_ok") is False and not t.get("timed_out"))
-    if failed:
+    """Stage-0 (review P1, extends PR#44 #2): report the per-run continuity CLASS so a
+    degraded/bailed run is visible and not silently counted as clean. Loud only when the
+    run is non-clean (those must be excluded from the guard-effect A/B)."""
+    c = classify_run(run_results)
+    if c["class"] == "clean":
+        return
+    if c["class"] == "ledger_degraded":
         print("  [with_memory] WARNING: run {0}: {1}/{2} turns had a FAILED ledger "
-              "extraction/persist -> this run is DEGRADED (memory not maintained); its "
-              "A/B vs with_session is INVALID. Investigate before trusting the aggregate."
-              .format(r, failed, len(run_results)))
+              "extraction/persist -> run DEGRADED (memory not maintained); EXCLUDE from "
+              "the A/B vs with_session.".format(r, len(c["ledger_failed_turns"]), len(run_results)))
+    elif c["class"] == "no_edit_bail":
+        print("  [with_memory] WARNING: run {0}: the FINAL turn produced NO edits "
+              "(changed==[]) -> NO_EDIT_BAIL (execution miss on the migration, not a "
+              "guard-policy failure); EXCLUDE from the A/B.".format(r))
 
 
 def run_chain_full(chain: dict, tool: str, n_runs: int,
