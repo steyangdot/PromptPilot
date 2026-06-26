@@ -95,6 +95,43 @@ ORPHAN_CASES = [
         },
     },
     {
+        "id": "kwarg-kept-but-broken",
+        "subclass": "additive-but-buggy", "gold": "orphaned", "positive_control": True,
+        "note": "run9-class (N=10 finding): the public connect_timeout kwarg is KEPT in the signature "
+                "(ZERO removed lines) but a merge bug breaks it AT RUNTIME -> only an EXECUTING test/probe "
+                "catches it; a diff/removed-symbol check MISSES it (see removed_public_symbol()). Mirrors "
+                "httpx _merge_timeout_extensions dict(**ext, timeout=...) duplicate-kwarg TypeError.",
+        "before": {
+            "lib.py": (
+                "def _merge(extensions, connect_timeout):\n"
+                "    base = dict(extensions)\n"
+                "    if connect_timeout is not None:\n"
+                "        base['timeout'] = {'connect': connect_timeout}\n"
+                "    return base\n"
+                "def get(connect_timeout=None, extensions=None):\n"
+                "    return _merge(extensions or {'timeout': {'connect': 5.0}}, connect_timeout)\n"
+            ),
+            "test_lib.py": (
+                "from lib import get\n"
+                "def test_connect_timeout_override():\n"
+                "    # exercises the RUNTIME path, not just the signature\n"
+                "    assert get(connect_timeout=0.5)['timeout']['connect'] == 0.5\n"
+            ),
+        },
+        "change": {
+            "lib.py": (
+                "def _merge(extensions, connect_timeout):\n"
+                "    timeout_extensions = {'connect': connect_timeout} if connect_timeout is not None else None\n"
+                "    if timeout_extensions is not None:\n"
+                "        # run9 bug: extensions already carries 'timeout' AND timeout=... -> duplicate kwarg\n"
+                "        return dict(**extensions, timeout=timeout_extensions)\n"
+                "    return dict(extensions)\n"
+                "def get(connect_timeout=None, extensions=None):\n"      # signature KEPT (kwarg still accepted)
+                "    return _merge(extensions or {'timeout': {'connect': 5.0}}, connect_timeout)\n"
+            ),
+        },
+    },
+    {
         "id": "data-semantic-drift-orphaned",
         "subclass": "data-semantic", "gold": "orphaned",
         "note": "Anchorless: a test pins the ms->s conversion contract; the 'standardize' change breaks it.",
@@ -243,6 +280,15 @@ def run_orphan_oracle(case: dict) -> dict:
             "after_passed": after_passed, "verdict": verdict}
 
 
+def removed_public_symbol(before_src: str, after_src: str, symbol: str) -> bool:
+    """The DIFF/SUBSTRING proxy a non-executing verifier would use: did `symbol` (a public
+    kwarg/name) disappear from the source? True iff present before and absent after. This is
+    exactly the check that MISSES the run9-class 'kept-but-broken' tax (the symbol is retained;
+    only runtime behavior breaks) -> demonstrates why execution-based verification is required
+    (docs/SESSION_MEMORY_VERIFY_REPAIR.md driving decision)."""
+    return (symbol in before_src) and (symbol not in after_src)
+
+
 # ---------------------------------------------------------------------------
 # Scorers — grade a candidate verifier/retriever against the gold labels
 # ---------------------------------------------------------------------------
@@ -309,6 +355,19 @@ if __name__ == "__main__":
         fails.append("oracle did not perfectly reproduce the by-construction labels")
     if s["invalid"]:
         fails.append("oracle produced {0} invalid verdict(s) (neither orphaned nor clean)".format(s["invalid"]))
+
+    # --- run9-class premise: execution catches kept-but-broken; a diff/removed-symbol check MISSES it ---
+    r9 = next((c for c in ORPHAN_CASES if c["id"] == "kwarg-kept-but-broken"), None)
+    if r9:
+        ex = run_orphan_oracle(r9)["verdict"]
+        diff_miss = not removed_public_symbol(r9["before"]["lib.py"], r9["change"]["lib.py"], "connect_timeout")
+        print("\n=== run9-class premise (execution vs diff) ===")
+        print("  execution oracle verdict      = {0}  (expect 'orphaned')".format(ex))
+        print("  removed-symbol diff check MISS = {0}  (expect True: kwarg KEPT -> diff calls it clean)".format(diff_miss))
+        if ex != "orphaned":
+            fails.append("run9-class: execution oracle failed to flag the kept-but-broken tax")
+        if not diff_miss:
+            fails.append("run9-class: diff/removed-symbol check unexpectedly flagged it (premise broken)")
 
     print("\n=== REFERENT ground-truth set (labels; scored once a retriever exists) ===")
     for c in REFERENT_CASES:

@@ -138,6 +138,14 @@ def clear_ledger(cwd: str) -> None:
         pass
 
 
+def snapshot_ledger(cwd: str) -> dict:
+    """A deep, detached copy of the current ledger (contracts as they stand) — taken BEFORE a
+    turn's update so the Stage-2 verifier can check the PRIOR contracts against the post-turn
+    tree (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.C evidence plumbing). json round-trip = no
+    shared refs with the live ledger."""
+    return json.loads(json.dumps(load_ledger(cwd)))
+
+
 # ---------------------------------------------------------------------------
 # Ledger merge (compress-don't-drop upsert; payload-sanitizing)
 # ---------------------------------------------------------------------------
@@ -161,6 +169,10 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
             cur[k] = _clean_list([*cur.get(k, []), *incoming])
         if c.get("contract"):
             cur["contract"] = str(c["contract"]).strip()
+        if c.get("probe"):
+            # Stage-2 executable verification probe (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.A),
+            # generated + birth-validated separately; preserved across merges like `contract`.
+            cur["probe"] = str(c["probe"])
         if turn is not None:
             cur["turn"] = turn
         contracts[feat] = cur
