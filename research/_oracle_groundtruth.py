@@ -281,11 +281,13 @@ def run_orphan_oracle(case: dict) -> dict:
 
 
 def removed_public_symbol(before_src: str, after_src: str, symbol: str) -> bool:
-    """The DIFF/SUBSTRING proxy a non-executing verifier would use: did `symbol` (a public
-    kwarg/name) disappear from the source? True iff present before and absent after. This is
-    exactly the check that MISSES the run9-class 'kept-but-broken' tax (the symbol is retained;
-    only runtime behavior breaks) -> demonstrates why execution-based verification is required
-    (docs/SESSION_MEMORY_VERIFY_REPAIR.md driving decision)."""
+    """NON-AUTHORITATIVE demonstration helper — NOT used by the verifier. A deliberately-naive
+    DIFF/SUBSTRING proxy of what a non-executing verifier would do: did `symbol` disappear from the
+    source text? True iff present before and absent after. It is intentionally fallible (token
+    collisions over/under-report — e.g. the symbol surviving inside an unrelated name) and exists
+    ONLY to show that such a check MISSES the run9-class 'kept-but-broken' tax (symbol retained,
+    behavior broken) — i.e. why execution-based verification is required. Do not treat its result as
+    ground truth (the pytest oracle / probe is the truth)."""
     return (symbol in before_src) and (symbol not in after_src)
 
 

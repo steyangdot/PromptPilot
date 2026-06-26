@@ -351,6 +351,39 @@ def repair_and_reconcile(cwd: str | Path, repair_fn, verify_fn) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Harness hook (docs S7) -- the end-to-end verify-then-(gated)-repair step a run-chain
+# turn invokes. Pure orchestration: the ONLY model call is inside `repair_runner`.
+# ---------------------------------------------------------------------------
+def verify_and_maybe_repair(prior_contracts: dict, cwd: str | Path, changed_files, final: bool,
+                            repair_runner, timeout_s: int = PROBE_TIMEOUT_S) -> dict:
+    """Verify the at-risk prior contracts against the post-turn tree; on a (reproduced, hence
+    high-confidence) violation, fire ONE gated repair via `repair_runner(cwd, violations)` and
+    reconcile -- accept the repaired tree or roll back. `repair_runner` is injected (prod: a codex
+    repair turn; tests: a stub) so this is unit-testable with no model. Returns a RunVerifierMetrics
+    dict (docs §5/§8)."""
+    vr = verify_contracts(prior_contracts, cwd, changed_files, final=final, timeout_s=timeout_s)
+    m = {"checked": len(vr["checks"]),
+         "clean": sum(1 for c in vr["checks"] if c["status"] == "clean"),
+         "violated": len(vr["violations"]),
+         "unknown": sum(1 for c in vr["checks"] if c["status"] == "unknown"),
+         "status": run_tax_status(vr),
+         "repair_fired": False, "repair_outcome": "na", "rolled_back": False,
+         "violations": [{"feature": c["feature"], "evidence": c.get("evidence")}
+                        for c in vr["violations"]]}
+    if vr["violations"]:        # every violation is a reproduced execution failure => high-confidence
+        m["repair_fired"] = True
+        res = repair_and_reconcile(
+            cwd,
+            repair_fn=lambda d: repair_runner(d, vr["violations"]),
+            verify_fn=lambda d: not verify_contracts(prior_contracts, d, changed_files,
+                                                     final=final, timeout_s=timeout_s)["violations"])
+        m["repair_outcome"] = res["outcome"]
+        m["rolled_back"] = res["rolled_back"]
+        m["status_after"] = "clean" if res["outcome"] == "repaired" else m["status"]
+    return m
+
+
+# ---------------------------------------------------------------------------
 # Probe generation (SLM) -- wired, injectable; the ONLY model cost. The SLM
 # GENERATES; it never JUDGES (run_probe does). Birth-validated before storage.
 # ---------------------------------------------------------------------------
@@ -365,10 +398,23 @@ PROBE_GEN_INSTR = (
 )
 
 
+def _judge_text(out) -> str | None:
+    """Extract the text from a judge return, tolerating protocol-shape differences: the project
+    Judge `(text, cost, walltime)` tuple, a bare string, or any `(text, ...)` sequence. An unknown
+    shape -> None (the caller records a probe-generation MISS; never a silent crash)."""
+    if isinstance(out, str):
+        return out
+    if isinstance(out, (tuple, list)) and out and isinstance(out[0], str):
+        return out[0]
+    return None
+
+
 def generate_probe(contract: dict, judge=None) -> str | None:
-    """Ask the SLM for a probe exercising `contract`. Injectable judge (mirrors
-    memory_ledger._slm_extract_contracts). Returns probe source or None. Caller MUST
-    birth-validate (positive+negative) before storing -- generation is not trusted."""
+    """Ask the SLM for a probe exercising `contract`. Returns probe source, or None -- and None is a
+    RECORDED failure (callers count probes_failed_to_generate, docs §5), NOT a silent gap. Tolerant
+    of judge protocol shape: a callable returning `(text, cost, walltime)` (the project Judge
+    protocol), a callable returning a bare string, or an object exposing `.complete(prompt)`. Caller
+    MUST birth-validate (positive+negative) before storing -- generation is not trusted."""
     if judge is None:
         try:
             from prpt.judges import get_default_judge
@@ -382,8 +428,11 @@ def generate_probe(contract: dict, judge=None) -> str | None:
                   contract.get("feature", ""), contract.get("contract", ""),
                   ", ".join(map(str, contract.get("symbols") or []))))
     try:
-        text, _cost, _wt = judge(prompt)      # Judge protocol: __call__(prompt) -> (text, cost, walltime)
-        src = _strip_code_fence(text or "")
+        try:
+            out = judge(prompt)                  # project Judge protocol: callable -> (text, ...)
+        except TypeError:
+            out = judge.complete(prompt) if hasattr(judge, "complete") else None
+        src = _strip_code_fence(_judge_text(out) or "")
     except Exception:
         return None
     return src or None

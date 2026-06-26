@@ -6,6 +6,14 @@ the N=10 finding (§2) forces an **execution-based** verifier. Companion: `SESSI
 (gating), `memory_ab_result` memory file (the A/B + N=10 data), `session_memory_prior_art` memory
 file (deep-research borrowables).
 
+**Milestone (PR#49) — explicit, to avoid over-claiming.** *Landed in this PR:* the primitives
+(`research/verify_repair.py`), the end-to-end orchestration hook `verify_and_maybe_repair`, and its
+**gated wiring into `chain_test_v2.run_chain_once`** (opt-in `VERIFY_REPAIR=1`; **off by default**, so
+the existing `with_memory` arm is byte-for-byte unchanged), plus unit + integration tests (the hook
+is driven by a stub repair-runner — no model). *NOT in this PR:* the **live A1-vs-B benchmark run**
+(real codex repair turns; a paid, multi-window run that §9 marks *directional/underpowered*). So the
+loop is **wired and tested**, but the empirical B-vs-A1 result is the remaining, separate step.
+
 ---
 
 ## 0. Background (for a reader new to this project)
@@ -356,7 +364,7 @@ and at most one **research claim** (the falsifiable empirical result).
 | **1** | Verifier as **detector** (probe + positive+negative birth control + `tests` fallback); retro-score all 10 runs | runs without crash; metrics emitted | **catches run9; produces no *unsupported* violations; any *additional* execution-backed failure is ADJUDICATED, not auto-scored false** (a verifier that finds a real bug the forensic missed is a win, not a gate failure) |
 | **2** | Evidence plumbing (prior snapshot + bounded diff) + SLM probe-gen wired into extraction | probes generated + birth-double-validated on a smoke chain; budgets enforced | — |
 | **3** | Light gated repair (1 turn, final-turn) + reconciliation + rollback | on the **run9 fixture**: detect → repair → deterministic pass; failed-repair → rollback restores tree | **one-turn repair restores the run9-class fixture deterministically** *(primary success deliverable)* |
-| **4** | A1 vs B live | both arms complete | **directional only (underpowered):** at a ~1/10 base rate, chain_long N=5 cannot distinguish repair from variance. Report B-vs-A1 as directional; the *fixture* (Phase 3) is the load-bearing claim. Pair by tool-version/seed where possible; raise N only if a real effect looks plausible. |
+| **4** | A1-vs-B **wiring landed** (gated `VERIFY_REPAIR=1`, hook unit/integration-tested); the **paid live run** is what remains | wiring callable + green tests; live run not yet executed | **directional only (underpowered):** at a ~1/10 base rate, chain_long N=5 cannot distinguish repair from variance. Report B-vs-A1 as directional; the *fixture* (Phase 3) is the load-bearing claim. Pair by tool-version/seed where possible; raise N only if a real effect looks plausible. |
 
 **Why the success criterion is the fixture, not the live A/B:** the residual is ~1/10, so an N=5
 A1-vs-B test is dominated by variance (if A1 lands 0/5 again, "B < A1" is unprovable). The honest,

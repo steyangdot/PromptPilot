@@ -161,24 +161,23 @@ def test_repair_rollback_removes_added_files():
         shutil.rmtree(d, ignore_errors=True)
 
 
-def test_generate_probe_with_real_interface_stub_judge():
-    # the REAL Judge protocol: a callable returning (text, cost, walltime) -- NOT a `.complete` method
-    def stub(prompt):
-        return ("```python\n" + R9_PROBE + "```", 0.0001, 1.2)
-    src = vr.generate_probe({"feature": "connect-timeout", "contract": "x",
-                             "symbols": ["connect_timeout"]}, judge=stub)
-    assert "from lib import get" in src
+def test_generate_probe_tolerates_judge_protocol_shapes():
+    # PR#49 P1: robust to the project 3-tuple callable, a bare-string callable, AND a .complete object.
+    P = "```python\n" + R9_PROBE + "```"
+    assert "from lib import get" in vr.generate_probe({"feature": "f", "contract": "c"}, judge=lambda p: (P, 0.0, 0.0))
+    assert "from lib import get" in vr.generate_probe({"feature": "f", "contract": "c"}, judge=lambda p: P)
 
-
-def test_generate_probe_bad_judge_shape_returns_none_not_crash():
-    # #1 regression: a judge returning the wrong shape (bare string) or the old `.complete` object
-    # must yield None, NEVER crash with "'tuple' object has no attribute 'strip'".
-    assert vr.generate_probe({"feature": "f", "contract": "c"}, judge=lambda p: "not a tuple") is None
-
-    class OldStub:                      # has .complete but is not callable -> judge(prompt) raises
+    class Complete:                    # not callable, exposes .complete -> handled by the fallback
         def complete(self, p):
-            return "x"
-    assert vr.generate_probe({"feature": "f", "contract": "c"}, judge=OldStub()) is None
+            return P
+    assert "from lib import get" in vr.generate_probe({"feature": "f", "contract": "c"}, judge=Complete())
+
+
+def test_generate_probe_unknown_shape_returns_none_not_crash():
+    # PR#49 P1: a truly unknown return shape (int/dict/None/empty) -> None, never a crash
+    # (regression for the 'tuple has no attribute strip' bug). None is a RECORDED miss, not a gap.
+    for bad in (12345, {"x": 1}, None, ()):
+        assert vr.generate_probe({"feature": "f", "contract": "c"}, judge=lambda p, b=bad: b) is None
 
 
 def test_classify_violation_message_mentioning_importerror_is_violated():
@@ -301,6 +300,61 @@ def test_vr_and_oracle_run9_fixtures_agree():
     d = _tree(oracle_change)
     try:
         assert vr.run_probe(R9_PROBE, d)[0] == "violated"   # oracle's change breaks the vr probe too
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_ledger_drops_oversize_probe():
+    # PR#49 P2: an over-cap probe payload is DROPPED (sidecar can't bloat); a normal probe is kept.
+    import memory_ledger as ml
+    huge = "x = 1\n" * ml.PROBE_MAX_CHARS                          # >> the cap
+    led = ml.merge_contracts({"version": ml.LEDGER_VERSION, "contracts": {}},
+                             [{"feature": "f", "contract": "c", "files": ["lib.py"], "probe": huge}], turn=1)
+    assert "probe" not in led["contracts"]["f"]
+    small = "from lib import get\nget()\n"
+    led2 = ml.merge_contracts({"version": ml.LEDGER_VERSION, "contracts": {}},
+                              [{"feature": "f", "contract": "c", "files": ["lib.py"], "probe": small}], turn=1)
+    assert led2["contracts"]["f"]["probe"] == small
+
+
+# --- Harness hook (docs §7): the end-to-end verify-then-gated-repair step run_chain_once invokes,
+# exercised here with a STUB repair_runner (no model) -- the live-path integration smoke (P2 gap). ---
+def test_verify_and_maybe_repair_detects_and_repairs():
+    d = _tree(R9_AFTER)
+    contracts = {"ct": {"files": ["lib.py"], "symbols": ["connect_timeout"], "probe": R9_PROBE}}
+    def stub_repair(cwd, violations):
+        (Path(cwd) / "lib.py").write_text(R9_BEFORE, encoding="utf-8")
+    try:
+        m = vr.verify_and_maybe_repair(contracts, d, ["lib.py"], final=True, repair_runner=stub_repair)
+        assert m["violated"] == 1 and m["repair_fired"] is True
+        assert m["repair_outcome"] == "repaired" and m["rolled_back"] is False
+        assert vr.run_probe(R9_PROBE, d)[0] == "clean"       # repaired tree accepted
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_verify_and_maybe_repair_rolls_back_failed_repair():
+    d = _tree(R9_AFTER)
+    contracts = {"ct": {"files": ["lib.py"], "symbols": ["connect_timeout"], "probe": R9_PROBE}}
+    def bad_repair(cwd, violations):
+        (Path(cwd) / "newfile.py").write_text("x=1\n", encoding="utf-8")   # does not fix it
+    try:
+        m = vr.verify_and_maybe_repair(contracts, d, ["lib.py"], final=True, repair_runner=bad_repair)
+        assert m["repair_fired"] and m["repair_outcome"] == "unrepaired" and m["rolled_back"]
+        assert not (Path(d) / "newfile.py").exists()         # rolled back
+        assert vr.run_probe(R9_PROBE, d)[0] == "violated"    # pre-repair (broken) tree restored
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_verify_and_maybe_repair_clean_fires_no_repair():
+    d = _tree(R9_BEFORE)
+    contracts = {"ct": {"files": ["lib.py"], "symbols": ["connect_timeout"], "probe": R9_PROBE}}
+    fired = []
+    try:
+        m = vr.verify_and_maybe_repair(contracts, d, ["lib.py"], final=True,
+                                       repair_runner=lambda c, v: fired.append(1))
+        assert m["violated"] == 0 and m["repair_fired"] is False and m["status"] == "clean" and fired == []
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

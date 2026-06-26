@@ -38,6 +38,7 @@ import os
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -105,7 +106,7 @@ from prpt.normalizers.base import build_final_downstream_prompt, build_output_su
 from prpt.repo.collector import RepoContextCollector
 from prpt.session import append_turn, clear_session, load_recent_turns
 from memory_ledger import (  # MVP memory-system backend
-    memory_prefix, update_ledger, clear_ledger, ledger_judge_available)
+    memory_prefix, update_ledger, clear_ledger, ledger_judge_available, snapshot_ledger)
 
 _warned_memory_no_spec = False  # warn-once when with_memory runs on a spec-less (v1) normalizer
 
@@ -943,6 +944,30 @@ def _quota_exhausted(out_path: Path, tool: str) -> bool:
 # Single-chain runners (one full pass through all turns)
 # ---------------------------------------------------------------------------
 
+def _make_repair_runner(tool: str):
+    """Stage-2 repair runner for VERIFY_REPAIR=1 (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.D): returns
+    repair_fn(cwd, violations) that fires ONE real repair turn (codex/claude) editing the target in
+    place, for verify_repair.repair_and_reconcile. The turn's transcript goes to a temp file OUTSIDE
+    the target so it is not counted as a tree change."""
+    def _run(cwd, violations):
+        lines = ["Your last change broke these previously-working contracts:"]
+        for v in violations:
+            ev = v.get("evidence") if isinstance(v.get("evidence"), dict) else {}
+            lines.append("- {0}: {1}".format(v.get("feature", ""), ev.get("error", "")))
+        lines.append("Fix the implementation so each passes again; KEEP the new form too (additive). "
+                     "Do NOT change anything else.")
+        fd, out_path = tempfile.mkstemp(suffix=_ext(tool), prefix="repair_turn_")
+        os.close(fd)
+        try:
+            _run_one("\n".join(lines), Path(out_path), cwd, tool)
+        finally:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+    return _run
+
+
 def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                    out_dir: Path) -> list[dict]:
     """
@@ -982,6 +1007,13 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # Snapshot expected files BEFORE this turn so we can detect this turn's changes
         before = snapshot_files(HTTPX_DIR, turn_def["expected_files"])
         before_globs = snapshot_globs(HTTPX_DIR, turn_def.get("expected_globs", []))
+
+        # Stage-2 verify-repair (opt-in VERIFY_REPAIR=1, docs §7): snapshot the PRIOR contracts
+        # BEFORE this turn's edits + record_to_memory, so the verifier checks the contracts ENTERING
+        # the turn. Off by default -> plain with_memory behavior is unchanged.
+        vr_prior = (snapshot_ledger(HTTPX_DIR).get("contracts", {})
+                    if (variant == "with_memory" and os.environ.get("VERIFY_REPAIR") == "1")
+                    else None)
 
         # Prepare prompt
         if variant == "no_session":
@@ -1080,6 +1112,20 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             ledger_slm_cost, ledger_ok = record_to_memory(
                 HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
 
+        # Stage-2 verify-repair hook (opt-in VERIFY_REPAIR=1, docs §7): after the ledger update,
+        # verify the PRIOR contracts against the post-turn tree and fire ONE gated repair on a
+        # reproduced violation. Lazy import + broad guard so this optional path can never break a
+        # scored run; off by default (vr_prior is None) -> no behavior change.
+        vr_metrics = None
+        if vr_prior is not None and not timed_out:
+            try:
+                from verify_repair import verify_and_maybe_repair
+                vr_metrics = verify_and_maybe_repair(
+                    vr_prior, HTTPX_DIR, score.get("changed", []),
+                    final=(i == len(chain["turns"])), repair_runner=_make_repair_runner(tool))
+            except Exception as e:
+                vr_metrics = {"error": str(e)}
+
         slm_cost = 0.0 if variant in ("raw", "builtin") else slm_cost_estimate(raw, prepared["grounded"])
         slm_cost += ledger_slm_cost   # with_memory: count the per-turn ledger-extraction call
         # gated_session pays for one extra Haiku classifier call per turn (~$0.00017).
@@ -1140,6 +1186,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "slm_cost": slm_cost,
             "ledger_slm_cost": ledger_slm_cost,
             "ledger_ok": ledger_ok,
+            "verify_repair": vr_metrics,   # Stage-2 metrics when VERIFY_REPAIR=1, else None
             "downstream_cost": downstream_cost,
             "total_cost": downstream_cost + slm_cost,
             "score": score,

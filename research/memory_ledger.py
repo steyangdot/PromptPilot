@@ -31,6 +31,8 @@ from pathlib import Path
 
 LEDGER_VERSION = 1
 MAX_CONTRACTS = 40              # bound the ledger (keep most-recently-touched if exceeded)
+PROBE_MAX_CHARS = 4000          # cap a stored verification probe (PR#49: bound sidecar growth; a
+                                # real probe is a few hundred chars — an over-cap payload is dropped)
 STATE_SUMMARY_MAX_CHARS = 1800  # cap the always-on ProjectState header
 GUARD_MAX_CHARS = 2200          # cap the refactor-guard checklist (PR#44 #4: was uncapped)
 
@@ -169,10 +171,15 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
             cur[k] = _clean_list([*cur.get(k, []), *incoming])
         if c.get("contract"):
             cur["contract"] = str(c["contract"]).strip()
-        if c.get("probe"):
+        probe = c.get("probe")
+        if probe:
             # Stage-2 executable verification probe (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.A),
             # generated + birth-validated separately; preserved across merges like `contract`.
-            cur["probe"] = str(c["probe"])
+            # PR#49: cap length — an over-cap payload is DROPPED (a truncated probe is malformed and
+            # would fail birth-validation anyway), so the sidecar cannot bloat over long runs.
+            probe = str(probe)
+            if len(probe) <= PROBE_MAX_CHARS:
+                cur["probe"] = probe
         if turn is not None:
             cur["turn"] = turn
         contracts[feat] = cur

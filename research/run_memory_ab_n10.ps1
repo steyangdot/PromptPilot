@@ -16,16 +16,23 @@
 # backed up to summary_n5_both.json (this run regenerates summary.json as memory-only N=10);
 # service_tier commented in ~/.codex/config.toml (codex CLI rejects priority/default -> rc=1/0).
 # DO NOT open the desktop Codex app during the run (it re-injects service_tier).
+# Portability (PR#49): all machine-specific paths are overridable via env vars; the defaults below
+# are the authoring environment. Override PROMPTPILOT_WORKTREE / PROMPTPILOT_PYTHON /
+# PROMPTPILOT_NPM_BIN to run elsewhere. (PowerShell 5.1 has no ?? — hence the if -not blocks.)
 $ErrorActionPreference = "Continue"
-$root = "B:\LLM\.claude\worktrees\epic-jennings-5e7b22"
+$root = $env:PROMPTPILOT_WORKTREE
+if (-not $root) { $root = "B:\LLM\.claude\worktrees\epic-jennings-5e7b22" }
 Set-Location $root
 # codex (npm global) on PATH in the scheduled-task environment.
-$env:PATH = "C:\Users\magicQ\AppData\Roaming\npm;" + $env:PATH
+$npmBin = $env:PROMPTPILOT_NPM_BIN
+if (-not $npmBin) { $npmBin = "C:\Users\magicQ\AppData\Roaming\npm" }
+$env:PATH = "$npmBin;" + $env:PATH
 # Per-turn cap 1200s (read once at module import) so slow in-regime turns finish instead of
 # censoring; turns still over 1200s are recovered by the post-run reparse pass.
 $env:CODEX_TIMEOUT_SEC = "1200"
 $runs = 10
-$py  = "C:\Users\magicQ\AppData\Local\Programs\Python\Python311\python.exe"
+$py = $env:PROMPTPILOT_PYTHON
+if (-not $py) { $py = "C:\Users\magicQ\AppData\Local\Programs\Python\Python311\python.exe" }
 $dataDir = Join-Path $root "research\data"
 if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Force -Path $dataDir | Out-Null }
 $out = "$root\research\data\memory_ab_n10.log"
