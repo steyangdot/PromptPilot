@@ -226,6 +226,10 @@ def test_sandbox_blocks_getattr_builtins_bypass():
     assert vr.sandbox_check("g = getattr(__builtins__, 'open')\ng('x', 'w')\n")[0] is False
     assert vr.sandbox_check("().__class__.__bases__[0].__subclasses__()\n")[0] is False
     assert vr.sandbox_check("import os\n")[0] is False
+    # PR#49 review: builtins reached via a dunder ATTRIBUTE chain (print.__self__ is the builtins
+    # module) must also be blocked by the blanket dunder ban.
+    assert vr.sandbox_check("print.__self__.open('x', 'w')\n")[0] is False
+    assert vr.sandbox_check("len.__self__.open('x', 'w').write('x')\n")[0] is False
 
 
 def test_sandbox_no_longer_false_rejects_legit_probes():
@@ -242,6 +246,10 @@ def test_run_probe_bypass_rejected_writes_no_file():
         status, _ = vr.run_probe("g = getattr(__builtins__, 'open')\ng('PWNED.txt', 'w').write('x')\n", d)
         assert status == "unknown"
         assert not (Path(d) / "PWNED.txt").exists()
+        # PR#49 review: the dunder-attribute builtins bridge must also write no file.
+        status2, _ = vr.run_probe("print.__self__.open('PWNED2.txt', 'w').write('x')\n", d)
+        assert status2 == "unknown"
+        assert not (Path(d) / "PWNED2.txt").exists()
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

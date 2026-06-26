@@ -45,10 +45,18 @@ _ALLOWED_PROBE_IMPORTS = {"httpx", "lib", "json", "math", "datetime", "types", "
 # getattr(__builtins__, 'open') must).
 _BANNED_NAMES = {"__import__", "__builtins__", "eval", "exec", "compile", "open", "getattr",
                  "setattr", "delattr", "globals", "vars", "input", "breakpoint", "memoryview"}
-# Dunder attributes that bridge to builtins/types (the classic sandbox-escape chain).
+# Dunder attributes that bridge to builtins/types (the classic sandbox-escape chain). Kept for
+# documentation; _is_dunder() below blanket-bans ALL dunders, which is what actually closes the
+# `print.__self__.open(...)` style escape (any builtin function's __self__ is the builtins module).
 _BANNED_ATTRS = {"__globals__", "__builtins__", "__class__", "__bases__", "__subclasses__",
                  "__mro__", "__dict__", "__import__", "__loader__", "__code__", "__closure__",
-                 "__getattribute__", "__getattr__"}
+                 "__getattribute__", "__getattr__", "__self__", "__func__", "__module__"}
+
+
+def _is_dunder(name: str) -> bool:
+    """A `__dunder__` name/attribute. No legitimate probe needs one, and every known sandbox escape
+    (`__self__`/`__globals__`/`__class__`/...) is a dunder -> blanket-ban them rather than enumerate."""
+    return len(name) > 4 and name.startswith("__") and name.endswith("__")
 
 
 # ---------------------------------------------------------------------------
@@ -74,9 +82,10 @@ def sandbox_check(probe_src: str) -> tuple[bool, str | None]:
         elif isinstance(node, ast.ImportFrom):
             if (node.module or "").split(".")[0] not in _ALLOWED_PROBE_IMPORTS:
                 return False, "disallowed import-from: {0}".format(node.module)
-        elif isinstance(node, ast.Name) and node.id in _BANNED_NAMES:
+        elif isinstance(node, ast.Name) and (node.id in _BANNED_NAMES or _is_dunder(node.id)):
             return False, "disallowed name: {0}".format(node.id)
-        elif isinstance(node, ast.Attribute) and node.attr in _BANNED_ATTRS:
+        elif isinstance(node, ast.Attribute) and (node.attr in _BANNED_ATTRS or _is_dunder(node.attr)):
+            # blanket dunder ban closes attribute-chain escapes like print.__self__.open(...)
             return False, "disallowed attribute: {0}".format(node.attr)
     return True, None
 

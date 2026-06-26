@@ -297,18 +297,27 @@ Probes are **SLM-generated code** — running them is arbitrary code execution, 
 
 ## 7. Integration into `run_chain_once` (chain_test_v2.py)
 ```text
-prior = snapshot_ledger(target)                    # before the turn (§6.C)
-... run turn, record_to_memory ...                 # existing
+# Signatures (as implemented in research/verify_repair.py):
+#   verify_contracts(contracts, cwd, changed_files, final=False, timeout_s=...) -> {checks, violations, all_probes_run}
+#   repair_and_reconcile(cwd, repair_fn, verify_fn) -> {outcome: repaired|unrepaired, rolled_back: bool}
+#   snapshot_ledger(cwd) -> {version, contracts}   (use ["contracts"])
+
+prior = snapshot_ledger(target)["contracts"]       # contracts MAP, taken BEFORE the turn (§6.C)
+... run the turn, record_to_memory ...             # existing
 final = (turn_index == last_turn)
 if _is_refactor or guard_hits or final:
-    vr = verify_contracts(target, prior, changed, budget, final)
-    if vr.has_violation and gated(vr, final):      # gated = high_conf AND (modifiable or final)
-        repair_turn(target, vr.violations)         # ONE turn
-        vr2 = verify_contracts(target, prior, changed, budget, final)
-        if vr2.clean:  record_to_memory(...); capture_end_state(...)   # accept repaired tree
-        else:          git_rollback(repair_changes)                    # ship pre-repair tree
+    vr = verify_contracts(prior, target, changed, final=final)        # (contracts, cwd, changed_files, final)
+    if vr["violations"] and (final or high_conf(vr)):                 # gated = reproduced failure AND (final or modifiable)
+        # repair_and_reconcile fires ONE repair turn, re-verifies, and ACCEPTS or ROLLS BACK internally
+        res = repair_and_reconcile(
+            target,
+            repair_fn=lambda d: repair_turn(d, vr["violations"]),     # ONE codex turn (§6.D)
+            verify_fn=lambda d: not verify_contracts(prior, d, changed, final=final)["violations"])
+        if res["outcome"] == "repaired":
+            record_to_memory(target); capture_end_state(target)       # refresh ledger/endstate on accept
     record RunVerifierMetrics
 ```
+(`high_conf` per §4; `repair_turn` = the one codex repair invocation, Phase 3.)
 New arm **`with_memory_verify` (B)** vs **`with_memory` (A1)**.
 
 ---
