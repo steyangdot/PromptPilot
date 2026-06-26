@@ -777,6 +777,12 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
     if prefix:
         prepared["optimized"] = prefix + "\n\n" + prepared["optimized"]
     prepared["had_history"] = bool(prefix)
+    # N=10 retest instrumentation (2026-06-25): LOG-ONLY capture of the exact memory/guard
+    # prefix injected this turn. Does NOT change prepared["optimized"] (already prepended above)
+    # — it just makes the surfaced contracts+directive recoverable per-turn so the forensic can
+    # attribute outcome to WHAT was surfaced (closing the "guard text uncapturable in codex --json"
+    # gap that limited the N=5 verdict to outcome-correlation). memory_ab_result / ROADMAP §6.
+    prepared["memory_prefix"] = prefix
     prepared["referential"] = None
     prepared["gate_skipped"] = False
     return prepared
@@ -1120,6 +1126,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "intent": prepared["intent"],
             "scope": prepared["scope"],
             "had_history": prepared["had_history"],
+            "memory_prefix": prepared.get("memory_prefix", ""),  # log-only: exact guard text surfaced this turn (N=10 attribution)
             "referential": prepared.get("referential"),
             "gate_skipped": prepared.get("gate_skipped", False),
             "prompt_chars": len(prepared["optimized"]),
