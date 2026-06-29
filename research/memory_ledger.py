@@ -31,6 +31,8 @@ from pathlib import Path
 
 LEDGER_VERSION = 1
 MAX_CONTRACTS = 40              # bound the ledger (keep most-recently-touched if exceeded)
+PROBE_MAX_CHARS = 4000          # cap a stored verification probe (PR#49: bound sidecar growth; a
+                                # real probe is a few hundred chars — an over-cap payload is dropped)
 STATE_SUMMARY_MAX_CHARS = 1800  # cap the always-on ProjectState header
 GUARD_MAX_CHARS = 2200          # cap the refactor-guard checklist (PR#44 #4: was uncapped)
 
@@ -138,6 +140,14 @@ def clear_ledger(cwd: str) -> None:
         pass
 
 
+def snapshot_ledger(cwd: str) -> dict:
+    """A deep, detached copy of the current ledger (contracts as they stand) — taken BEFORE a
+    turn's update so the Stage-2 verifier can check the PRIOR contracts against the post-turn
+    tree (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.C evidence plumbing). json round-trip = no
+    shared refs with the live ledger."""
+    return json.loads(json.dumps(load_ledger(cwd)))
+
+
 # ---------------------------------------------------------------------------
 # Ledger merge (compress-don't-drop upsert; payload-sanitizing)
 # ---------------------------------------------------------------------------
@@ -161,6 +171,15 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
             cur[k] = _clean_list([*cur.get(k, []), *incoming])
         if c.get("contract"):
             cur["contract"] = str(c["contract"]).strip()
+        probe = c.get("probe")
+        if probe:
+            # Stage-2 executable verification probe (docs/SESSION_MEMORY_VERIFY_REPAIR.md §6.A),
+            # generated + birth-validated separately; preserved across merges like `contract`.
+            # PR#49: cap length — an over-cap payload is DROPPED (a truncated probe is malformed and
+            # would fail birth-validation anyway), so the sidecar cannot bloat over long runs.
+            probe = str(probe)
+            if len(probe) <= PROBE_MAX_CHARS:
+                cur["probe"] = probe
         if turn is not None:
             cur["turn"] = turn
         contracts[feat] = cur
