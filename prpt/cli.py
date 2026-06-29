@@ -504,13 +504,22 @@ def _cmd_preview(args) -> int:
     return 0
 
 
+def _reset_ledger_if_cleared(cwd: str, cleared: bool) -> None:
+    """Keep the structured ledger (prpt.memory) in lockstep with the recency transcript: every
+    session-reset path that clears the transcript must also drop the ledger sidecar, so a later
+    `--memory ledger` run cannot inject stale contracts from the previous session. The handoff
+    flows already report whether they cleared via ``info["cleared"]`` -- route them all here."""
+    if cleared:
+        memory.clear_ledger(cwd)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
 
     # Sub-commands
     if args.subcommand == "new-session":
         clear_session(args.cwd)
-        memory.clear_ledger(args.cwd)   # clear the structured ledger too, so new-session resets both
+        _reset_ledger_if_cleared(args.cwd, True)   # new-session always clears transcript + ledger
         print("Session cleared: {0}".format(session_path_for(args.cwd)))
         return 0
     if args.subcommand in ("setup", "doctor"):
@@ -529,6 +538,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except RuntimeError as e:
             write_stderr(f"checkpoint failed: {e}\n")
             return 1
+        _reset_ledger_if_cleared(args.cwd, info["cleared"])   # checkpoint --clear drops the ledger too
         print("Wrote {p} ({n} turns summarized, ${c:.4f}, {w:.1f}s){clr}".format(
             p=info["out_path"], n=info["turns_summarized"],
             c=info["cost_usd"], w=info["walltime_s"],
@@ -542,6 +552,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except RuntimeError as e:
             write_stderr(f"bootstrap failed: {e}\n")
             return 1
+        _reset_ledger_if_cleared(args.cwd, info["cleared"])   # bootstrap without --append clears the ledger too
         print("Bootstrapped session from {p}{clr} (user msg {u}c, assistant msg {a}c)".format(
             p=info["in_path"],
             clr=" [prior session cleared]" if info["cleared"] else " [appended]",
@@ -555,6 +566,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except RuntimeError as e:
             write_stderr(f"restart failed: {e}\n")
             return 1
+        _reset_ledger_if_cleared(args.cwd, True)   # restart always clears (checkpoint + clear + bootstrap fresh)
         print("Restarted: snapshot to {p} ({n} turns, ${c:.4f}, {w:.1f}s) "
               "and bootstrapped fresh session (user {u}c, assistant {a}c)".format(
                   p=info["out_path"], n=info["turns_summarized"],
@@ -968,8 +980,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _build_assistant_record(normalizer, normalized, modified))
     # Opt-in ledger: extract this turn's durable contracts (one cheap SLM call) and merge them into
     # the structured ledger, so a later refactor turn surfaces them via the guard (distance-independent,
-    # unlike the recency window). Best-effort + warns loudly on failure (never silently no-ops).
-    if ledger_mode:
+    # unlike the recency window). Gate on a SUCCESSFUL run that actually edited files: `exit_code` here
+    # already folds in both the agent's exit and the verify-gate outcome (resolve_exit_code above), so a
+    # nonzero exit means nothing landed -- recording obligations for it would make later runs preserve
+    # APIs that never shipped; and with no modified files there is nothing to extract.
+    # Best-effort + warns loudly on failure (never silently no-ops).
+    if ledger_mode and exit_code == 0 and modified:
         try:
             _prior = memory.load_ledger(args.cwd).get("contracts", {})
             _turn_no = max((c.get("turn", 0) for c in _prior.values()), default=0) + 1

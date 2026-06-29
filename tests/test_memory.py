@@ -324,4 +324,64 @@ def test_cli_memory_ledger_injects_guard_recency_does_not():
         assert "PREFER ADDITIVE" not in out_recency      # recency default unchanged (opt-in only)
 
 
+# --- PR#50 review fixes: lifecycle (clear on every reset) + write-gating -----
+def test_reset_ledger_if_cleared_helper():
+    """PR#50 review (P2): every session-reset path must drop the ledger sidecar so a later
+    `--memory ledger` run can't inject stale contracts. The helper clears iff `cleared`."""
+    from prpt.cli import _reset_ledger_if_cleared
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "x", "contract": "c", "files": ["a.py"]}])])
+        truthy("sidecar exists before reset", ml._ledger_path(d).exists())
+        _reset_ledger_if_cleared(d, False)   # not cleared -> ledger untouched
+        truthy("not-cleared leaves the ledger intact", ml._ledger_path(d).exists())
+        _reset_ledger_if_cleared(d, True)    # cleared -> ledger dropped
+        check("cleared drops the sidecar", ml._ledger_path(d).exists(), False)
+
+
+class _FakeAdapter:
+    """No-network stand-in for a downstream adapter: returns a fixed exit code + modified list."""
+    def __init__(self, rc, modified):
+        self._rc = rc
+        self.last_modified_files = modified
+        self.last_usage = None
+
+    def run(self, final_prompt, args):
+        return self._rc
+
+
+class _FakeFactory:
+    def __init__(self, rc, modified):
+        self._rc, self._modified = rc, modified
+
+    def create(self, args):
+        return _FakeAdapter(self._rc, self._modified)
+
+
+def test_ledger_update_gated_on_success_and_edits(monkeypatch):
+    """PR#50 review (P2): only persist contracts after a SUCCESSFUL run with real edits. A failed
+    run (nonzero exit -- incl. a failed verify gate, which is folded into exit_code) or a no-edit
+    run must NOT record obligations for APIs that never landed."""
+    import prpt.cli as cli
+    calls = []
+
+    def _rec(cwd, raw, spec, modified, turn=None, judge=None):
+        calls.append((tuple(modified), turn))
+        return ({"version": 1, "contracts": {}}, 0.0, True)
+
+    monkeypatch.setattr(cli.memory, "update_ledger", _rec)
+
+    def _run(rc, modified):
+        calls.clear()
+        monkeypatch.setattr(cli, "AdapterFactory", _FakeFactory(rc, modified))
+        with tempfile.TemporaryDirectory() as d:
+            cli.main(["edit httpx/_client.py to change the connect_timeout handling",
+                      "--normalizer", "heuristic", "--cwd", d, "--no-repo-context",
+                      "--memory", "ledger"])
+        return list(calls)
+
+    truthy("success + real edits -> ledger updated", _run(0, ["httpx/_client.py"]))
+    check("nonzero exit -> ledger NOT updated", _run(1, ["httpx/_client.py"]), [])
+    check("success but no edits -> ledger NOT updated", _run(0, []), [])
+
+
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)

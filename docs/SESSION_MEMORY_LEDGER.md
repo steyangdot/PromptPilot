@@ -88,14 +88,19 @@ the agent's **ground-truth modified files** (`adapter.last_modified_files`) and 
 contracts this turn established, which are merged (compress-don't-drop) into the ledger. Failures warn
 loudly (never a silent no-op) and never crash a run that already produced edits.
 
+It runs **only on a successful run that produced real edits** — `exit_code == 0` (which already folds in
+the verify-gate outcome, so a failed verification suppresses it too) **and** a non-empty modified-files
+list. A failed or no-op turn records nothing, so the ledger never preserves an obligation for an API that
+never landed.
+
 ## 6. CLI integration (`prpt/cli.py`)
 
 | Point | Recency (default) | Ledger (`--memory ledger`) |
 |---|---|---|
 | recency load (`load_recent_turns`) | prepend to `prompt_for_slm` | **skipped** |
 | downstream prompt (`final_prompt`) | unchanged | **prepend `memory_prefix`** (contracts + guard) |
-| after the turn | `append_turn` only | `append_turn` **+ `update_ledger`** (ground-truth modified files) |
-| `prpt new-session` | `clear_session` | `clear_session` **+ `clear_ledger`** |
+| after the turn | `append_turn` only | `append_turn` **+ `update_ledger`** — gated on `exit_code == 0` **and** real modified files |
+| session reset (`new-session`, `checkpoint --clear`, `bootstrap` w/o `--append`, `restart`) | `clear_session` | `clear_session` **+ `clear_ledger`** (via `_reset_ledger_if_cleared`, gated on the `cleared` flag) |
 
 The session transcript (`append_turn`) is still written in `ledger` mode (it's just not used for the
 prompt) so handoff/`load_all_turns` keep working.
