@@ -384,4 +384,32 @@ def test_ledger_update_gated_on_success_and_edits(monkeypatch):
     check("success but no edits -> ledger NOT updated", _run(0, []), [])
 
 
+def test_ledger_respects_session_ttl():
+    """PR#50 review (P2): the ledger must honor the same idle-expiry as the recency session, so
+    `--memory ledger` can't resurrect contracts from a session load_recent_turns would already skip."""
+    import prpt.session as sess
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "x", "contract": "c", "files": ["a.py"]}])])
+        truthy("fresh ledger is loaded", "x" in ml.load_ledger(d)["contracts"])
+        # backdate updated_at past the TTL via a direct file write (NOT save_ledger, which re-stamps)
+        p = ml._ledger_path(d)
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        truthy("save_ledger stamped updated_at", "updated_at" in raw)
+        raw["updated_at"] = raw["updated_at"] - sess.SESSION_TTL - 100
+        p.write_text(json.dumps(raw), encoding="utf-8")
+        check("stale ledger ignored (idle past SESSION_TTL)", ml.load_ledger(d)["contracts"], {})
+
+
+def test_ledger_warnings_go_to_stderr(capsys):
+    """PR#50 review (P3): degradation warnings must go to stderr, never pollute stdout in automation."""
+    class EmptyJudge:
+        def __call__(self, prompt, timeout=90):
+            return "", 0.0, 0.0
+    with tempfile.TemporaryDirectory() as d:
+        ml.update_ledger(d, "x", _spec(), [], turn=1, judge=EmptyJudge())   # ok=False -> warns
+        cap = capsys.readouterr()
+        truthy("degradation warning emitted on stderr", "WARNING" in cap.err)
+        check("nothing leaked to stdout", "WARNING" in cap.out, False)
+
+
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)

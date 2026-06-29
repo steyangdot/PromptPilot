@@ -28,8 +28,12 @@ import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
+import time
 from pathlib import Path
+
+from prpt.session import SESSION_TTL   # single source of truth for idle-expiry (pairs with the recency session)
 
 LEDGER_VERSION = 1
 MAX_CONTRACTS = 40              # bound the ledger (keep most-recently-touched if exceeded)
@@ -120,6 +124,13 @@ def load_ledger(cwd: str) -> dict:
         d = json.loads(p.read_text(encoding="utf-8"))
         if not isinstance(d, dict) or not isinstance(d.get("contracts"), dict):
             return {"version": LEDGER_VERSION, "contracts": {}}
+        # Idle-expiry: honor the SAME TTL as the recency session (load_recent_turns skips entries
+        # older than SESSION_TTL). Without this, `--memory ledger` could resurrect contracts from a
+        # session the recency path would already treat as stale. A ledger written before this field
+        # existed (no `updated_at`) is grandfathered as fresh.
+        ts = d.get("updated_at")
+        if ts is not None and time.time() - float(ts) > SESSION_TTL:
+            return {"version": LEDGER_VERSION, "contracts": {}}
         return d
     except Exception:
         return {"version": LEDGER_VERSION, "contracts": {}}
@@ -129,6 +140,7 @@ def save_ledger(cwd: str, ledger: dict) -> bool:
     """Persist the sidecar. Returns False on write failure (PR#44 #9: was silently swallowed,
     causing a stale-ledger continuity loss with ok=True reported)."""
     try:
+        ledger["updated_at"] = time.time()   # idle-expiry stamp (paired with the recency session's per-turn ts)
         _ledger_path(cwd).write_text(json.dumps(ledger, indent=2), encoding="utf-8")
         return True
     except Exception:
@@ -277,12 +289,12 @@ def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> tuple
     if not ok:
         print("  [ledger] WARNING: contract extraction produced no usable JSON (missing judge / "
               "SLM error / wrong-shape output) — this turn recorded NO contracts; with_memory is "
-              "degrading toward a no-memory run.")
+              "degrading toward a no-memory run.", file=sys.stderr)   # stderr: never pollute stdout in automation
     ledger = load_ledger(cwd)
     merge_contracts(ledger, new, turn=turn)
     if not save_ledger(cwd, ledger):    # PR#44 #9: surface persist failures
         print("  [ledger] WARNING: failed to persist the ledger sidecar — the next turn will "
-              "read a stale/empty ledger (silent continuity loss).")
+              "read a stale/empty ledger (silent continuity loss).", file=sys.stderr)
         ok = False
     return ledger, cost, ok
 
