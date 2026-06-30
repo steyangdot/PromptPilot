@@ -83,11 +83,13 @@ def _mentions(token, low: str) -> bool:
     """Word-boundary membership of `token` in the lowercased prompt `low` (PR#44 #5: replaces
     raw `token in low` substring matching that over-fired on 'id'∈'invalid', 'a.py'∈'data.py',
     and '' ∈ anything). Underscores/dots in code symbols/filenames are handled by re.escape +
-    non-alnum lookarounds (so 'connect_timeout' / 'a.py' match as whole tokens)."""
+    non-alnum lookarounds (so 'connect_timeout' / 'a.py' match as whole tokens). The boundary
+    classes ALSO exclude '_' and '-' so a short token does not fire INSIDE a larger identifier
+    ('timeout' must not match inside 'read_timeout', 'retry-after' not inside 'retry-after-cap')."""
     t = (str(token) or "").strip().lower()
     if not t:
         return False
-    return re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", low) is not None
+    return re.search(r"(?<![a-z0-9_-])" + re.escape(t) + r"(?![a-z0-9_-])", low) is not None
 
 
 def _join_capped(lines, max_chars, omit_label="line(s)") -> str:
@@ -137,13 +139,23 @@ def load_ledger(cwd: str) -> dict:
 
 
 def save_ledger(cwd: str, ledger: dict) -> bool:
-    """Persist the sidecar. Returns False on write failure (PR#44 #9: was silently swallowed,
-    causing a stale-ledger continuity loss with ok=True reported)."""
+    """Persist the sidecar ATOMICALLY (temp file + os.replace) so a crash/interrupt mid-write can't
+    leave truncated JSON that load_ledger would silently reset to empty (total contract loss — a
+    regression vs the append-only JSONL recency this replaces). Returns False on write failure
+    (PR#44 #9: was silently swallowed). The updated_at idle-expiry stamp is written onto a COPY so
+    the caller's dict is left untouched."""
+    p = _ledger_path(cwd)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    payload = {**ledger, "updated_at": time.time()}   # stamp on a copy (no in-place mutation of caller)
     try:
-        ledger["updated_at"] = time.time()   # idle-expiry stamp (paired with the recency session's per-turn ts)
-        _ledger_path(cwd).write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, p)                            # atomic on the same volume
         return True
     except Exception:
+        try:
+            tmp.unlink(missing_ok=True)               # don't leave a partial temp behind
+        except Exception:
+            pass
         return False
 
 
@@ -265,7 +277,10 @@ def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judg
     cost = float(cost or 0.0)
     if not (text or "").strip():
         return [], cost, False          # empty output => the SLM call did not run
-    data = extract_json(text)
+    try:
+        data = extract_json(text)
+    except Exception:
+        return [], cost, False          # extract_json raised (e.g. RecursionError on pathological output) => fail-soft
     if data is None:
         return [], cost, False          # PR#44 #7: non-empty text but no parseable JSON => failure
     if isinstance(data, list):

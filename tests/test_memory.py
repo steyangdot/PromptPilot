@@ -369,6 +369,7 @@ def test_ledger_update_gated_on_success_and_edits(monkeypatch):
         return ({"version": 1, "contracts": {}}, 0.0, True)
 
     monkeypatch.setattr(cli.memory, "update_ledger", _rec)
+    monkeypatch.setattr(cli.memory, "ledger_judge_available", lambda: True)  # judge present: gate is exit/edits only
 
     def _run(rc, modified):
         calls.clear()
@@ -410,6 +411,79 @@ def test_ledger_warnings_go_to_stderr(capsys):
         cap = capsys.readouterr()
         truthy("degradation warning emitted on stderr", "WARNING" in cap.err)
         check("nothing leaked to stdout", "WARNING" in cap.out, False)
+
+
+# --- PR#50 /code-review fixes (xhigh) ---------------------------------------
+def test_save_ledger_atomic_and_no_mutation():
+    """Review (P2): save_ledger writes atomically (temp + os.replace, no leftover .tmp) and stamps
+    updated_at on a COPY so the caller's dict is not mutated."""
+    with tempfile.TemporaryDirectory() as d:
+        led = {"version": 1, "contracts": {"x": {"feature": "x", "contract": "c", "turn": 1}}}
+        truthy("save reported ok", ml.save_ledger(d, led))
+        check("caller dict NOT mutated in place", "updated_at" in led, False)
+        on_disk = json.loads(ml._ledger_path(d).read_text(encoding="utf-8"))
+        truthy("persisted copy carries updated_at", "updated_at" in on_disk)
+        p = ml._ledger_path(d)
+        check("no temp file left behind", p.with_suffix(p.suffix + ".tmp").exists(), False)
+
+
+def test_mentions_no_overfire_across_underscore_or_hyphen():
+    """Review (P2): a short token must not fire INSIDE a larger underscored/hyphenated identifier."""
+    check("'timeout' not inside 'read_timeout'", ml._mentions("timeout", "add a read_timeout knob"), False)
+    check("'retry-after' not inside 'retry-after-cap'", ml._mentions("retry-after", "set retry-after-cap now"), False)
+    check("'after' not inside 'retry-after'", ml._mentions("after", "the retry-after header"), False)
+    truthy("whole token still fires", ml._mentions("timeout", "set the timeout now"))
+    truthy("underscored whole token still fires", ml._mentions("connect_timeout", "use connect_timeout here"))
+
+
+def test_memory_env_value_normalized_and_validated(monkeypatch):
+    """Review (correctness): the env-sourced --memory default is normalized + validated (argparse only
+    validates explicit CLI args), so wrong-case works and a typo falls back to recency loudly."""
+    import prpt.cli as cli
+    monkeypatch.setenv("PROMPTPILOT_MEMORY", "LEDGER")
+    check("wrong-case env normalized to 'ledger'", cli.parse_args(["edit x"]).memory, "ledger")
+    monkeypatch.setenv("PROMPTPILOT_MEMORY", "ledgr")
+    check("typo'd env falls back to 'recency'", cli.parse_args(["edit x"]).memory, "recency")
+    monkeypatch.delenv("PROMPTPILOT_MEMORY", raising=False)
+    check("explicit --memory ledger honored", cli.parse_args(["edit x", "--memory", "ledger"]).memory, "ledger")
+    check("default is recency", cli.parse_args(["edit x"]).memory, "recency")
+
+
+def test_slm_extract_fail_soft_on_extract_json_exception(monkeypatch):
+    """Review (low): extract_json raising (e.g. RecursionError on pathological output) must degrade to
+    ([], cost, False), not propagate — honoring the documented fail-soft contract."""
+    import prpt.judges as judges
+
+    def _boom(_text):
+        raise RecursionError("nested too deep")
+    monkeypatch.setattr(judges, "extract_json", _boom)
+
+    class NonEmptyJudge:
+        def __call__(self, prompt, timeout=90):
+            return "[{not really parsed}]", 0.001, 0.0
+    out, cost, ok = ml._slm_extract_contracts("raw", "", [], [], judge=NonEmptyJudge())
+    check("fail-soft on parser exception (no raise)", (out, ok), ([], False))
+    check("cost preserved across the failure", round(cost, 3), 0.001)
+
+
+def test_ledger_update_skipped_without_judge(monkeypatch, capsys):
+    """Review (P2): with no judge, the after-turn update is skipped (no per-turn 'degrading' spam) and
+    one upfront warning is emitted; guard injection is independent and still works."""
+    import prpt.cli as cli
+    calls = []
+
+    def _rec(*a, **k):
+        calls.append(a)
+        return ({"version": 1, "contracts": {}}, 0.0, True)
+    monkeypatch.setattr(cli.memory, "update_ledger", _rec)
+    monkeypatch.setattr(cli.memory, "ledger_judge_available", lambda: False)
+    monkeypatch.setattr(cli, "AdapterFactory", _FakeFactory(0, ["httpx/_client.py"]))
+    with tempfile.TemporaryDirectory() as d:
+        cli.main(["edit httpx/_client.py", "--normalizer", "heuristic", "--cwd", d,
+                  "--no-repo-context", "--memory", "ledger"])
+    err = capsys.readouterr().err
+    check("update_ledger NOT called when no judge", calls, [])
+    truthy("one upfront 'needs an SLM judge' warning", "needs an SLM judge" in err)
 
 
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)

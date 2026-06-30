@@ -222,6 +222,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     ns = parser.parse_args(raw)
     ns.subcommand = None
+    # argparse validates --memory against `choices` ONLY for explicit CLI args, not the env-sourced
+    # default. Normalize + validate the resolved value so a wrong-case/typo'd PROMPTPILOT_MEMORY can't
+    # silently fall back to recency on the documented (env-var) activation path.
+    _mem = (getattr(ns, "memory", None) or "recency").strip().lower()
+    if _mem not in ("recency", "ledger"):
+        write_stderr("[promptpilot] WARNING: PROMPTPILOT_MEMORY={0!r} is not a valid memory strategy "
+                     "(recency|ledger) — falling back to 'recency'.".format(ns.memory))
+        _mem = "recency"
+    ns.memory = _mem
     return ns
 
 
@@ -587,6 +596,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Pass-through mode
     if args.pass_through:
         final_prompt = raw_prompt
+        if getattr(args, "memory", "recency") == "ledger":
+            write_stderr("[promptpilot] WARNING: --pass-through forwards the raw prompt unchanged; "
+                         "--memory ledger is IGNORED here (no guard injected, no contracts recorded).")
         if args.dry_run:
             print(final_prompt)
             maybe_log_run(args.log_file, args.log_runs,
@@ -643,6 +655,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # the recency prepend to the SLM rewrite below, and inject the ledger memory_prefix into the
     # DOWNSTREAM prompt instead (so the coding agent — not the rewrite SLM — sees the contracts+guard).
     ledger_mode = getattr(args, "memory", "recency") == "ledger"
+    # Preflight the judge ONCE (skip in dry-run — nothing is recorded there). The refactor guard
+    # surfaces PRIOR contracts with no judge; RECORDING new contracts needs one. Warn upfront and
+    # gate the after-turn update on this, so we don't emit the per-turn "degrading toward no-memory"
+    # warning on every edit when no judge is configured.
+    ledger_can_extract = False
+    if ledger_mode and not args.dry_run:
+        ledger_can_extract = memory.ledger_judge_available()
+        if not ledger_can_extract:
+            write_stderr("[promptpilot] WARNING: --memory ledger needs an SLM judge to record new "
+                         "contracts, but none is configured (set OPENAI_API_KEY or a default judge). "
+                         "The refactor guard still surfaces prior contracts; new ones won't be recorded.")
     prompt_for_slm = raw_prompt
     gate_active = args.gate_session and args.normalizer != "heuristic"
     if args.gate_session and args.normalizer == "heuristic":
@@ -985,12 +1008,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # nonzero exit means nothing landed -- recording obligations for it would make later runs preserve
     # APIs that never shipped; and with no modified files there is nothing to extract.
     # Best-effort + warns loudly on failure (never silently no-ops).
-    if ledger_mode and exit_code == 0 and modified:
+    if ledger_can_extract and exit_code == 0 and modified:
         try:
             _prior = memory.load_ledger(args.cwd).get("contracts", {})
             _turn_no = max((c.get("turn", 0) for c in _prior.values()), default=0) + 1
-            memory.update_ledger(args.cwd, raw_prompt, getattr(normalizer, "_last_spec", None),
-                                 modified, turn=_turn_no)
+            _led, _ledger_cost, _ok = memory.update_ledger(
+                args.cwd, raw_prompt, getattr(normalizer, "_last_spec", None), modified, turn=_turn_no)
+            # Fold the extraction SLM call into the SLM cost bucket so a ledger-vs-recency A/B doesn't
+            # undercount the ledger arm by one call per edit turn (the headline token/cost metric).
+            if token_stats is not None and _ledger_cost:
+                token_stats.haiku_cost_usd = getattr(token_stats, "haiku_cost_usd", 0.0) + _ledger_cost
         except Exception as e:   # never let ledger upkeep break a run that already produced edits
             write_stderr("[promptpilot] memory=ledger: ledger update failed (non-fatal): {0}".format(e))
     maybe_log_run(args.log_file, args.log_runs,
