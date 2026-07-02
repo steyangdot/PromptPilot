@@ -884,7 +884,8 @@ def prepare_with_memory(raw: str, cwd: str, tool: str) -> dict:
     return prepared
 
 
-def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None) -> tuple:
+def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=None,
+                     gate_verdict=None) -> tuple:
     """AFTER-turn hook for with_memory: extract this turn's durable contracts into the
     bounded ledger (one cheap gpt-5.4-nano call). Parallels record_to_session. Returns
     (ledger_extraction_cost, ok) — `ok=False` flags a failed extraction/persist so the
@@ -894,10 +895,15 @@ def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=Non
     unioned with the scorer's expected-and-changed list — NOT the scorer list alone — so the
     ledger's feature->files/tests map captures side files/tests/docs the agent actually
     touched (the scorer only sees fixture-expected files). (PR #44 review.)"""
-    from prpt.adapters.shell import _git_modified_files
+    from prpt.adapters.shell import _git_modified_files, _git_deleted_files
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
     modified = list(dict.fromkeys(list(_git_modified_files(cwd) or []) + list(changed_files or [])))
-    _led, cost, ok = update_ledger(cwd, raw, spec, modified, turn=turn)
+    try:
+        deleted = _git_deleted_files(cwd)     # Stage A: locking-test-deletion veto input (§3.3)
+    except Exception:
+        deleted = []
+    _led, cost, ok = update_ledger(cwd, raw, spec, modified, turn=turn,
+                                   gate_verdict=gate_verdict, tests_deleted=deleted)
     return cost, ok
 
 
@@ -1236,6 +1242,8 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # tokens are MERGED into this turn's usage so the token comparison COUNTS the retry (a turn
         # that needs a fix is not free). A skip (no test target / no framework) is never a failure.
         verify_log = None
+        gate_verdict = None           # Stage A (§3.3): combined base+contract verdict fed to the ledger
+        cg = None                     # Stage A contract-gate result (observe mode), if it runs
         if (verify_always and variant in verify_arms and not timed_out
                 and turn_def.get("expected_action") == "modify"):
             try:
@@ -1273,6 +1281,33 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                                    "retry_output_tokens": retry_out, "retry_tool_calls": retry_calls})
                 print("    [verify] ran={0} passed={1} retries={2}".format(
                     vres.ran, vres.passed, retries_done))
+                # Stage A contract gate — OBSERVE MODE (docs SESSION_MEMORY_V2_STAGE_A_ACCEPTANCE §3.2):
+                # a SECOND, ledger-driven invocation of the guard-hit contracts' locking tests. Logged,
+                # NOT retry-driving here; its verdict folds into gate_verdict below (red dominates). The
+                # STAGE_A_CONTRACT_GATE flag (default on) lets the Tier-1 baseline arm disable ONLY this
+                # second invocation (same binary, gate off).
+                if variant == "with_memory" and os.environ.get("STAGE_A_CONTRACT_GATE", "1") != "0":
+                    try:
+                        from prpt.verify import run_contract_gate
+                        spec_cg = getattr(prepared.get("_normalizer"), "_last_spec", None)
+                        cg = run_contract_gate(HTTPX_DIR, raw, spec_cg)
+                        _cl = cg.to_log()
+                        _cl["caught_while_base_green"] = bool(
+                            cg.result.ran and not cg.result.passed and vres.passed)
+                        verify_log["contract_gate"] = _cl
+                        print("    [contract-gate] ran={0} passed={1} hits={2} valid={3} "
+                              "unresolved={4} unlocked={5}".format(
+                                  cg.result.ran, cg.result.passed, len(cg.hits),
+                                  len(cg.valid_targets), len(cg.unresolved), len(cg.unlocked)))
+                    except Exception as _cge:   # contract gate must never break the base verify_log
+                        verify_log["contract_gate"] = {"error": str(_cge)}
+                        print("    [contract-gate] error (non-fatal): {0}".format(_cge))
+                # Combined verdict for the ledger recording (§3.3): a contract-red must never be
+                # distilled as DONE or finalize a deprecation, even when the base gate is green.
+                _base_red = vres.ran and not vres.passed
+                _contract_red = bool(cg and cg.result.ran and not cg.result.passed)
+                gate_verdict = "red" if (_base_red or _contract_red) else (
+                    "green" if vres.passed else None)
             except QuotaExhausted:
                 raise
             except Exception as e:   # verify must never break a scored run
@@ -1288,7 +1323,7 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             # PR#44 #10: skip the paid ledger call on a censored/timed-out turn (it would be
             # excluded from aggregation anyway, and would mutate the ledger from a partial turn).
             ledger_slm_cost, ledger_ok = record_to_memory(
-                HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i)
+                HTTPX_DIR, raw, prepared, score.get("changed", []), turn=i, gate_verdict=gate_verdict)
 
         # Stage-2 verify-repair hook (opt-in VERIFY_REPAIR=1, docs §7): after the ledger update,
         # verify the PRIOR contracts against the post-turn tree and fire ONE gated repair on a
