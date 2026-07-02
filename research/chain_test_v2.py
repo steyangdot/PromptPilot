@@ -577,16 +577,28 @@ def rebuild_native_delta_chain(records: list) -> int:
     turn's delta AND the following turn's (which had silently absorbed the gap) change —
     so the whole chain is rebuilt. Records without `usage_cumulative_raw` (old artifacts,
     or turns whose stream never flushed) keep their recorded usage and do not advance the
-    baseline. Returns the number of records whose usage changed."""
+    baseline. Returns the number of records whose usage changed.
+
+    MODE IS CHAIN-WIDE (PR#51 review P2): a thread is either cumulative or per-invocation,
+    never mixed. If ANY adjacent pair of raw readings is non-monotone, the WHOLE chain is
+    per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must yield
+    500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
+    recs = sorted((r for r in records if isinstance(r, dict) and r.get("turn") is not None),
+                  key=lambda r: r["turn"])
+    raws = [r.get("usage_cumulative_raw") for r in recs]
+    present = [x for x in raws if x and (x.get("input_tokens") or 0) > 0]
+    cumulative = all((present[i].get("input_tokens") or 0) <= (present[i + 1].get("input_tokens") or 0)
+                     for i in range(len(present) - 1))
     changed = 0
     prev_raw = None
-    for rec in sorted((r for r in records if isinstance(r, dict) and r.get("turn") is not None),
-                      key=lambda r: r["turn"]):
-        raw = rec.get("usage_cumulative_raw")
+    for rec, raw in zip(recs, raws):
         if not raw or (raw.get("input_tokens") or 0) <= 0:
             continue
-        usage, semantics = delta_cumulative_usage(raw, prev_raw)
-        prev_raw = raw
+        if cumulative:
+            usage, semantics = delta_cumulative_usage(raw, prev_raw)
+            prev_raw = raw
+        else:
+            usage, semantics = dict(raw), "per_invocation_non_monotone"
         if usage != rec.get("usage"):
             rec["usage"] = usage
             rec["uncached_input"] = usage.get(
@@ -1081,8 +1093,13 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     builtin_session_id: str | None = None
     # Codex native-resume arms: previous turn's RAW (thread-cumulative) usage, so each
     # turn's recorded usage is the MARGINAL delta (2026-07-01 re-audit fix). None until
-    # the first successfully-parsed turn.
+    # the first successfully-parsed turn. `cum_mode_ok` is STICKY (PR#51 review P2): a thread
+    # is either cumulative or per-invocation, never mixed — once ANY negative delta shows the
+    # readings are per-invocation (old codex), we stop deltaing for the REST of the run, else
+    # e.g. 500 -> 300 -> 450 would be recorded 500, 300, 150 (turn 3 wrongly delta'd against
+    # the turn-2 baseline). rebuild_native_delta_chain applies the same rule retroactively.
     prev_cum_raw: dict | None = None
+    cum_mode_ok = True
 
     # Verify-always gate (benchmark tier, opt-in VERIFY_ALWAYS=1). Scoped to `verify_arms`
     # (default: with_memory only) so a warm/native CONTROL arm is never handed this prpt-only
@@ -1167,7 +1184,12 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         if uses_builtin and tool == "codex":
             if (usage.get("input_tokens") or 0) > 0:
                 usage_cum_raw = dict(usage)
-                usage, usage_semantics = delta_cumulative_usage(usage, prev_cum_raw)
+                if cum_mode_ok:
+                    usage, usage_semantics = delta_cumulative_usage(usage, prev_cum_raw)
+                    if usage_semantics == "per_invocation_non_monotone":
+                        cum_mode_ok = False   # sticky: this thread reports per-invocation
+                else:
+                    usage_semantics = "per_invocation_sticky"   # raw kept, no delta
                 prev_cum_raw = usage_cum_raw
 
         # For variants using built-in session, capture session_id for next turn.

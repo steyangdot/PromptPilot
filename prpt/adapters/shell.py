@@ -63,6 +63,20 @@ def _git_modified_files(cwd: str) -> List[str]:
     return list(dict.fromkeys(files))  # deduplicate, preserve order
 
 
+def _git_deleted_files(cwd: str) -> List[str]:
+    """Files DELETED (unstaged or staged, uncommitted). Feeds the Stage-A tombstone veto:
+    a quarantined contract whose locking tests were deleted (rather than migrated) must not
+    finalize on a scoped green (prpt.memory.finalize_deprecations tests_deleted). Uncommitted
+    deletions can span turns — conservative in the SAFE direction (the veto holds longer)."""
+    files: List[str] = []
+    for git_args in [["git", "diff", "--name-only", "--diff-filter=D"],
+                     ["git", "diff", "--name-only", "--cached", "--diff-filter=D"]]:
+        code, out, _ = run_command(git_args, cwd=cwd)
+        if code == 0 and out:
+            files.extend(out.splitlines())
+    return list(dict.fromkeys(files))
+
+
 def resolve_executable_name(tool_name: str) -> str:
     candidates = [tool_name]
     if os.name == "nt":

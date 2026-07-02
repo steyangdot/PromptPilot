@@ -37,6 +37,10 @@ def test_collect_valid_targets_validates_and_counts_unresolved():
     assert "tests/test_ok.py" in valid
     assert "tests/test_ok.py::test_pass" in valid
     assert "tests/test_missing.py" in unresolved
+    # a hallucinated TEST NAME in a real file is exactly the SLM failure mode: UNRESOLVED —
+    # and it must not poison the batch (collect runs on file parts only; on several pytest
+    # versions a missing node-id argument aborts the whole collect with rc=4).
+    assert "tests/test_ok.py::test_nope" in unresolved
     assert "-x" in unresolved
 
 

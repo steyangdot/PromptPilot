@@ -235,13 +235,21 @@ def collect_valid_targets(cwd: str, candidates: List[str], *,
     caller records the UNRESOLVED rate and falls back; it never invents a verdict."""
     cands = _clean_targets(candidates, cwd)
     if not cands:
-        return [], list(dict.fromkeys(candidates or []))
+        return [], list(dict.fromkeys(str(x) for x in (candidates or [])))
+    # Collect on the FILE PARTS only. The files are guaranteed to exist (_safe_target), so
+    # pytest never sees a possibly-hallucinated NODE-ID at collect time — on several pytest
+    # versions a single missing node-id argument aborts the WHOLE batch with a usage error
+    # (rc=4, nothing listed), which would mark every target unresolved and defeat the batched
+    # pre-validation (found the hard way: py3.9 CI job). Node-ids are then validated against
+    # the collected list, which ALSO classifies a hallucinated test name in a real file as
+    # UNRESOLVED — exactly the SLM failure mode this gate exists to absorb.
+    files = list(dict.fromkeys(_target_file_part(c) for c in cands))
     cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q",
-           "--continue-on-collection-errors", "--no-header", "-p", "no:cacheprovider"] + cands
+           "--continue-on-collection-errors", "--no-header", "-p", "no:cacheprovider"] + files
     try:
         proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return [], list(dict.fromkeys(candidates or []))
+        return [], list(dict.fromkeys(str(x) for x in (candidates or [])))
     collected = [ln.strip() for ln in (proc.stdout or "").splitlines()
                  if "::" in ln and not ln.startswith(("=", "-", "!"))]
     norm = [c.replace("\\", "/") for c in collected]
@@ -249,11 +257,14 @@ def collect_valid_targets(cwd: str, candidates: List[str], *,
     valid, unresolved = [], []
     for t in dict.fromkeys(str(x) for x in (candidates or [])):
         tn = t.replace("\\", "/")
-        ok = t in safe and any(
-            ln == tn                                     # exact node-id
-            or ln.startswith(tn + "::")                  # candidate was a file/prefix
-            or ln.split("::", 1)[0] == _target_file_part(tn)   # same file, any test
-            for ln in norm)
+        if t not in safe:
+            unresolved.append(t)
+            continue
+        if "::" in tn:      # node-id: the exact test (or a parametrization/method of it) must exist
+            ok = any(ln == tn or ln.startswith(tn + "[") or ln.startswith(tn + "::")
+                     for ln in norm)
+        else:               # file: at least one test collected in it
+            ok = any(ln.split("::", 1)[0] == tn for ln in norm)
         (valid if ok else unresolved).append(t)
     return valid, unresolved
 

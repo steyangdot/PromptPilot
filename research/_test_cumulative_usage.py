@@ -91,6 +91,23 @@ def test_old_artifacts_untouched():
     check("no raw field: usage intact", recs[1]["usage"]["input_tokens"], 456)
 
 
+def test_per_invocation_mode_is_chain_wide():
+    """PR#51 review P2: a thread is either cumulative or per-invocation, NEVER mixed. The
+    reviewer's exact case — per-invocation readings 500 -> 300 -> 450 — must be recorded as
+    500, 300, 450; a pairwise fallback would wrongly delta turn 3 against turn 2 (450-300=150)."""
+    recs = [_rec(1, u(500, 200, 50)), _rec(2, u(300, 120, 30)), _rec(3, u(450, 180, 45))]
+    rebuild_native_delta_chain(recs)
+    check("t1 raw kept", recs[0]["usage"]["input_tokens"], 500)
+    check("t2 raw kept", recs[1]["usage"]["input_tokens"], 300)
+    check("t3 raw kept (NOT delta'd to 150)", recs[2]["usage"]["input_tokens"], 450)
+    check("chain-wide semantics on t1 too", recs[0]["usage_semantics"], "per_invocation_non_monotone")
+    # even a late-appearing non-monotone pair flips the WHOLE chain retroactively
+    recs2 = [_rec(1, u(100, 40, 10)), _rec(2, u(250, 130, 25)), _rec(3, u(200, 100, 20))]
+    rebuild_native_delta_chain(recs2)
+    check("earlier turns NOT delta'd once any pair is non-monotone",
+          recs2[1]["usage"]["input_tokens"], 250)
+
+
 def test_artifact_grounded_chain_long():
     """The real builtin_run1.json (recorded naively = cumulative per-turn): rebuilding it
     must yield sum(deltas) == last-turn cumulative (the audit's corrected total)."""
@@ -120,7 +137,8 @@ def test_artifact_grounded_chain_long():
 if __name__ == "__main__":
     for fn in (test_first_turn_passthrough, test_cumulative_delta, test_non_monotone_fallback,
                test_rebuild_plain_chain, test_censored_gap_then_recovery,
-               test_old_artifacts_untouched, test_artifact_grounded_chain_long):
+               test_old_artifacts_untouched, test_per_invocation_mode_is_chain_wide,
+               test_artifact_grounded_chain_long):
         print(fn.__name__)
         fn()
     print()

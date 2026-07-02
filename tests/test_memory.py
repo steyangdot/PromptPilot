@@ -486,6 +486,26 @@ def test_ledger_update_skipped_without_judge(monkeypatch, capsys):
     truthy("one upfront 'needs an SLM judge' warning", "needs an SLM judge" in err)
 
 
+def test_cli_passes_tests_deleted_to_update_ledger(monkeypatch):
+    """PR#51 review P2: the deleted-tests veto must actually be SUPPLIED by the CLI —
+    otherwise finalize_deprecations' safeguard is permanently disabled in real runs."""
+    import prpt.adapters.shell as shell
+    import prpt.cli as cli
+    seen = {}
+
+    def _rec(cwd, raw, spec, modified, turn=None, judge=None, **kw):
+        seen.update(kw)
+        return ({"version": 1, "contracts": {}}, 0.0, True)
+    monkeypatch.setattr(cli.memory, "update_ledger", _rec)
+    monkeypatch.setattr(cli.memory, "ledger_judge_available", lambda: True)
+    monkeypatch.setattr(shell, "_git_deleted_files", lambda cwd: ["tests/test_gone.py"])
+    monkeypatch.setattr(cli, "AdapterFactory", _FakeFactory(0, ["httpx/_client.py"]))
+    with tempfile.TemporaryDirectory() as d:
+        cli.main(["edit httpx/_client.py", "--normalizer", "heuristic", "--cwd", d,
+                  "--no-repo-context", "--memory", "ledger"])
+    check("tests_deleted supplied to update_ledger", seen.get("tests_deleted"), ["tests/test_gone.py"])
+
+
 # --- Stage A (docs/SESSION_MEMORY_V2_DESIGN.md §6) ---------------------------
 def test_removal_intent_is_user_conditioned():
     c = {"feature": "retry-after", "contract": "Retry-After parsed + capped",

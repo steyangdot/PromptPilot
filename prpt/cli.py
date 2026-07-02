@@ -1016,9 +1016,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # verify-gate actually ran; None when off/skipped (quarantines then simply hold).
             _gv = ("green" if (verify_result is not None and verify_result.ran and verify_result.passed)
                    else "red" if (verify_result is not None and verify_result.ran) else None)
+            # PR#51 review P2: actually SUPPLY the deleted-tests veto — without this the
+            # quarantine safeguard (a contract whose locking tests were deleted must not
+            # tombstone on a scoped green) was permanently disabled in real runs.
+            try:
+                from prpt.adapters.shell import _git_deleted_files
+                _deleted = _git_deleted_files(args.cwd)
+            except Exception:
+                _deleted = []
             _led, _ledger_cost, _ok = memory.update_ledger(
                 args.cwd, raw_prompt, getattr(normalizer, "_last_spec", None), modified,
-                turn=_turn_no, gate_verdict=_gv)
+                turn=_turn_no, gate_verdict=_gv, tests_deleted=_deleted)
             # Fold the extraction SLM call into the SLM cost bucket so a ledger-vs-recency A/B doesn't
             # undercount the ledger arm by one call per edit turn (the headline token/cost metric).
             if token_stats is not None and _ledger_cost:
