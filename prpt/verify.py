@@ -392,3 +392,75 @@ def build_retry_prompt(result: VerifyResult, changed_files: List[str],
         "genuinely wrong, correct the code first and explain why."
     ).format(cmd=cmd, rc=result.returncode, tail=result.output_tail or "(no output)",
              contracts=contract_block, files=files)
+
+
+# ---------------------------------------------------------------------------
+# Stage A orchestrator (docs/SESSION_MEMORY_V2_STAGE_A_ACCEPTANCE.md §3.1): the single
+# guard_test_targets -> collect_valid_targets -> run_verify_targets sequence, shared by the
+# research harness gate AND the product run_gate so the mechanism has ONE implementation and ONE
+# set of tests. guard_test_targets is imported lazily: memory.py imports only prpt.session today,
+# so no cycle exists; the lazy import keeps verify<-memory acyclic regardless of future edits.
+# ---------------------------------------------------------------------------
+@dataclass
+class ContractGateResult:
+    """Outcome of the second, contract-targeted invocation plus the guard bookkeeping the
+    acceptance gates track (UNLOCKED / UNRESOLVED rates, collect latency). `result` is a normal
+    tri-state VerifyResult; the counters are the recall->action gap made measurable."""
+    result: VerifyResult
+    hits: List[str] = field(default_factory=list)
+    unlocked: List[str] = field(default_factory=list)
+    unresolved: List[str] = field(default_factory=list)
+    valid_targets: List[str] = field(default_factory=list)
+    contracts: List[dict] = field(default_factory=list)
+    collect_duration_s: float = 0.0
+
+    def to_log(self) -> dict:
+        """Compact, JSON-safe view for the run log (base VerifyResult view + guard counters)."""
+        d = self.result.to_log()
+        d.update({"hits": self.hits, "unlocked": self.unlocked, "unresolved": self.unresolved,
+                  "valid_targets": self.valid_targets,
+                  "collect_duration_s": round(self.collect_duration_s, 2)})
+        return d
+
+
+def _contracts_for(ledger: dict, hits: List[str]) -> List[dict]:
+    """The endangered contract dicts (feature/contract/tests) for the surfaced feature ids, for
+    build_retry_prompt(contracts=...). Reads an already-loaded ledger (no second disk read)."""
+    contracts = (ledger or {}).get("contracts", {}) or {}
+    out = []
+    for f in hits or []:
+        c = contracts.get(f)
+        if isinstance(c, dict):
+            out.append({"feature": f, "contract": c.get("contract", ""),
+                        "tests": list(c.get("tests") or [])})
+    return out
+
+
+def run_contract_gate(cwd: str, raw: str, spec, *,
+                      timeout_s: int = VERIFY_TIMEOUT_S) -> ContractGateResult:
+    """Run the guard-hit contracts' locking tests as the SECOND, isolated invocation.
+
+    From the ledger ENTERING this turn (the caller MUST invoke this BEFORE update_ledger),
+    guard_test_targets finds the contracts `raw` endangers; their locking tests are
+    collect-validated (hallucinated paths/node-ids -> `unresolved`, counted, never run) and the
+    valid subset is run tri-state via run_verify_targets (rc 0 green / rc 1 red / else
+    targeting-invalid -> ran=False). An empty valid set -> ran=False ("no contract targets"):
+    never red, never green, and — being a separate invocation — never masks the base gate.
+    A guard-hit contract with NO recorded tests is surfaced in `unlocked` (counted, not run)."""
+    from prpt.memory import guard_test_targets, load_ledger   # lazy: keep verify<-memory acyclic
+    gt = guard_test_targets(cwd, raw, spec)
+    hits = list(gt.get("hits", []) or [])
+    unlocked = list(gt.get("unlocked", []) or [])
+    contracts = _contracts_for(load_ledger(cwd), hits)
+    targets = list(gt.get("targets") or [])
+    if not targets:
+        return ContractGateResult(
+            VerifyResult(ran=False, skipped_reason="no contract targets"),
+            hits=hits, unlocked=unlocked, contracts=contracts)
+    t0 = time.time()
+    valid, unresolved = collect_valid_targets(cwd, targets, timeout_s=min(120, timeout_s))
+    collect_dur = time.time() - t0
+    res = run_verify_targets(cwd, valid, timeout_s=timeout_s)
+    return ContractGateResult(res, hits=hits, unlocked=unlocked, unresolved=unresolved,
+                              valid_targets=valid, contracts=contracts,
+                              collect_duration_s=collect_dur)

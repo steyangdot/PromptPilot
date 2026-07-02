@@ -580,15 +580,20 @@ def rebuild_native_delta_chain(records: list) -> int:
     baseline. Returns the number of records whose usage changed.
 
     MODE IS CHAIN-WIDE (PR#51 review P2): a thread is either cumulative or per-invocation,
-    never mixed. If ANY adjacent pair of raw readings is non-monotone, the WHOLE chain is
-    per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must yield
-    500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
+    never mixed. If ANY adjacent pair of raw readings is non-monotone IN ANY TOKEN FIELD, the
+    WHOLE chain is per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must
+    yield 500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
     recs = sorted((r for r in records if isinstance(r, dict) and r.get("turn") is not None),
                   key=lambda r: r["turn"])
     raws = [r.get("usage_cumulative_raw") for r in recs]
     present = [x for x in raws if x and (x.get("input_tokens") or 0) > 0]
-    cumulative = all((present[i].get("input_tokens") or 0) <= (present[i + 1].get("input_tokens") or 0)
-                     for i in range(len(present) - 1))
+    # ALL token fields must be monotone non-decreasing — a truly cumulative thread is monotone in
+    # EVERY counter. Keying on input_tokens alone (the original precheck) MIXED raw and deltas in
+    # one chain when input rose while cached/uncached/output dropped: delta_cumulative_usage then
+    # fell back per-TURN, violating the chain-wide invariant this function exists to enforce
+    # (PR#52 review P1; regression-tested with the mixed-field case).
+    cumulative = all((present[i].get(k) or 0) <= (present[i + 1].get(k) or 0)
+                     for i in range(len(present) - 1) for k in _CUM_TOKEN_FIELDS)
     changed = 0
     prev_raw = None
     for rec, raw in zip(recs, raws):
@@ -897,6 +902,10 @@ def record_to_memory(cwd: str, raw: str, prepared: dict, changed_files, turn=Non
     from prpt.adapters.shell import _git_modified_files
     spec = getattr(prepared.get("_normalizer"), "_last_spec", None)
     modified = list(dict.fromkeys(list(_git_modified_files(cwd) or []) + list(changed_files or [])))
+    # NB: the harness binds update_ledger from research/memory_ledger.py (the pre-Stage-A copy,
+    # imported at the top of this module), which accepts neither gate_verdict nor tests_deleted and
+    # has no tombstone/DONE-not-ASKED logic. So on the harness, Stage A = the contract-gate OBSERVE
+    # mechanism only; the verdict/deleted-tests threading (§3.3) would TypeError here and is not wired.
     _led, cost, ok = update_ledger(cwd, raw, spec, modified, turn=turn)
     return cost, ok
 
@@ -1106,6 +1115,19 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     # feature — keeping a co-run comparison honest.
     verify_always = os.environ.get("VERIFY_ALWAYS") == "1"
     verify_arms = {a.strip() for a in os.environ.get("VERIFY_ALWAYS_ARMS", "with_memory").split(",") if a.strip()}
+    # Stage A: fail FAST if the contract gate is enabled for this arm but run_contract_gate can't be
+    # imported — otherwise its per-turn except-guard would silently record {"error": ...} every turn
+    # and the run would look healthy while measuring nothing (false-green acceptance, review finding).
+    if (verify_always and variant == "with_memory" and variant in verify_arms
+            and os.environ.get("STAGE_A_CONTRACT_GATE", "1") != "0"):
+        try:
+            from prpt.verify import run_contract_gate  # noqa: F401  (run-start import check)
+        except Exception as _e:
+            raise RuntimeError(
+                "STAGE_A_CONTRACT_GATE is on but prpt.verify.run_contract_gate could not be imported "
+                "({0}). The contract-gate observe signal would silently degrade to per-turn errors "
+                "(false-green acceptance). Fix the prpt install/cwd, or set STAGE_A_CONTRACT_GATE=0."
+                .format(_e))
 
     results = []
     ext = _ext(tool)
@@ -1273,6 +1295,33 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
                                    "retry_output_tokens": retry_out, "retry_tool_calls": retry_calls})
                 print("    [verify] ran={0} passed={1} retries={2}".format(
                     vres.ran, vres.passed, retries_done))
+                # Stage A contract gate — OBSERVE MODE (docs SESSION_MEMORY_V2_STAGE_A_ACCEPTANCE §3.2):
+                # a SECOND, ledger-driven invocation of the guard-hit contracts' locking tests. Logged
+                # ONLY (the recall->action observe signal) — NOT retry-driving, and NOT fed to the
+                # ledger: the harness records via research/memory_ledger.py, which has no Stage A verdict
+                # handling (see record_to_memory). The STAGE_A_CONTRACT_GATE flag (default on) lets the
+                # Tier-1 baseline arm disable ONLY this second invocation (same binary, gate off).
+                if variant == "with_memory" and os.environ.get("STAGE_A_CONTRACT_GATE", "1") != "0":
+                    try:
+                        from prpt.verify import run_contract_gate
+                        spec_cg = getattr(prepared.get("_normalizer"), "_last_spec", None)
+                        cg = run_contract_gate(HTTPX_DIR, raw, spec_cg)
+                        _cl = cg.to_log()
+                        _cl["caught_while_base_green"] = bool(
+                            cg.result.ran and not cg.result.passed and vres.passed)
+                        # base-SKIP (rc 5/124/125 -> ran=False) is a DISTINCT state: a contract-red
+                        # there is caught with NO base signal at all — the strongest observe case, and
+                        # it is NOT counted by caught_while_base_green (which requires vres.passed).
+                        _cl["caught_while_base_skipped"] = bool(
+                            cg.result.ran and not cg.result.passed and not vres.ran)
+                        verify_log["contract_gate"] = _cl
+                        print("    [contract-gate] ran={0} passed={1} hits={2} valid={3} "
+                              "unresolved={4} unlocked={5}".format(
+                                  cg.result.ran, cg.result.passed, len(cg.hits),
+                                  len(cg.valid_targets), len(cg.unresolved), len(cg.unlocked)))
+                    except Exception as _cge:   # contract gate must never break the base verify_log
+                        verify_log["contract_gate"] = {"error": str(_cge)}
+                        print("    [contract-gate] error (non-fatal): {0}".format(_cge))
             except QuotaExhausted:
                 raise
             except Exception as e:   # verify must never break a scored run

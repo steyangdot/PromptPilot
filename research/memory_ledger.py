@@ -151,6 +151,17 @@ def snapshot_ledger(cwd: str) -> dict:
 # ---------------------------------------------------------------------------
 # Ledger merge (compress-don't-drop upsert; payload-sanitizing)
 # ---------------------------------------------------------------------------
+def _looks_like_test_target(t) -> bool:
+    """True iff `t` is a plausible pytest target — a `.py` file path, optionally `path::node-id` —
+    and NOT a prose description, a bare/planned test name, or a glob (Tier-1 finding 2026-07-02:
+    the SLM sometimes emitted 'a new unit test for X' or a bare name into `tests`). Existence and
+    node-id validity are checked downstream at collect time."""
+    fp = str(t).strip().split("::", 1)[0]
+    if not fp or fp.startswith("-") or " " in fp or not fp.endswith(".py"):
+        return False
+    return not any(ch in fp for ch in "*?()[]")
+
+
 def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) -> dict:
     """Upsert extracted contracts. files/tests/symbols union-merge with strip+drop-empty
     (PR#44 #3) and tolerate scalar/None/non-iterable values without crashing (PR#44 #1)."""
@@ -169,6 +180,10 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
             elif not isinstance(incoming, (list, tuple)):
                 incoming = []          # PR#44 #1: scalar/dict/None -> ignore, never iterate it
             cur[k] = _clean_list([*cur.get(k, []), *incoming])
+        # Coverage floor (Tier-1 finding): keep only `tests` entries that LOOK like real pytest
+        # targets (a `.py` path, optionally `::node-id`) — never prose / bare-name / glob. Real-looking
+        # drift is left to the gate's UNRESOLVED measurement; non-paths (never deletion targets) go.
+        cur["tests"] = [t for t in cur.get("tests", []) if _looks_like_test_target(t)]
         if c.get("contract"):
             cur["contract"] = str(c["contract"]).strip()
         probe = c.get("probe")
@@ -198,7 +213,10 @@ _EXTRACT_INSTR = (
     "APIs, function/keyword arguments, features, and the tests that lock them — that LATER "
     "turns (especially refactors/migrations) must preserve or intentionally migrate. "
     "Emit ONLY obligations a future change could accidentally break. Be terse; reuse a "
-    "stable kebab-case `feature` id across turns about the same feature."
+    "stable kebab-case `feature` id across turns about the same feature. "
+    "The `tests` field MUST list ONLY test targets that ALREADY EXIST in the repo — a file path "
+    "(e.g. `tests/test_timeouts.py`) or a pytest node-id (`path::test_name`) — NEVER a prose "
+    "description, a planned/'new' test, or a bare function name; use an empty list if none exists."
 )
 
 
@@ -235,7 +253,9 @@ def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judg
         "[Files changed]\n{cf}\n"
         "[Predicted target files]\n{tf}\n\n"
         'Return ONLY JSON: {{"contracts":[{{"feature":"<kebab-id>",'
-        '"contract":"<one-sentence obligation>","files":[...],"tests":[...],"symbols":[...]}}]}}. '
+        '"contract":"<one-sentence obligation>","files":[...],'
+        '"tests":["<existing test path or path::node-id ONLY — never a description; [] if none>"],'
+        '"symbols":[...]}}]}}. '
         "Use an empty list if nothing durable was established."
     ).format(
         raw=(raw or "")[:2000],
