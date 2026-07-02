@@ -304,6 +304,31 @@ def test_file_regex_broadened():
     check("version numbers are not files", no_files, set())
 
 
+def test_tests_field_floor_drops_non_paths():
+    # Tier-1 coverage-floor (2026-07-02): merge keeps only real-LOOKING pytest targets in `tests`;
+    # prose descriptions, bare/planned test names, and globs are dropped, while a real-looking path
+    # (even an absent one -> genuine drift) is KEPT for the gate to measure as UNRESOLVED. Format
+    # check, not existence. Mirrors tests/test_memory.py::test_tests_field_floor_drops_non_paths so
+    # the HARNESS-writer copy of the floor cannot silently drift out of sync (code-review finding).
+    with tempfile.TemporaryDirectory() as d:
+        led, _cost, ok = ml.update_ledger(
+            d, "add feature X", _spec(), ["httpx/_x.py"], turn=1,
+            judge=FakeJudge([{"feature": "feat-x", "contract": "keep X working",
+                              "files": ["httpx/_x.py"],
+                              "tests": ["tests/client/test_client.py::test_a",   # real node-id -> KEEP
+                                        "tests/test_missing.py",                 # real-looking, absent -> KEEP (drift)
+                                        "A new unit test for the X behavior",    # prose -> DROP
+                                        "test_planned_thing",                    # bare name -> DROP
+                                        "test_async_* (new async coverage)"]}])) # glob+prose -> DROP
+        truthy("extraction ok", ok)
+        check("only path-shaped entries survive", sorted(led["contracts"]["feat-x"]["tests"]),
+              ["tests/client/test_client.py::test_a", "tests/test_missing.py"])
+    truthy("node-id kept", ml._looks_like_test_target("tests/test_x.py::test_y"))
+    truthy("prose dropped", not ml._looks_like_test_target("a new test for the fix"))
+    truthy("bare name dropped", not ml._looks_like_test_target("test_planned_thing"))
+    truthy("glob dropped", not ml._looks_like_test_target("tests/test_*.py"))
+
+
 if __name__ == "__main__":
     for t in (test_merge_upsert, test_recency_bound, test_update_ledger_with_fake_slm,
               test_run3_distance_independent, test_run4_retry_after_surfaced,
@@ -314,7 +339,7 @@ if __name__ == "__main__":
               test_guard_no_false_fire_from_substring, test_slm_accepts_top_level_array,
               test_slm_prose_is_failure_not_empty, test_slm_wrong_shape_is_failure,
               test_guard_output_is_capped, test_state_summary_is_capped,
-              test_file_regex_broadened):
+              test_file_regex_broadened, test_tests_field_floor_drops_non_paths):
         t()
     if _failures:
         print("FAIL ({0} assertion(s)):".format(len(_failures)))
