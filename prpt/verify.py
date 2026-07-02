@@ -458,7 +458,7 @@ def run_contract_gate(cwd: str, raw: str, spec, *,
             VerifyResult(ran=False, skipped_reason="no contract targets"),
             hits=hits, unlocked=unlocked, contracts=contracts)
     t0 = time.time()
-    valid, unresolved = collect_valid_targets(cwd, targets, timeout_s=120)
+    valid, unresolved = collect_valid_targets(cwd, targets, timeout_s=min(120, timeout_s))
     collect_dur = time.time() - t0
     res = run_verify_targets(cwd, valid, timeout_s=timeout_s)
     return ContractGateResult(res, hits=hits, unlocked=unlocked, unresolved=unresolved,
