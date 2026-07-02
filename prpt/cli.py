@@ -1012,8 +1012,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             _prior = memory.load_ledger(args.cwd).get("contracts", {})
             _turn_no = max((c.get("turn", 0) for c in _prior.values()), default=0) + 1
+            # Stage A (DONE-not-ASKED + tombstone quarantine): pass the gate verdict when the
+            # verify-gate actually ran; None when off/skipped (quarantines then simply hold).
+            _gv = ("green" if (verify_result is not None and verify_result.ran and verify_result.passed)
+                   else "red" if (verify_result is not None and verify_result.ran) else None)
             _led, _ledger_cost, _ok = memory.update_ledger(
-                args.cwd, raw_prompt, getattr(normalizer, "_last_spec", None), modified, turn=_turn_no)
+                args.cwd, raw_prompt, getattr(normalizer, "_last_spec", None), modified,
+                turn=_turn_no, gate_verdict=_gv)
             # Fold the extraction SLM call into the SLM cost bucket so a ledger-vs-recency A/B doesn't
             # undercount the ledger arm by one call per edit turn (the headline token/cost metric).
             if token_stats is not None and _ledger_cost:
