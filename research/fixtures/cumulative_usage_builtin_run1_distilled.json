@@ -1,0 +1,132 @@
+[
+ {
+  "turn": 1,
+  "usage": {
+   "input_tokens": 1497620,
+   "cached_tokens": 1361920,
+   "uncached_tokens": 135700,
+   "output_tokens": 13924,
+   "tool_calls": 46
+  }
+ },
+ {
+  "turn": 2,
+  "usage": {
+   "input_tokens": 3669464,
+   "cached_tokens": 3470080,
+   "uncached_tokens": 199384,
+   "output_tokens": 21088,
+   "tool_calls": 21
+  }
+ },
+ {
+  "turn": 3,
+  "usage": {
+   "input_tokens": 5800009,
+   "cached_tokens": 5442688,
+   "uncached_tokens": 357321,
+   "output_tokens": 29978,
+   "tool_calls": 21
+  }
+ },
+ {
+  "turn": 4,
+  "usage": {
+   "input_tokens": 9852977,
+   "cached_tokens": 9346176,
+   "uncached_tokens": 506801,
+   "output_tokens": 45022,
+   "tool_calls": 46
+  }
+ },
+ {
+  "turn": 5,
+  "usage": {
+   "input_tokens": 10832379,
+   "cached_tokens": 10309632,
+   "uncached_tokens": 522747,
+   "output_tokens": 47173,
+   "tool_calls": 8
+  }
+ },
+ {
+  "turn": 6,
+  "usage": {
+   "input_tokens": 12896090,
+   "cached_tokens": 12356864,
+   "uncached_tokens": 539226,
+   "output_tokens": 51700,
+   "tool_calls": 13
+  }
+ },
+ {
+  "turn": 7,
+  "usage": {
+   "input_tokens": 13988620,
+   "cached_tokens": 13387904,
+   "uncached_tokens": 600716,
+   "output_tokens": 63048,
+   "tool_calls": 47
+  }
+ },
+ {
+  "turn": 8,
+  "usage": {
+   "input_tokens": 14788075,
+   "cached_tokens": 14135552,
+   "uncached_tokens": 652523,
+   "output_tokens": 69060,
+   "tool_calls": 15
+  }
+ },
+ {
+  "turn": 9,
+  "usage": {
+   "input_tokens": 16790580,
+   "cached_tokens": 16100608,
+   "uncached_tokens": 689972,
+   "output_tokens": 79691,
+   "tool_calls": 32
+  }
+ },
+ {
+  "turn": 10,
+  "usage": {
+   "input_tokens": 21949557,
+   "cached_tokens": 21198592,
+   "uncached_tokens": 750965,
+   "output_tokens": 91899,
+   "tool_calls": 38
+  }
+ },
+ {
+  "turn": 11,
+  "usage": {
+   "input_tokens": 24214696,
+   "cached_tokens": 23442560,
+   "uncached_tokens": 772136,
+   "output_tokens": 98158,
+   "tool_calls": 20
+  }
+ },
+ {
+  "turn": 12,
+  "usage": {
+   "input_tokens": 27861359,
+   "cached_tokens": 26877440,
+   "uncached_tokens": 983919,
+   "output_tokens": 124935,
+   "tool_calls": 46
+  }
+ },
+ {
+  "turn": 13,
+  "usage": {
+   "input_tokens": 30059517,
+   "cached_tokens": 29004160,
+   "uncached_tokens": 1055357,
+   "output_tokens": 135558,
+   "tool_calls": 28
+  }
+ }
+]

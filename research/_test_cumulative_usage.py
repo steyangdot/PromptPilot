@@ -2,8 +2,10 @@
 
 Covers delta_cumulative_usage (first-turn / cumulative-delta / non-monotone fallback) and
 rebuild_native_delta_chain (plain chain, censored-gap absorption, post-recovery
-redistribution, old-artifact passthrough), plus an ARTIFACT-GROUNDED check: rebuilding the
-real chain_long builtin_run1.json must make sum(per-turn deltas) == last-turn cumulative.
+redistribution, old-artifact passthrough, chain-wide mode incl. the PR#52 mixed-field case),
+plus a FIXTURE-GROUNDED check against a TRACKED distillation of the real chain_long
+builtin_run1.json (sum(per-turn deltas) == last-turn cumulative; runs on a clean checkout)
+and an opportunistic full-artifact check (skips when the gitignored artifact is absent).
 
 Standalone: python research/_test_cumulative_usage.py
 """
@@ -106,15 +108,49 @@ def test_per_invocation_mode_is_chain_wide():
     rebuild_native_delta_chain(recs2)
     check("earlier turns NOT delta'd once any pair is non-monotone",
           recs2[1]["usage"]["input_tokens"], 250)
+    # PR#52 review P1: the chain-wide precheck must consider ALL token fields, not just
+    # input_tokens. input MONOTONE (100 -> 250 -> 400) but cached DROPS (130 -> 100): a truly
+    # cumulative thread is monotone in EVERY counter, so this chain is per-invocation. The old
+    # input-only precheck delta'd T2 to 150 and left T3 raw — mixed semantics in one chain.
+    recs3 = [_rec(1, u(100, 40, 10)), _rec(2, u(250, 130, 25)), _rec(3, u(400, 100, 40))]
+    rebuild_native_delta_chain(recs3)
+    check("mixed-field: t2 raw kept (NOT delta'd to 150)", recs3[1]["usage"]["input_tokens"], 250)
+    check("mixed-field: t3 raw kept", recs3[2]["usage"]["input_tokens"], 400)
+    check("mixed-field: uniform chain-wide semantics",
+          sorted({r["usage_semantics"] for r in recs3}), ["per_invocation_non_monotone"])
+
+
+def test_fixture_grounded_chain():
+    """TRACKED distilled fixture (the real chain_long builtin_run1 13-turn usage series, turn+usage
+    fields only): rebuilding must yield sum(per-turn deltas) == last-turn cumulative for gross AND
+    uncached, with uniform cumulative semantics. Unlike the full-artifact check below (opportunistic:
+    research/data/ is gitignored), this fixture is committed, so the claim holds on a clean checkout
+    (PR#52 review P2)."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
+                     "cumulative_usage_builtin_run1_distilled.json")
+    records = json.load(open(p, encoding="utf-8"))
+    recs = [dict(r) for r in records]
+    for r in recs:
+        r["usage_cumulative_raw"] = dict(r["usage"])   # recorded value WAS the cumulative
+    rebuild_native_delta_chain(recs)
+    check("fixture: sum(deltas) == last-turn cumulative (gross)",
+          sum(r["usage"]["input_tokens"] for r in recs), records[-1]["usage"]["input_tokens"])
+    check("fixture: sum(deltas) == last-turn cumulative (uncached)",
+          sum(r["usage"]["uncached_tokens"] for r in recs), records[-1]["usage"]["uncached_tokens"])
+    check("fixture: uniform cumulative semantics",
+          sorted({r["usage_semantics"] for r in recs}),
+          ["thread_cumulative_delta", "thread_cumulative_first"])
 
 
 def test_artifact_grounded_chain_long():
-    """The real builtin_run1.json (recorded naively = cumulative per-turn): rebuilding it
-    must yield sum(deltas) == last-turn cumulative (the audit's corrected total)."""
+    """OPPORTUNISTIC / LOCAL-ONLY (PR#52 review P2): the full raw builtin_run1.json lives under
+    research/data/, which is gitignored — on a clean checkout this check SKIPS; the tracked-fixture
+    test above enforces the same claim. When the artifact IS present, rebuilding it must yield
+    sum(deltas) == last-turn cumulative (the audit's corrected total)."""
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
                      "chain_results_v2", "codex", "chain_long", "builtin_run1.json")
     if not os.path.exists(p):
-        print("  [skip] artifact not present: {0}".format(p))
+        print("  [skip] opportunistic check; untracked artifact not present: {0}".format(p))
         return
     records = json.load(open(p, encoding="utf-8"))
     recs = [dict(r) for r in records]         # do NOT mutate the artifact on disk
@@ -138,7 +174,7 @@ if __name__ == "__main__":
     for fn in (test_first_turn_passthrough, test_cumulative_delta, test_non_monotone_fallback,
                test_rebuild_plain_chain, test_censored_gap_then_recovery,
                test_old_artifacts_untouched, test_per_invocation_mode_is_chain_wide,
-               test_artifact_grounded_chain_long):
+               test_fixture_grounded_chain, test_artifact_grounded_chain_long):
         print(fn.__name__)
         fn()
     print()

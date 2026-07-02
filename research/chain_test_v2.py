@@ -580,15 +580,20 @@ def rebuild_native_delta_chain(records: list) -> int:
     baseline. Returns the number of records whose usage changed.
 
     MODE IS CHAIN-WIDE (PR#51 review P2): a thread is either cumulative or per-invocation,
-    never mixed. If ANY adjacent pair of raw readings is non-monotone, the WHOLE chain is
-    per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must yield
-    500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
+    never mixed. If ANY adjacent pair of raw readings is non-monotone IN ANY TOKEN FIELD, the
+    WHOLE chain is per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must
+    yield 500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
     recs = sorted((r for r in records if isinstance(r, dict) and r.get("turn") is not None),
                   key=lambda r: r["turn"])
     raws = [r.get("usage_cumulative_raw") for r in recs]
     present = [x for x in raws if x and (x.get("input_tokens") or 0) > 0]
-    cumulative = all((present[i].get("input_tokens") or 0) <= (present[i + 1].get("input_tokens") or 0)
-                     for i in range(len(present) - 1))
+    # ALL token fields must be monotone non-decreasing — a truly cumulative thread is monotone in
+    # EVERY counter. Keying on input_tokens alone (the original precheck) MIXED raw and deltas in
+    # one chain when input rose while cached/uncached/output dropped: delta_cumulative_usage then
+    # fell back per-TURN, violating the chain-wide invariant this function exists to enforce
+    # (PR#52 review P1; regression-tested with the mixed-field case).
+    cumulative = all((present[i].get(k) or 0) <= (present[i + 1].get(k) or 0)
+                     for i in range(len(present) - 1) for k in _CUM_TOKEN_FIELDS)
     changed = 0
     prev_raw = None
     for rec, raw in zip(recs, raws):
