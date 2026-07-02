@@ -637,4 +637,58 @@ def test_guard_test_targets_and_unlocked():
         check("tombstone contributes no targets", out2["targets"], [])
 
 
+def test_wip_dropped_on_extraction_failure():
+    """PR#51 review P2: a FAILED extraction must not carry last turn's WIP forward — injecting
+    it as 'the previous turn reported' would be false provenance."""
+    with tempfile.TemporaryDirectory() as d:
+        class WipJudge:
+            def __call__(self, prompt, timeout=90):
+                return json.dumps({"contracts": [], "wip": "still wiring the async path"}), 0.0, 0.0
+
+        class BrokenJudge:
+            def __call__(self, prompt, timeout=90):
+                return "", 0.0, 0.0     # ok=False path
+        ml.update_ledger(d, "start", _spec(), ["a.py"], turn=1, judge=WipJudge())
+        truthy("wip present after good turn", "wip" in ml.load_ledger(d))
+        ml.update_ledger(d, "continue", _spec(), ["a.py"], turn=2, judge=BrokenJudge())
+        check("stale wip dropped on failed extraction", "wip" in ml.load_ledger(d), False)
+
+
+def test_deletion_veto_persists_across_turns():
+    """PR#51 review P1-2(b): the deletion happens on the REMOVAL turn; the finalize on a LATER
+    green turn — by which time git may no longer show it. The stamp persists the evidence;
+    restoring the test file lifts it (one-turn conservative lag)."""
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "retry-after", "contract": "Retry-After parsed",
+                        "files": ["httpx/_transports/default.py"],
+                        "tests": ["tests/test_retries.py"], "symbols": ["retry_after"]}])])
+        empty = FakeJudge([])
+        # turn 5 — the removal turn: quarantine + the locking test is deleted THIS turn
+        ml.update_ledger(d, "remove the retry_after handling", _spec(), ["httpx/_transports/default.py"],
+                         turn=5, judge=empty, gate_verdict="green",
+                         tests_deleted=["tests/test_retries.py"])
+        led = ml.load_ledger(d)
+        check("quarantined on the removal turn", led["contracts"]["retry-after"]["status"], "deprecating")
+        check("deletion evidence stamped", led["contracts"]["retry-after"]["locking_tests_deleted"],
+              ["tests/test_retries.py"])
+        # turn 6 — later GREEN turn, git no longer shows the deletion: stamp must still veto
+        ml.update_ledger(d, "unrelated tweak", _spec(), ["httpx/_models.py"],
+                         turn=6, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("stamp vetoes finalize on a later green turn",
+              ml.load_ledger(d)["contracts"]["retry-after"]["status"], "deprecating")
+        # restore the locking test on disk -> stamp lifts (maintenance runs after finalize,
+        # so the lift takes effect for the NEXT turn's finalize — conservative direction)
+        os.makedirs(os.path.join(d, "tests"), exist_ok=True)
+        with open(os.path.join(d, "tests", "test_retries.py"), "w", encoding="utf-8") as f:
+            f.write("def test_placeholder():\n    assert True\n")
+        ml.update_ledger(d, "restore the retry tests", _spec(), ["tests/test_retries.py"],
+                         turn=7, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("stamp lifted after restoration",
+              "locking_tests_deleted" in ml.load_ledger(d)["contracts"]["retry-after"], False)
+        ml.update_ledger(d, "another tweak", _spec(), ["httpx/_models.py"],
+                         turn=8, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("finalizes on the next green after the lift",
+              ml.load_ledger(d)["contracts"]["retry-after"]["status"], "tombstone")
+
+
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)

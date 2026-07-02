@@ -270,13 +270,21 @@ def propose_deprecations(ledger: dict, raw: str, turn: int | None = None) -> lis
     return marked
 
 
+def _test_file_part(t) -> str:
+    """Contract `tests` entries may be file paths or pytest node-ids — compare on the file."""
+    return str(t).split("::", 1)[0]
+
+
 def finalize_deprecations(ledger: dict, gate_green: bool, turn: int | None = None,
                           tests_deleted=None) -> list:
     """One-turn quarantine: a 'deprecating' contract proposed on an EARLIER turn becomes a
     tombstone only when the CURRENT turn's gate is green. If the retiring turn DELETED the
     contract's locking tests (rather than migrating them), scoped green is insufficient — the
-    contract stays quarantined (design §6-3c). Returns the feature ids tombstoned."""
-    deleted = {str(t) for t in (tests_deleted or [])}
+    contract stays quarantined (design §6-3c). The veto reads BOTH this turn's `tests_deleted`
+    AND the `locking_tests_deleted` stamp persisted at deletion time (PR#51 review: the
+    deletion happens on the REMOVAL turn, the finalize on a LATER green turn — by which time
+    git may no longer show it). Returns the feature ids tombstoned."""
+    deleted_fp = {_test_file_part(t) for t in (tests_deleted or [])}
     done = []
     for feat, c in (ledger.get("contracts") or {}).items():
         if c.get("status") != "deprecating":
@@ -285,12 +293,32 @@ def finalize_deprecations(ledger: dict, gate_green: bool, turn: int | None = Non
             continue                      # proposed THIS turn -> quarantine holds until next
         if not gate_green:
             continue                      # quarantine extends until a green turn
-        if deleted and (set(c.get("tests", [])) & deleted):
-            continue                      # its locking tests were deleted, not migrated -> hold
+        own_fp = {_test_file_part(t) for t in c.get("tests", [])}
+        if (deleted_fp & own_fp) or c.get("locking_tests_deleted"):
+            continue                      # locking tests deleted, not migrated -> hold
         c["status"] = "tombstone"
         c["tombstone_turn"] = turn if turn is not None else c.get("turn", 0)
         done.append(feat)
     return done
+
+
+def _maintain_deletion_stamps(ledger: dict, cwd: str, tests_deleted=None) -> None:
+    """Persist (and lift) the deleted-locking-tests evidence on quarantined contracts.
+    ADD a stamp when a quarantined contract's locking test is among this turn's deletions;
+    LIFT a stamped entry when that test file exists on disk again (restored or migrated back)
+    — otherwise the veto would hold forever with no recovery path."""
+    deleted_fp = {_test_file_part(t) for t in (tests_deleted or [])}
+    for c in (ledger.get("contracts") or {}).values():
+        if c.get("status") != "deprecating":
+            continue
+        stamps = set(c.get("locking_tests_deleted", []))
+        stamps = {s for s in stamps
+                  if not os.path.isfile(os.path.join(cwd, _test_file_part(s)))}   # lift restored
+        stamps |= {t for t in c.get("tests", []) if _test_file_part(t) in deleted_fp}
+        if stamps:
+            c["locking_tests_deleted"] = sorted(stamps)
+        else:
+            c.pop("locking_tests_deleted", None)
 
 
 def _tombstone_section(contracts: dict) -> str:
@@ -444,17 +472,21 @@ def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None,
               "degrading toward a no-memory run.", file=sys.stderr)   # stderr: never pollute stdout in automation
     ledger = load_ledger(cwd)
     # Quarantine lifecycle BEFORE merging new contracts: earlier proposals finalize on this
-    # turn's green; this turn's removal intent quarantines (effect from the NEXT green turn).
+    # turn's green; this turn's removal intent quarantines (effect from the NEXT green turn);
+    # deletion evidence is stamped so the veto survives to the later finalizing turn.
     finalize_deprecations(ledger, gate_green=(gate_verdict == "green"), turn=turn,
                           tests_deleted=tests_deleted)
     merge_contracts(ledger, new, turn=turn)
     propose_deprecations(ledger, raw, turn=turn)
-    if ok:
-        # overwrite-not-merge: the WIP note cannot accrete (design §6-5); empty clears it.
-        if wip:
-            ledger["wip"] = {"text": wip, "turn": turn}
-        else:
-            ledger.pop("wip", None)
+    _maintain_deletion_stamps(ledger, cwd, tests_deleted=tests_deleted)
+    # overwrite-not-merge: the WIP note cannot accrete (design §6-5); empty clears it. On a
+    # FAILED extraction the old note is dropped too (PR#51 review P2): injecting last turn's
+    # WIP as "the previous turn reported" would be false provenance — stale narrative is
+    # worse than none.
+    if ok and wip:
+        ledger["wip"] = {"text": wip, "turn": turn}
+    else:
+        ledger.pop("wip", None)
     if not save_ledger(cwd, ledger):    # PR#44 #9: surface persist failures
         print("  [ledger] WARNING: failed to persist the ledger sidecar — the next turn will "
               "read a stale/empty ledger (silent continuity loss).", file=sys.stderr)
