@@ -691,4 +691,30 @@ def test_deletion_veto_persists_across_turns():
               ml.load_ledger(d)["contracts"]["retry-after"]["status"], "tombstone")
 
 
+def test_tests_field_floor_drops_non_paths():
+    """Tier-1 coverage-floor (2026-07-02): merge keeps only real-LOOKING pytest targets in `tests`;
+    prose descriptions, bare/planned test names, and globs (the SLM failure modes the smoke found)
+    are dropped, while genuine path drift (a real-looking path that doesn't collect) is LEFT IN for
+    the gate to measure as UNRESOLVED. Format check, not existence — no cwd, no test-file on disk."""
+    with tempfile.TemporaryDirectory() as d:
+        led, _cost, ok = ml.update_ledger(
+            d, "add feature X", _spec(), ["httpx/_x.py"], turn=1,
+            judge=FakeJudge([{"feature": "feat-x", "contract": "keep X working",
+                              "files": ["httpx/_x.py"],
+                              "tests": ["tests/client/test_client.py::test_a",   # real node-id -> KEEP
+                                        "tests/test_missing.py",                 # real-looking, absent -> KEEP (drift)
+                                        "A new unit test for the X behavior",    # prose -> DROP
+                                        "test_planned_thing",                    # bare name -> DROP
+                                        "test_async_* (new async coverage)"]}])) # glob+prose -> DROP
+        truthy("extraction ok", ok)
+        kept = led["contracts"]["feat-x"]["tests"]
+        check("only the two path-shaped entries survive", sorted(kept),
+              ["tests/client/test_client.py::test_a", "tests/test_missing.py"])
+    # the helper directly, for the record
+    truthy("node-id kept", ml._looks_like_test_target("tests/test_x.py::test_y"))
+    truthy("prose dropped", not ml._looks_like_test_target("a new test for the fix"))
+    truthy("bare name dropped", not ml._looks_like_test_target("test_planned_thing"))
+    truthy("glob dropped", not ml._looks_like_test_target("tests/test_*.py"))
+
+
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)
