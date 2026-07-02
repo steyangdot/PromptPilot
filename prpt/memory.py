@@ -41,6 +41,15 @@ PROBE_MAX_CHARS = 4000          # cap a stored verification probe (PR#49: bound 
                                 # real probe is a few hundred chars — an over-cap payload is dropped)
 STATE_SUMMARY_MAX_CHARS = 1800  # cap the always-on ProjectState header
 GUARD_MAX_CHARS = 2200          # cap the refactor-guard checklist (PR#44 #4: was uncapped)
+TOMBSTONE_MAX_CHARS = 400       # Stage A: retired-contract section gets its OWN cap so it can
+                                # never displace active contracts (design §6-3 / panel A10)
+WIP_MAX_CHARS = 400             # Stage A: bounded unfinished-work note (overwrite-only, §6-5)
+
+# Stage A (design §6-3): removal-intent keywords. A contract may be retired ONLY when the USER's
+# request deterministically expresses removal intent about that contract — never from agent
+# narration or SLM output. Single words match on word boundaries; phrases as substrings.
+DESTRUCTIVE_KW = ("remove", "delete", "drop", "deprecate", "retire", "strip", "prune")
+DESTRUCTIVE_PHRASES = ("clean up", "get rid of", "do away with")
 
 # Refactor/migration trigger words, matched on WORD BOUNDARIES (PR#44 #6: 'merge' must not
 # fire on 'submerged'). The guard ALSO fires on impacted-file/symbol overlap + broad/new
@@ -216,6 +225,135 @@ def merge_contracts(ledger: dict, new_contracts: list, turn: int | None = None) 
 
 
 # ---------------------------------------------------------------------------
+# Stage A — contract lifecycle: user-intent-conditioned, quarantined tombstones
+# (design docs/SESSION_MEMORY_V2_DESIGN.md §6-3). Statuses: absent == active;
+# "deprecating" == quarantined (guard STILL fires); "tombstone" == retired
+# (excluded from guard/state, rendered names-only in a separately-capped section
+# so the agent does not resurrect the feature).
+# ---------------------------------------------------------------------------
+def _is_active(c: dict) -> bool:
+    return c.get("status") not in ("tombstone",)
+
+
+def detect_removal_intent(raw: str, contract: dict) -> bool:
+    """True iff the USER's raw request deterministically expresses removal intent about THIS
+    contract: a destructive keyword (word-boundary) or phrase, AND a contract anchor (feature id,
+    a symbol, or a file basename) both present. Deliberately conservative — under-firing is the
+    safe direction (guard noise), over-firing is destructive amnesia."""
+    low = (raw or "").lower()
+    if not low:
+        return False
+    kw = any(_mentions(k, low) for k in DESTRUCTIVE_KW) or any(p in low for p in DESTRUCTIVE_PHRASES)
+    if not kw:
+        return False
+    anchors = list(contract.get("symbols", []) or [])
+    anchors += [f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1] for f in (contract.get("files", []) or [])]
+    feat = contract.get("feature", "")
+    if feat:
+        anchors.append(feat)
+        anchors.append(feat.replace("-", " "))   # "retry-after" also matches "retry after"
+    return any((_mentions(a, low) if " " not in str(a) else str(a).lower() in low) for a in anchors if a)
+
+
+def propose_deprecations(ledger: dict, raw: str, turn: int | None = None) -> list:
+    """Quarantine (status='deprecating') every ACTIVE contract the user's request asks to remove.
+    Takes effect (tombstone) only via finalize_deprecations after the NEXT gate-green turn; the
+    guard keeps firing for quarantined contracts in the meantime. Returns the feature ids marked."""
+    marked = []
+    for feat, c in (ledger.get("contracts") or {}).items():
+        if not _is_active(c) or c.get("status") == "deprecating":
+            continue
+        if detect_removal_intent(raw, c):
+            c["status"] = "deprecating"
+            c["deprecate_turn"] = turn if turn is not None else c.get("turn", 0)
+            marked.append(feat)
+    return marked
+
+
+def _test_file_part(t) -> str:
+    """Contract `tests` entries may be file paths or pytest node-ids — compare on the file."""
+    return str(t).split("::", 1)[0]
+
+
+def finalize_deprecations(ledger: dict, gate_green: bool, turn: int | None = None,
+                          tests_deleted=None) -> list:
+    """One-turn quarantine: a 'deprecating' contract proposed on an EARLIER turn becomes a
+    tombstone only when the CURRENT turn's gate is green. If the retiring turn DELETED the
+    contract's locking tests (rather than migrating them), scoped green is insufficient — the
+    contract stays quarantined (design §6-3c). The veto reads BOTH this turn's `tests_deleted`
+    AND the `locking_tests_deleted` stamp persisted at deletion time (PR#51 review: the
+    deletion happens on the REMOVAL turn, the finalize on a LATER green turn — by which time
+    git may no longer show it). Returns the feature ids tombstoned."""
+    deleted_fp = {_test_file_part(t) for t in (tests_deleted or [])}
+    done = []
+    for feat, c in (ledger.get("contracts") or {}).items():
+        if c.get("status") != "deprecating":
+            continue
+        if turn is not None and c.get("deprecate_turn", 0) >= turn:
+            continue                      # proposed THIS turn -> quarantine holds until next
+        if not gate_green:
+            continue                      # quarantine extends until a green turn
+        own_fp = {_test_file_part(t) for t in c.get("tests", [])}
+        if (deleted_fp & own_fp) or c.get("locking_tests_deleted"):
+            continue                      # locking tests deleted, not migrated -> hold
+        c["status"] = "tombstone"
+        c["tombstone_turn"] = turn if turn is not None else c.get("turn", 0)
+        done.append(feat)
+    return done
+
+
+def _maintain_deletion_stamps(ledger: dict, cwd: str, tests_deleted=None) -> None:
+    """Persist (and lift) the deleted-locking-tests evidence on quarantined contracts.
+    ADD a stamp when a quarantined contract's locking test is among this turn's deletions;
+    LIFT a stamped entry when that test file exists on disk again (restored or migrated back)
+    — otherwise the veto would hold forever with no recovery path."""
+    deleted_fp = {_test_file_part(t) for t in (tests_deleted or [])}
+    for c in (ledger.get("contracts") or {}).values():
+        if c.get("status") != "deprecating":
+            continue
+        stamps = set(c.get("locking_tests_deleted", []))
+        stamps = {s for s in stamps
+                  if not os.path.isfile(os.path.join(cwd, _test_file_part(s)))}   # lift restored
+        stamps |= {t for t in c.get("tests", []) if _test_file_part(t) in deleted_fp}
+        if stamps:
+            c["locking_tests_deleted"] = sorted(stamps)
+        else:
+            c.pop("locking_tests_deleted", None)
+
+
+def _tombstone_section(contracts: dict) -> str:
+    """Names-only retired list under its OWN cap (never displaces active contracts)."""
+    dead = [(feat, c.get("tombstone_turn", 0)) for feat, c in contracts.items()
+            if c.get("status") == "tombstone"]
+    if not dead:
+        return ""
+    dead.sort(key=lambda x: x[1], reverse=True)   # most-recent-first
+    lines = ["[RETIRED — deliberately removed earlier; do NOT resurrect]: "
+             + ", ".join(feat for feat, _t in dead)]
+    return _join_capped(lines, TOMBSTONE_MAX_CHARS, omit_label="retired name(s)")
+
+
+def guard_test_targets(cwd: str, raw: str, spec) -> dict:
+    """Stage A (design §6-1): the locking tests of the contracts THIS turn endangers, for the
+    verify-gate's SECOND, contract-targeted invocation. Returns
+    {"targets": [test paths/node-ids], "unlocked": [feature ids with NO recorded tests],
+     "hits": [feature ids surfaced]}. Collect-validity is the verify side's job."""
+    ledger = load_ledger(cwd)
+    live = {f: c for f, c in ledger.get("contracts", {}).items() if _is_active(c)}
+    hits = guard_hits({"contracts": live}, raw, spec)
+    if not hits and _is_refactor(raw, spec):
+        hits = live
+    targets, unlocked = [], []
+    for feat, c in hits.items():
+        tests = [t for t in (c.get("tests") or []) if t]
+        if tests:
+            targets.extend(tests)
+        else:
+            unlocked.append(feat)
+    return {"targets": _clean_list(targets), "unlocked": unlocked, "hits": list(hits.keys())}
+
+
+# ---------------------------------------------------------------------------
 # SLM contract extraction (the one lazy, injectable model call)
 # ---------------------------------------------------------------------------
 _EXTRACT_INSTR = (
@@ -223,8 +361,12 @@ _EXTRACT_INSTR = (
     "From the latest turn, emit the DURABLE CONTRACTS it established or changed — public "
     "APIs, function/keyword arguments, features, and the tests that lock them — that LATER "
     "turns (especially refactors/migrations) must preserve or intentionally migrate. "
+    "Record what the turn actually DID (the realized changes in the changed files, in light "
+    "of the gate verdict) — not merely what was asked (Stage A: DONE, not ASKED). "
     "Emit ONLY obligations a future change could accidentally break. Be terse; reuse a "
-    "stable kebab-case `feature` id across turns about the same feature."
+    "stable kebab-case `feature` id across turns about the same feature. "
+    "Also emit `wip`: ONE short line describing genuinely unfinished work this turn left "
+    "behind (empty string if none) — it is carried verbatim to the next turn as an unverified note."
 )
 
 
@@ -240,10 +382,12 @@ def ledger_judge_available() -> bool:
         return False
 
 
-def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judge=None) -> tuple:
-    """Return (contracts, cost_usd, ok). ok=False means the call did NOT yield usable JSON
+def _slm_extract(raw, memory_record, changed_files, target_files, gate_verdict=None,
+                 judge=None) -> tuple:
+    """Return (contracts, wip, cost_usd, ok). ok=False means the call did NOT yield usable JSON
     (no judge / empty output / unparseable / wrong shape) — distinct from ok=True with an
-    empty list ("nothing durable this turn"). `judge` is injectable for tests."""
+    empty list ("nothing durable this turn"). `judge` is injectable for tests. Stage A: the
+    prompt carries the GATE VERDICT (DONE-not-ASKED) and requests a bounded `wip` note."""
     if judge is None:
         try:
             if os.environ.get("OPENAI_API_KEY"):
@@ -253,60 +397,96 @@ def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judg
                 from prpt.judges import get_default_judge  # PR#44 #14: fall back, no OpenAI lock-in
                 judge = get_default_judge()
         except Exception:
-            return [], 0.0, False
+            return [], None, 0.0, False
     prompt = (
         _EXTRACT_INSTR + "\n\n"
         "[Turn request]\n{raw}\n\n"
         "[Turn summary]\n{mr}\n\n"
         "[Files changed]\n{cf}\n"
+        "[Gate verdict]\n{gv}\n"
         "[Predicted target files]\n{tf}\n\n"
         'Return ONLY JSON: {{"contracts":[{{"feature":"<kebab-id>",'
-        '"contract":"<one-sentence obligation>","files":[...],"tests":[...],"symbols":[...]}}]}}. '
-        "Use an empty list if nothing durable was established."
+        '"contract":"<one-sentence obligation>","files":[...],"tests":[...],"symbols":[...]}}],'
+        '"wip":"<one line of unfinished work, or empty>"}}. '
+        "Use an empty contracts list if nothing durable was established."
     ).format(
         raw=(raw or "")[:2000],
         mr=(memory_record or "(none)")[:600],
         cf=", ".join(changed_files) or "(none detected)",
+        gv=(gate_verdict or "(not run)"),
         tf=", ".join(target_files) or "(none)",
     )
     try:
         from prpt.judges import extract_json
         text, cost, _wt = judge(prompt)
     except Exception:
-        return [], 0.0, False
+        return [], None, 0.0, False
     cost = float(cost or 0.0)
     if not (text or "").strip():
-        return [], cost, False          # empty output => the SLM call did not run
+        return [], None, cost, False    # empty output => the SLM call did not run
     try:
         data = extract_json(text)
     except Exception:
-        return [], cost, False          # extract_json raised (e.g. RecursionError on pathological output) => fail-soft
+        return [], None, cost, False    # extract_json raised (e.g. RecursionError) => fail-soft
     if data is None:
-        return [], cost, False          # PR#44 #7: non-empty text but no parseable JSON => failure
+        return [], None, cost, False    # PR#44 #7: non-empty text but no parseable JSON => failure
+    wip = None
     if isinstance(data, list):
         out = data                      # PR#44 #7: SLM returned a bare top-level contracts array
     elif isinstance(data, dict):
         out = data.get("contracts")
+        w = data.get("wip")
+        if isinstance(w, str):
+            wip = w.strip()[:WIP_MAX_CHARS]
     else:
         out = None
     if not isinstance(out, list):
-        return [], cost, False          # parseable JSON but wrong shape => failure (warn), not silent-empty
-    return out, cost, True
+        return [], None, cost, False    # parseable JSON but wrong shape => failure, not silent-empty
+    return out, wip, cost, True
 
 
-def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None) -> tuple:
+def _slm_extract_contracts(raw, memory_record, changed_files, target_files, judge=None) -> tuple:
+    """Back-compat wrapper (pre-Stage-A 3-tuple interface): (contracts, cost_usd, ok)."""
+    out, _wip, cost, ok = _slm_extract(raw, memory_record, changed_files, target_files, judge=judge)
+    return out, cost, ok
+
+
+def update_ledger(cwd, raw, spec, changed_files, turn=None, judge=None,
+                  gate_verdict=None, tests_deleted=None) -> tuple:
     """AFTER-turn hook: extract this turn's contracts and merge into the session ledger.
     Returns (ledger, cost_usd, ok). Warns LOUDLY when extraction OR persistence fails so a
-    with_memory run can never silently degrade into a no-memory run."""
+    with_memory run can never silently degrade into a no-memory run.
+
+    Stage A additions (design §6): `gate_verdict` ("green"/"red"/None) feeds DONE-not-ASKED
+    extraction AND drives the tombstone quarantine — deprecations proposed on EARLIER turns
+    finalize only when THIS turn's gate is green (and none of their locking tests were deleted,
+    `tests_deleted`); removal intent in THIS turn's raw quarantines matching contracts; the
+    SLM's bounded `wip` note is OVERWRITTEN (never merged) each turn."""
     memory_record = (getattr(spec, "memory_record", "") or "") if spec is not None else ""
     target_files = (getattr(spec, "target_files", []) or []) if spec is not None else []
-    new, cost, ok = _slm_extract_contracts(raw, memory_record, changed_files or [], target_files, judge=judge)
+    new, wip, cost, ok = _slm_extract(raw, memory_record, changed_files or [], target_files,
+                                      gate_verdict=gate_verdict, judge=judge)
     if not ok:
         print("  [ledger] WARNING: contract extraction produced no usable JSON (missing judge / "
               "SLM error / wrong-shape output) — this turn recorded NO contracts; with_memory is "
               "degrading toward a no-memory run.", file=sys.stderr)   # stderr: never pollute stdout in automation
     ledger = load_ledger(cwd)
+    # Quarantine lifecycle BEFORE merging new contracts: earlier proposals finalize on this
+    # turn's green; this turn's removal intent quarantines (effect from the NEXT green turn);
+    # deletion evidence is stamped so the veto survives to the later finalizing turn.
+    finalize_deprecations(ledger, gate_green=(gate_verdict == "green"), turn=turn,
+                          tests_deleted=tests_deleted)
     merge_contracts(ledger, new, turn=turn)
+    propose_deprecations(ledger, raw, turn=turn)
+    _maintain_deletion_stamps(ledger, cwd, tests_deleted=tests_deleted)
+    # overwrite-not-merge: the WIP note cannot accrete (design §6-5); empty clears it. On a
+    # FAILED extraction the old note is dropped too (PR#51 review P2): injecting last turn's
+    # WIP as "the previous turn reported" would be false provenance — stale narrative is
+    # worse than none.
+    if ok and wip:
+        ledger["wip"] = {"text": wip, "turn": turn}
+    else:
+        ledger.pop("wip", None)
     if not save_ledger(cwd, ledger):    # PR#44 #9: surface persist failures
         print("  [ledger] WARNING: failed to persist the ledger sidecar — the next turn will "
               "read a stale/empty ledger (silent continuity loss).", file=sys.stderr)
@@ -341,6 +521,8 @@ def guard_hits(ledger: dict, raw: str, spec) -> dict:
     impacted_base = {f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower() for f in impacted}
     hits = {}
     for feat, c in ledger.get("contracts", {}).items():
+        if not _is_active(c):
+            continue                    # Stage A: tombstoned contracts are no longer obligations
         cfiles = set(c.get("files", []))
         cbase = {f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower() for f in cfiles if f}
         file_hit = bool(cfiles & impacted) or bool(cbase & impacted_base) or any(_mentions(b, low) for b in cbase)
@@ -355,13 +537,13 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
     Fires on file/symbol overlap, OR a refactor with no explicit overlap (surface all —
     bounded). Output is char-capped (PR#44 #4)."""
     ledger = load_ledger(cwd)
-    contracts = ledger.get("contracts", {})
+    contracts = {f: c for f, c in ledger.get("contracts", {}).items() if _is_active(c)}
     if not contracts:
         return ""
     hits = guard_hits(ledger, raw, spec)
     refactor = _is_refactor(raw, spec)
     if refactor and not hits:
-        hits = dict(contracts)
+        hits = dict(contracts)          # active-only: tombstones must not resurrect via the fallback
     if not hits:
         return ""
     lines = ["[MEMORY — prior contracts you MUST preserve; prefer back-compat, migrate only if required]"]
@@ -382,6 +564,10 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
         lines.append("- {0}: {1}".format(feat, c.get("contract", "")).rstrip())
         if c.get("tests"):
             lines.append("    tests/call-sites that LOCK this — keep them GREEN: " + ", ".join(c["tests"]))
+        else:
+            # Stage A (§6-1b): tell the agent — honestly — that this obligation is unverifiable.
+            lines.append("    (UNLOCKED — no locking tests recorded; this obligation cannot be "
+                         "auto-verified, take extra care)")
         if c.get("symbols"):
             lines.append("    symbols: " + ", ".join(str(s) for s in c["symbols"]))
     return _join_capped(lines, GUARD_MAX_CHARS, omit_label="contract line(s)")
@@ -390,7 +576,7 @@ def refactor_guard_checklist(cwd: str, raw: str, spec) -> str:
 def ledger_state_summary(cwd: str, max_chars: int = STATE_SUMMARY_MAX_CHARS) -> str:
     """Always-on bounded overview of established contracts (the ProjectState header).
     Line-boundary truncation (PR#44 #11: no mid-word slice)."""
-    contracts = load_ledger(cwd).get("contracts", {})
+    contracts = {f: c for f, c in load_ledger(cwd).get("contracts", {}).items() if _is_active(c)}
     if not contracts:
         return ""
     lines = ["[PROJECT STATE — established contracts so far]"]
@@ -399,7 +585,24 @@ def ledger_state_summary(cwd: str, max_chars: int = STATE_SUMMARY_MAX_CHARS) -> 
     return _join_capped(lines, max_chars, omit_label="contract(s)")
 
 
+def _wip_note(ledger: dict) -> str:
+    """Stage A (§6-5): the bounded unfinished-work note, rendered as UNVERIFIED narrative —
+    the agent is told its provenance so hallucinated/stale WIP cannot masquerade as state."""
+    wip = ledger.get("wip") or {}
+    text = (wip.get("text") or "").strip()[:WIP_MAX_CHARS]
+    if not text:
+        return ""
+    return "[WIP — the previous turn reported (unverified): {0}]".format(text)
+
+
 def memory_prefix(cwd: str, raw: str, spec) -> str:
-    """The full per-turn memory injection: bounded ProjectState + refactor-guard checklist."""
-    parts = [p for p in (ledger_state_summary(cwd), refactor_guard_checklist(cwd, raw, spec)) if p]
+    """The full per-turn memory injection: bounded ProjectState + refactor-guard checklist
+    + (Stage A) the separately-capped retired-contract list and the unverified WIP note."""
+    ledger = load_ledger(cwd)
+    parts = [p for p in (
+        ledger_state_summary(cwd),
+        refactor_guard_checklist(cwd, raw, spec),
+        _tombstone_section(ledger.get("contracts", {})),
+        _wip_note(ledger),
+    ) if p]
     return "\n\n".join(parts)

@@ -364,7 +364,7 @@ def test_ledger_update_gated_on_success_and_edits(monkeypatch):
     import prpt.cli as cli
     calls = []
 
-    def _rec(cwd, raw, spec, modified, turn=None, judge=None):
+    def _rec(cwd, raw, spec, modified, turn=None, judge=None, **kw):
         calls.append((tuple(modified), turn))
         return ({"version": 1, "contracts": {}}, 0.0, True)
 
@@ -484,6 +484,211 @@ def test_ledger_update_skipped_without_judge(monkeypatch, capsys):
     err = capsys.readouterr().err
     check("update_ledger NOT called when no judge", calls, [])
     truthy("one upfront 'needs an SLM judge' warning", "needs an SLM judge" in err)
+
+
+def test_cli_passes_tests_deleted_to_update_ledger(monkeypatch):
+    """PR#51 review P2: the deleted-tests veto must actually be SUPPLIED by the CLI —
+    otherwise finalize_deprecations' safeguard is permanently disabled in real runs."""
+    import prpt.adapters.shell as shell
+    import prpt.cli as cli
+    seen = {}
+
+    def _rec(cwd, raw, spec, modified, turn=None, judge=None, **kw):
+        seen.update(kw)
+        return ({"version": 1, "contracts": {}}, 0.0, True)
+    monkeypatch.setattr(cli.memory, "update_ledger", _rec)
+    monkeypatch.setattr(cli.memory, "ledger_judge_available", lambda: True)
+    monkeypatch.setattr(shell, "_git_deleted_files", lambda cwd: ["tests/test_gone.py"])
+    monkeypatch.setattr(cli, "AdapterFactory", _FakeFactory(0, ["httpx/_client.py"]))
+    with tempfile.TemporaryDirectory() as d:
+        cli.main(["edit httpx/_client.py", "--normalizer", "heuristic", "--cwd", d,
+                  "--no-repo-context", "--memory", "ledger"])
+    check("tests_deleted supplied to update_ledger", seen.get("tests_deleted"), ["tests/test_gone.py"])
+
+
+# --- Stage A (docs/SESSION_MEMORY_V2_DESIGN.md §6) ---------------------------
+def test_removal_intent_is_user_conditioned():
+    c = {"feature": "retry-after", "contract": "Retry-After parsed + capped",
+         "files": ["httpx/_transports/default.py"], "symbols": ["parse_http_date"]}
+    truthy("kw + symbol anchor fires", ml.detect_removal_intent(
+        "remove the parse_http_date helper entirely", c))
+    truthy("kw + feature-as-words fires", ml.detect_removal_intent(
+        "please drop the retry after handling", c))
+    truthy("phrase kw fires", ml.detect_removal_intent(
+        "clean up the retry-after code path", c))
+    check("kw without any anchor does NOT fire", ml.detect_removal_intent(
+        "remove the stale docs paragraph", c), False)
+    check("anchor without removal kw does NOT fire", ml.detect_removal_intent(
+        "improve parse_http_date performance", c), False)
+
+
+def test_tombstone_quarantine_lifecycle():
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "retry-after", "contract": "Retry-After parsed",
+                        "files": ["httpx/_transports/default.py"],
+                        "tests": ["tests/test_retries.py"], "symbols": ["retry_after"]}])])
+        led = ml.load_ledger(d)
+        # turn 5: the USER asks to remove it -> quarantined, not tombstoned
+        marked = ml.propose_deprecations(led, "remove the retry-after handling", turn=5)
+        check("quarantined", marked, ["retry-after"])
+        check("status deprecating", led["contracts"]["retry-after"]["status"], "deprecating")
+        # guard STILL fires during quarantine
+        hits = ml.guard_hits(led, "refactor the retry_after path", _spec(scope="broad"))
+        truthy("guard fires for quarantined contract", "retry-after" in hits)
+        # same turn's green cannot finalize (one-turn quarantine)
+        ml.finalize_deprecations(led, gate_green=True, turn=5)
+        check("same-turn green does NOT finalize", led["contracts"]["retry-after"]["status"], "deprecating")
+        # a later red turn does not finalize either
+        ml.finalize_deprecations(led, gate_green=False, turn=6)
+        check("red turn holds quarantine", led["contracts"]["retry-after"]["status"], "deprecating")
+        # deleted locking tests veto the finalize even on green
+        ml.finalize_deprecations(led, gate_green=True, turn=6, tests_deleted=["tests/test_retries.py"])
+        check("deleted locking tests veto", led["contracts"]["retry-after"]["status"], "deprecating")
+        # a later green turn finalizes
+        done = ml.finalize_deprecations(led, gate_green=True, turn=6)
+        check("green next turn tombstones", done, ["retry-after"])
+        # tombstoned: excluded from guard + state; rendered in the retired section
+        check("guard no longer fires", ml.guard_hits(led, "refactor the retry_after path",
+                                                     _spec(scope="broad")), {})
+        ml.save_ledger(d, led)
+        truthy("state summary excludes tombstone", "retry-after" not in ml.ledger_state_summary(d))
+        prefix = ml.memory_prefix(d, "refactor everything", _spec(scope="broad"))
+        truthy("retired section names it", "RETIRED" in prefix and "retry-after" in prefix)
+        truthy("do-not-resurrect instruction present", "resurrect" in prefix)
+
+
+def test_tombstones_never_displace_active_contracts():
+    # panel A10 / design §6-3: the retired list has its OWN cap; actives keep theirs.
+    with tempfile.TemporaryDirectory() as d:
+        seeds = [(t, [{"feature": "feat-{0}".format(t), "contract": "obligation " + "x" * 80}])
+                 for t in range(1, ml.MAX_CONTRACTS + 1)]
+        _seed(d, seeds)
+        led = ml.load_ledger(d)
+        for t in range(1, 11):    # tombstone 10 of them
+            led["contracts"]["feat-{0}".format(t)]["status"] = "tombstone"
+            led["contracts"]["feat-{0}".format(t)]["tombstone_turn"] = t
+        ml.save_ledger(d, led)
+        summ = ml.ledger_state_summary(d)
+        tomb = ml._tombstone_section(ml.load_ledger(d)["contracts"])
+        truthy("active summary still capped", len(summ) <= ml.STATE_SUMMARY_MAX_CHARS + 120)
+        truthy("tombstone section separately capped", len(tomb) <= ml.TOMBSTONE_MAX_CHARS + 120)
+        truthy("the FIRST active contract is present in the summary", "feat-11" in summ)
+        check("tombstoned contract absent from active summary", "feat-1:" in summ, False)
+
+
+def test_wip_overwrite_and_unverified_render():
+    with tempfile.TemporaryDirectory() as d:
+        class WipJudge:
+            def __init__(self, wip): self.wip = wip
+            def __call__(self, prompt, timeout=90):
+                return json.dumps({"contracts": [], "wip": self.wip}), 0.0, 0.0
+        ml.update_ledger(d, "start the feature", _spec(), ["a.py"], turn=1,
+                         judge=WipJudge("async variant still missing"))
+        check("wip stored", ml.load_ledger(d)["wip"]["text"], "async variant still missing")
+        prefix = ml.memory_prefix(d, "continue", _spec())
+        truthy("wip rendered as UNVERIFIED narrative", "unverified" in prefix and "WIP" in prefix)
+        # overwrite-not-merge: next turn's empty wip CLEARS it (cannot accrete)
+        ml.update_ledger(d, "finish it", _spec(), ["a.py"], turn=2, judge=WipJudge(""))
+        check("empty wip clears the note", "wip" in ml.load_ledger(d), False)
+        # oversized wip is truncated to the cap
+        ml.update_ledger(d, "x", _spec(), ["a.py"], turn=3, judge=WipJudge("y" * 1000))
+        truthy("wip truncated to cap", len(ml.load_ledger(d)["wip"]["text"]) <= ml.WIP_MAX_CHARS)
+
+
+def test_done_not_asked_prompt_carries_gate_verdict():
+    seen = {}
+
+    class RecordingJudge:
+        def __call__(self, prompt, timeout=90):
+            seen["prompt"] = prompt
+            return json.dumps({"contracts": []}), 0.0, 0.0
+    with tempfile.TemporaryDirectory() as d:
+        ml.update_ledger(d, "add a knob", _spec(), ["a.py"], turn=1,
+                         judge=RecordingJudge(), gate_verdict="green")
+    truthy("gate verdict in extraction prompt", "[Gate verdict]" in seen["prompt"]
+           and "green" in seen["prompt"])
+    truthy("DONE-not-ASKED instruction present", "actually DID" in seen["prompt"])
+
+
+def test_guard_test_targets_and_unlocked():
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [
+            (1, [{"feature": "timeout-overrides", "contract": "timeout kwargs work",
+                  "files": ["httpx/_client.py"], "tests": ["tests/client/test_client.py"],
+                  "symbols": ["connect_timeout"]}]),
+            (2, [{"feature": "pool-size", "contract": "pool_size wired",
+                  "files": ["httpx/_client.py"], "symbols": ["pool_size"]}]),   # NO tests
+        ])
+        out = ml.guard_test_targets(d, "refactor httpx/_client.py timeouts and pool_size",
+                                    _spec(target_files=["httpx/_client.py"], scope="broad"))
+        check("locked tests targeted", out["targets"], ["tests/client/test_client.py"])
+        check("no-test contract reported UNLOCKED", out["unlocked"], ["pool-size"])
+        truthy("both contracts hit", set(out["hits"]) == {"timeout-overrides", "pool-size"})
+        # the guard text tells the agent about the unverifiable obligation
+        cl = ml.refactor_guard_checklist(d, "refactor httpx/_client.py pool_size handling",
+                                         _spec(target_files=["httpx/_client.py"], scope="broad"))
+        truthy("UNLOCKED note rendered", "UNLOCKED" in cl)
+        # tombstoned contracts contribute no targets
+        led = ml.load_ledger(d)
+        led["contracts"]["timeout-overrides"]["status"] = "tombstone"
+        ml.save_ledger(d, led)
+        out2 = ml.guard_test_targets(d, "refactor httpx/_client.py timeouts",
+                                     _spec(target_files=["httpx/_client.py"], scope="broad"))
+        check("tombstone contributes no targets", out2["targets"], [])
+
+
+def test_wip_dropped_on_extraction_failure():
+    """PR#51 review P2: a FAILED extraction must not carry last turn's WIP forward — injecting
+    it as 'the previous turn reported' would be false provenance."""
+    with tempfile.TemporaryDirectory() as d:
+        class WipJudge:
+            def __call__(self, prompt, timeout=90):
+                return json.dumps({"contracts": [], "wip": "still wiring the async path"}), 0.0, 0.0
+
+        class BrokenJudge:
+            def __call__(self, prompt, timeout=90):
+                return "", 0.0, 0.0     # ok=False path
+        ml.update_ledger(d, "start", _spec(), ["a.py"], turn=1, judge=WipJudge())
+        truthy("wip present after good turn", "wip" in ml.load_ledger(d))
+        ml.update_ledger(d, "continue", _spec(), ["a.py"], turn=2, judge=BrokenJudge())
+        check("stale wip dropped on failed extraction", "wip" in ml.load_ledger(d), False)
+
+
+def test_deletion_veto_persists_across_turns():
+    """PR#51 review P1-2(b): the deletion happens on the REMOVAL turn; the finalize on a LATER
+    green turn — by which time git may no longer show it. The stamp persists the evidence;
+    restoring the test file lifts it (one-turn conservative lag)."""
+    with tempfile.TemporaryDirectory() as d:
+        _seed(d, [(1, [{"feature": "retry-after", "contract": "Retry-After parsed",
+                        "files": ["httpx/_transports/default.py"],
+                        "tests": ["tests/test_retries.py"], "symbols": ["retry_after"]}])])
+        empty = FakeJudge([])
+        # turn 5 — the removal turn: quarantine + the locking test is deleted THIS turn
+        ml.update_ledger(d, "remove the retry_after handling", _spec(), ["httpx/_transports/default.py"],
+                         turn=5, judge=empty, gate_verdict="green",
+                         tests_deleted=["tests/test_retries.py"])
+        led = ml.load_ledger(d)
+        check("quarantined on the removal turn", led["contracts"]["retry-after"]["status"], "deprecating")
+        check("deletion evidence stamped", led["contracts"]["retry-after"]["locking_tests_deleted"],
+              ["tests/test_retries.py"])
+        # turn 6 — later GREEN turn, git no longer shows the deletion: stamp must still veto
+        ml.update_ledger(d, "unrelated tweak", _spec(), ["httpx/_models.py"],
+                         turn=6, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("stamp vetoes finalize on a later green turn",
+              ml.load_ledger(d)["contracts"]["retry-after"]["status"], "deprecating")
+        # restore the locking test on disk -> stamp lifts (maintenance runs after finalize,
+        # so the lift takes effect for the NEXT turn's finalize — conservative direction)
+        os.makedirs(os.path.join(d, "tests"), exist_ok=True)
+        with open(os.path.join(d, "tests", "test_retries.py"), "w", encoding="utf-8") as f:
+            f.write("def test_placeholder():\n    assert True\n")
+        ml.update_ledger(d, "restore the retry tests", _spec(), ["tests/test_retries.py"],
+                         turn=7, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("stamp lifted after restoration",
+              "locking_tests_deleted" in ml.load_ledger(d)["contracts"]["retry-after"], False)
+        ml.update_ledger(d, "another tweak", _spec(), ["httpx/_models.py"],
+                         turn=8, judge=empty, gate_verdict="green", tests_deleted=[])
+        check("finalizes on the next green after the lift",
+              ml.load_ledger(d)["contracts"]["retry-after"]["status"], "tombstone")
 
 
 # (standalone __main__ runner removed — pytest discovers the test_* functions; check/truthy assert)

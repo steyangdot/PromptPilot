@@ -214,6 +214,102 @@ def run_verify(repo: RepoMetadata, changed_files: List[str], *,
                         output_tail=tail, duration_s=dur, targets=targets)
 
 
+# ---------------------------------------------------------------------------
+# Stage A (docs/SESSION_MEMORY_V2_DESIGN.md §6-1): contract-targeted verification.
+# The guard's surfaced contracts carry locked `tests`; these run as a SECOND, separate
+# pytest invocation — NEVER mixed into the base scope — after a batched collect-only
+# pre-validation, so an SLM-hallucinated node-id can neither crash the gate nor mask a
+# base-scope red. rc semantics are tri-state: green / red / targeting-invalid.
+# ---------------------------------------------------------------------------
+def _target_file_part(target: str) -> str:
+    """A target may be a plain path or a pytest node-id (path::test); validate the FILE part."""
+    return target.split("::", 1)[0]
+
+
+def collect_valid_targets(cwd: str, candidates: List[str], *,
+                          timeout_s: int = 120) -> "tuple[List[str], List[str]]":
+    """Batched `pytest --collect-only -q --continue-on-collection-errors` pre-validation.
+    Returns (valid, unresolved). A candidate is valid iff its file part is a real file under
+    `cwd` (never flag-like) AND pytest collected at least one test at/under it. On a total
+    collection failure (rc>=2 / timeout / missing runner) EVERYTHING is unresolved — the
+    caller records the UNRESOLVED rate and falls back; it never invents a verdict."""
+    cands = _clean_targets(candidates, cwd)
+    if not cands:
+        return [], list(dict.fromkeys(str(x) for x in (candidates or [])))
+    # Collect on the FILE PARTS only. The files are guaranteed to exist (_safe_target), so
+    # pytest never sees a possibly-hallucinated NODE-ID at collect time — on several pytest
+    # versions a single missing node-id argument aborts the WHOLE batch with a usage error
+    # (rc=4, nothing listed), which would mark every target unresolved and defeat the batched
+    # pre-validation (found the hard way: py3.9 CI job). Node-ids are then validated against
+    # the collected list, which ALSO classifies a hallucinated test name in a real file as
+    # UNRESOLVED — exactly the SLM failure mode this gate exists to absorb.
+    files = list(dict.fromkeys(_target_file_part(c) for c in cands))
+    cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q",
+           "--continue-on-collection-errors", "--no-header", "-p", "no:cacheprovider"] + files
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return [], list(dict.fromkeys(str(x) for x in (candidates or [])))
+    collected = [ln.strip() for ln in (proc.stdout or "").splitlines()
+                 if "::" in ln and not ln.startswith(("=", "-", "!"))]
+    norm = [c.replace("\\", "/") for c in collected]
+    safe = set(cands)
+    valid, unresolved = [], []
+    for t in dict.fromkeys(str(x) for x in (candidates or [])):
+        tn = t.replace("\\", "/")
+        if t not in safe:
+            unresolved.append(t)
+            continue
+        if "::" in tn:      # node-id: the exact test (or a parametrization/method of it) must exist
+            ok = any(ln == tn or ln.startswith(tn + "[") or ln.startswith(tn + "::")
+                     for ln in norm)
+        else:               # file: at least one test collected in it
+            ok = any(ln.split("::", 1)[0] == tn for ln in norm)
+        (valid if ok else unresolved).append(t)
+    return valid, unresolved
+
+
+def _clean_targets(candidates, cwd: str) -> List[str]:
+    """File-part safety validation (reuses _safe_target: real file under cwd, never flag-like)."""
+    out = []
+    for t in dict.fromkeys(candidates or []):
+        f = _target_file_part(str(t))
+        if _safe_target(f, cwd) and str(t) not in out:
+            out.append(str(t))
+    return out
+
+
+def run_verify_targets(cwd: str, targets: List[str], *,
+                       timeout_s: int = VERIFY_TIMEOUT_S) -> VerifyResult:
+    """The SECOND, contract-targeted invocation. Tri-state:
+    rc==0 -> ran+passed (green); rc==1 -> ran+failed (red — a real contract regression);
+    anything else (2/3/4/5/timeout) -> ran=False with skipped_reason 'targeting-invalid(...)'
+    — NEVER red (no retry burn on infrastructure noise), never green, and because it is a
+    separate invocation it can never mask the base gate's result."""
+    if not targets:
+        return VerifyResult(ran=False, skipped_reason="no contract targets", targets=[])
+    cmd = [sys.executable, "-m", "pytest", "-q", "-x", "--no-header",
+           "-p", "no:cacheprovider"] + list(targets)
+    t0 = time.time()
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout_s)
+        rc, tail = proc.returncode, _compress(proc.stdout, proc.stderr)
+    except subprocess.TimeoutExpired:
+        return VerifyResult(ran=False, command=cmd, returncode=124, targets=list(targets),
+                            duration_s=time.time() - t0,
+                            skipped_reason="targeting-invalid(timeout after {0}s)".format(timeout_s))
+    except FileNotFoundError as e:
+        return VerifyResult(ran=False, command=cmd, targets=list(targets),
+                            skipped_reason="targeting-invalid(runner unavailable: {0})".format(e))
+    dur = time.time() - t0
+    if rc in (0, 1):
+        return VerifyResult(ran=True, passed=(rc == 0), command=cmd, returncode=rc,
+                            output_tail=tail, duration_s=dur, targets=list(targets))
+    return VerifyResult(ran=False, command=cmd, returncode=rc, targets=list(targets),
+                        output_tail=tail, duration_s=dur,
+                        skipped_reason="targeting-invalid(rc={0})".format(rc))
+
+
 def run_gate(adapter, args, repo: RepoMetadata, *, retries: Optional[int] = None,
              full_suite: bool = False, log=None) -> "tuple[VerifyResult, Optional[int]]":
     """Verify the agent's edits; on a REAL failure, drive up to `retries` targeted,
@@ -262,22 +358,37 @@ def resolve_exit_code(agent_exit: Optional[int], retry_exit: Optional[int],
     return code
 
 
-def build_retry_prompt(result: VerifyResult, changed_files: List[str]) -> str:
+def build_retry_prompt(result: VerifyResult, changed_files: List[str],
+                       contracts: Optional[list] = None) -> str:
     """A targeted, SLM-free follow-up turn quoting the specific failure.
 
     Deliberately preserves scope (fix the failure, don't expand) — multi-turn scope
     expansion was a measured failure mode (OPTIMIZATION_LEVERS 6c).
-    """
+
+    Stage A (design §6-2): when the red run was contract-targeted, `contracts` (dicts with
+    feature/contract/tests) are QUOTED so the retry knows WHICH promise it broke — the
+    failure output alone names a test, not the obligation behind it."""
     files = ", ".join(changed_files) if changed_files else "(none reported)"
     cmd = " ".join(result.command) if result.command else "(verify command)"
+    contract_block = ""
+    if contracts:
+        lines = ["", "Endangered contract(s) you MUST keep working:"]
+        for c in contracts:
+            if not isinstance(c, dict):
+                continue
+            lines.append("- {0}: {1}".format(c.get("feature", "?"), c.get("contract", "")).rstrip())
+            if c.get("tests"):
+                lines.append("    locking tests: " + ", ".join(str(t) for t in c["tests"]))
+        contract_block = "\n".join(lines) + "\n"
     return (
         "The change you just made did not pass verification.\n\n"
         "Verification command: {cmd}\n"
         "Exit code: {rc}\n"
-        "Output (tail):\n{tail}\n\n"
+        "Output (tail):\n{tail}\n"
+        "{contracts}\n"
         "Files you changed: {files}\n\n"
         "Fix the failure. Make the SMALLEST change that makes the verification pass; "
         "do not revert unrelated work or broaden the scope of the task. If a test is "
         "genuinely wrong, correct the code first and explain why."
     ).format(cmd=cmd, rc=result.returncode, tail=result.output_tail or "(no output)",
-             files=files)
+             contracts=contract_block, files=files)

@@ -528,6 +528,101 @@ def _run_timeout_pytest(cwd: str, timeout_s: int = 180, k_expr: str = _ORACLE_K)
     }
 
 
+_GATE_K = "(" + _ORACLE_K + ") and not write_timeout"  # gate scope = oracle minus the localhost-timing flake
+
+# ---------------------------------------------------------------------------
+# Thread-cumulative usage correction (2026-07-01 re-audit)
+# ---------------------------------------------------------------------------
+# Codex `exec resume` (CLI builds since ~2026-06-14) reports THREAD-CUMULATIVE token
+# counters in turn.completed: turn N's usage covers turns 1..N of the thread. Naively
+# summing per-turn values therefore double-counts (~×(N+1)/2) — the re-audit showed EVERY
+# published native-arm number was inflated exactly this way (compaction 9.69×→~1.71×,
+# v2total 4.19×→1.34×, toolflip 1.87×→1.28×; naive summing REPRODUCED each published
+# figure). Pre-~2026-06-10 codex reported per-invocation usage (non-monotone across
+# turns), so the correction must be version-robust: a negative delta means the readings
+# are NOT cumulative and the raw value is kept. Only ever applies to CODEX arms that
+# resume a native thread; claude-code -p --resume reports per-invocation usage.
+NATIVE_RESUME_ARMS = ("builtin", "slm_native", "stacked")
+_CUM_TOKEN_FIELDS = ("input_tokens", "cached_tokens", "uncached_tokens", "output_tokens")
+
+
+def delta_cumulative_usage(usage: dict, prev_raw: dict | None) -> tuple[dict, str]:
+    """Convert a thread-cumulative usage reading into this turn's MARGINAL usage.
+
+    `usage` is the raw parse of THIS turn's stream; `prev_raw` is the raw (cumulative)
+    parse of the PREVIOUS successfully-parsed turn in the same thread (None on turn 1 —
+    turn 1's cumulative == its marginal). Token fields are delta'd; per-invocation fields
+    (tool_calls / agent_messages / events) are counted from the single stream and pass
+    through unchanged. If ANY token delta would go negative the readings are per-invocation
+    (old codex, or the thread was never actually resumed) -> return the raw values,
+    labelled, rather than fabricating a delta.
+
+    Returns (per_turn_usage, semantics) where semantics ∈
+    {"thread_cumulative_delta", "thread_cumulative_first", "per_invocation_non_monotone"}.
+    """
+    if not prev_raw:
+        return dict(usage), "thread_cumulative_first"
+    deltas = {k: (usage.get(k) or 0) - (prev_raw.get(k) or 0) for k in _CUM_TOKEN_FIELDS}
+    if any(v < 0 for v in deltas.values()):
+        return dict(usage), "per_invocation_non_monotone"
+    out = dict(usage)
+    out.update(deltas)
+    return out, "thread_cumulative_delta"
+
+
+def rebuild_native_delta_chain(records: list) -> int:
+    """Recompute the per-turn usage deltas for one native-arm run from the stored raw
+    cumulative readings (`usage_cumulative_raw`), in turn order. Needed by the reparse
+    pass: when a censored turn's flushed cumulative reading is recovered LATER, both that
+    turn's delta AND the following turn's (which had silently absorbed the gap) change —
+    so the whole chain is rebuilt. Records without `usage_cumulative_raw` (old artifacts,
+    or turns whose stream never flushed) keep their recorded usage and do not advance the
+    baseline. Returns the number of records whose usage changed.
+
+    MODE IS CHAIN-WIDE (PR#51 review P2): a thread is either cumulative or per-invocation,
+    never mixed. If ANY adjacent pair of raw readings is non-monotone, the WHOLE chain is
+    per-invocation — every turn keeps its raw reading (500 -> 300 -> 450 must yield
+    500, 300, 450; a pairwise fallback would corrupt turn 3 into 150)."""
+    recs = sorted((r for r in records if isinstance(r, dict) and r.get("turn") is not None),
+                  key=lambda r: r["turn"])
+    raws = [r.get("usage_cumulative_raw") for r in recs]
+    present = [x for x in raws if x and (x.get("input_tokens") or 0) > 0]
+    cumulative = all((present[i].get("input_tokens") or 0) <= (present[i + 1].get("input_tokens") or 0)
+                     for i in range(len(present) - 1))
+    changed = 0
+    prev_raw = None
+    for rec, raw in zip(recs, raws):
+        if not raw or (raw.get("input_tokens") or 0) <= 0:
+            continue
+        if cumulative:
+            usage, semantics = delta_cumulative_usage(raw, prev_raw)
+            prev_raw = raw
+        else:
+            usage, semantics = dict(raw), "per_invocation_non_monotone"
+        if usage != rec.get("usage"):
+            rec["usage"] = usage
+            rec["uncached_input"] = usage.get(
+                "uncached_tokens", usage["input_tokens"] - usage.get("cached_tokens", 0))
+            changed += 1
+        rec["usage_semantics"] = semantics
+    return changed
+
+
+def _gate_verify(cwd: str, timeout_s: int = 300):
+    """Verify-always gate for the benchmark: run the SAME keyword-scoped contract-regression suite the
+    end-state oracle uses (_ORACLE_K) MINUS the flaky write_timeout test, instead of prpt.verify's
+    find_test_pair target discovery — which can't map httpx's nested test layout (tests/client/...),
+    so it skipped every editing turn in the first pilot. Returns a prpt.verify.VerifyResult so
+    build_retry_prompt + the retry loop are reused unchanged. pytest rc: 0=pass, 1=fail; 5/124/125 ->
+    ran=False (a skip, NOT a failure -> no spurious retry)."""
+    from prpt.verify import VerifyResult
+    d = _run_timeout_pytest(cwd, timeout_s=timeout_s, k_expr=_GATE_K)
+    rc = d["pytest_rc"]
+    return VerifyResult(ran=(rc in (0, 1)), passed=(rc == 0),
+                        command=d["pytest_cmd"].split(), returncode=rc,
+                        output_tail=d.get("pytest_tail", ""), targets=[])
+
+
 def capture_end_state(cwd: str, out_dir: Path, variant: str, run_idx: int,
                       run_pytest: bool = True) -> dict:
     """Capture the repo END STATE after a run, BEFORE it is reset.
@@ -994,8 +1089,23 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
     reset_repo(HTTPX_DIR)
 
     # Track claude-code built-in session ID across turns for variants that use it
-    uses_builtin = variant in ("builtin", "stacked", "slm_native")
+    uses_builtin = variant in NATIVE_RESUME_ARMS
     builtin_session_id: str | None = None
+    # Codex native-resume arms: previous turn's RAW (thread-cumulative) usage, so each
+    # turn's recorded usage is the MARGINAL delta (2026-07-01 re-audit fix). None until
+    # the first successfully-parsed turn. `cum_mode_ok` is STICKY (PR#51 review P2): a thread
+    # is either cumulative or per-invocation, never mixed — once ANY negative delta shows the
+    # readings are per-invocation (old codex), we stop deltaing for the REST of the run, else
+    # e.g. 500 -> 300 -> 450 would be recorded 500, 300, 150 (turn 3 wrongly delta'd against
+    # the turn-2 baseline). rebuild_native_delta_chain applies the same rule retroactively.
+    prev_cum_raw: dict | None = None
+    cum_mode_ok = True
+
+    # Verify-always gate (benchmark tier, opt-in VERIFY_ALWAYS=1). Scoped to `verify_arms`
+    # (default: with_memory only) so a warm/native CONTROL arm is never handed this prpt-only
+    # feature — keeping a co-run comparison honest.
+    verify_always = os.environ.get("VERIFY_ALWAYS") == "1"
+    verify_arms = {a.strip() for a in os.environ.get("VERIFY_ALWAYS_ARMS", "with_memory").split(",") if a.strip()}
 
     results = []
     ext = _ext(tool)
@@ -1064,6 +1174,24 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
 
         usage = _parse_one(out_path, tool)
 
+        # Codex native-resume arms report THREAD-CUMULATIVE counters (see
+        # delta_cumulative_usage) -> record the MARGINAL per-turn usage and preserve the
+        # raw cumulative reading for audit/reparse. A censored turn (nothing flushed,
+        # input==0) does NOT advance the baseline, so the next turn's delta absorbs the
+        # killed turn's consumption — run totals stay correct; attribution is documented.
+        usage_cum_raw: dict | None = None
+        usage_semantics: str | None = None
+        if uses_builtin and tool == "codex":
+            if (usage.get("input_tokens") or 0) > 0:
+                usage_cum_raw = dict(usage)
+                if cum_mode_ok:
+                    usage, usage_semantics = delta_cumulative_usage(usage, prev_cum_raw)
+                    if usage_semantics == "per_invocation_non_monotone":
+                        cum_mode_ok = False   # sticky: this thread reports per-invocation
+                else:
+                    usage_semantics = "per_invocation_sticky"   # raw kept, no delta
+                prev_cum_raw = usage_cum_raw
+
         # For variants using built-in session, capture session_id for next turn.
         # claude-code emits a single JSON object with a "session_id" field;
         # codex emits JSONL where the first event is
@@ -1100,6 +1228,56 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
         # intact for consumers like score_endstate; aggregation excludes it).
         score = score_turn(turn_def, before, before_globs, HTTPX_DIR, usage)
         score["censored"] = timed_out
+
+        # Verify-always gate (VERIFY_ALWAYS=1): after every EDITING turn of a scoped arm, run the
+        # repo's ALLOW-LISTED pytest gate on the changed files (prpt.verify.run_verify — never
+        # arbitrary code) and, on a REAL red run, fire up to VERIFY_MAX_RETRIES targeted retries via
+        # the SAME cold-exec path (fresh exec; the retry quotes the specific failure). The retry's
+        # tokens are MERGED into this turn's usage so the token comparison COUNTS the retry (a turn
+        # that needs a fix is not free). A skip (no test target / no framework) is never a failure.
+        verify_log = None
+        if (verify_always and variant in verify_arms and not timed_out
+                and turn_def.get("expected_action") == "modify"):
+            try:
+                from prpt.verify import build_retry_prompt, VERIFY_MAX_RETRIES
+                vres = _gate_verify(HTTPX_DIR)   # keyword-scoped gate (oracle minus flaky write_timeout)
+                retries_done = retry_in = retry_out = retry_calls = 0
+                left = VERIFY_MAX_RETRIES
+                while vres.ran and not vres.passed and left > 0:
+                    retries_done += 1
+                    rprompt = build_retry_prompt(vres, score.get("changed", []))
+                    r_out = out_dir / "run{0}_{1}_t{2}_vretry{3}{4}".format(
+                        run_idx, variant, i, retries_done, ext)
+                    _rwall, _rrc = _run_one(rprompt, r_out, HTTPX_DIR, tool, session_id=None)  # cold retry
+                    if _quota_exhausted(r_out, tool):
+                        raise QuotaExhausted(
+                            "{tool} hit a usage/quota limit on a verify-retry at {v}/run{r}/T{i} — "
+                            "aborting.".format(tool=tool, v=variant, r=run_idx, i=i))
+                    r_usage = _parse_one(r_out, tool)
+                    retry_in += r_usage.get("input_tokens", 0)
+                    retry_out += r_usage.get("output_tokens", 0)
+                    retry_calls += r_usage.get("tool_calls", 0)
+                    for k in ("input_tokens", "output_tokens", "tool_calls",
+                              "uncached_tokens", "cached_tokens"):
+                        if k in r_usage:
+                            usage[k] = usage.get(k, 0) + r_usage.get(k, 0)
+                    # refresh changed-files + success on the post-retry tree, then re-verify
+                    score = score_turn(turn_def, before, before_globs, HTTPX_DIR, usage)
+                    score["censored"] = timed_out
+                    if _rrc == 124:   # the retry itself timed out -> stop (its usage was censored ~0)
+                        break
+                    vres = _gate_verify(HTTPX_DIR)
+                    left -= 1
+                verify_log = vres.to_log()
+                verify_log.update({"retries": retries_done, "retry_input_tokens": retry_in,
+                                   "retry_output_tokens": retry_out, "retry_tool_calls": retry_calls})
+                print("    [verify] ran={0} passed={1} retries={2}".format(
+                    vres.ran, vres.passed, retries_done))
+            except QuotaExhausted:
+                raise
+            except Exception as e:   # verify must never break a scored run
+                verify_log = {"error": str(e)}
+                print("    [verify] error (non-fatal): {0}".format(e))
 
         # Record to promptpilot session for variants that use it
         ledger_slm_cost = 0.0
@@ -1182,11 +1360,16 @@ def run_chain_once(chain: dict, tool: str, variant: str, run_idx: int,
             "timeout_cap_sec": (CLAUDE_TIMEOUT_SEC if tool == "claude-code"
                                 else CODEX_TIMEOUT_SEC),
             "usage": usage,
+            # AUDIT fields (codex native-resume arms only, else None): the raw thread-
+            # cumulative reading this turn's marginal usage was derived from, + how.
+            "usage_cumulative_raw": usage_cum_raw,
+            "usage_semantics": usage_semantics,
             "uncached_input": uncached_input,
             "slm_cost": slm_cost,
             "ledger_slm_cost": ledger_slm_cost,
             "ledger_ok": ledger_ok,
             "verify_repair": vr_metrics,   # Stage-2 metrics when VERIFY_REPAIR=1, else None
+            "verify": verify_log,          # verify-always gate result (VERIFY_ALWAYS=1), else None
             "downstream_cost": downstream_cost,
             "total_cost": downstream_cost + slm_cost,
             "score": score,
@@ -1544,13 +1727,20 @@ def reparse_timed_out_turns(out_dir: Path, tool: str, verbose: bool = True) -> l
             usage = _parse_one(stream, tool)
             if (usage.get("input_tokens") or 0) <= 0:
                 continue  # genuine hang: no flushed turn.completed -> stay censored
-            rec["usage"] = usage
-            rec["uncached_input"] = usage.get(
-                "uncached_tokens",
-                usage["input_tokens"] - usage.get("cached_tokens", 0))
-            rec["downstream_cost"] = (claude_cost(usage) if tool == "claude-code"
-                                      else codex_cost(usage))
-            rec["total_cost"] = rec["downstream_cost"] + rec.get("slm_cost", 0.0)
+            if tool == "codex" and variant in NATIVE_RESUME_ARMS:
+                # The flushed reading is THREAD-CUMULATIVE (2026-07-01 re-audit): store it
+                # as the raw and defer per-turn usage to the chain rebuild below — the
+                # recovery changes BOTH this turn's delta and the next turn's (which had
+                # silently absorbed the gap while this turn read 0).
+                rec["usage_cumulative_raw"] = usage
+            else:
+                rec["usage"] = usage
+                rec["uncached_input"] = usage.get(
+                    "uncached_tokens",
+                    usage["input_tokens"] - usage.get("cached_tokens", 0))
+                rec["downstream_cost"] = (claude_cost(usage) if tool == "claude-code"
+                                          else codex_cost(usage))
+                rec["total_cost"] = rec["downstream_cost"] + rec.get("slm_cost", 0.0)
             rec["recovered_after_timeout"] = True
             rec["timed_out"] = False
             sc = rec.get("score")
@@ -1572,6 +1762,15 @@ def reparse_timed_out_turns(out_dir: Path, tool: str, verbose: bool = True) -> l
             recovered.append((variant, run_idx, ti, usage["input_tokens"]))
             changed = True
         if changed:
+            if tool == "codex" and variant in NATIVE_RESUME_ARMS:
+                # Rebuild the whole delta chain from the raw cumulative readings, then
+                # recompute the token-derived cost fields for every record in the chain.
+                rebuild_native_delta_chain(records)
+                for rec in records:
+                    if isinstance(rec, dict) and rec.get("usage_semantics"):
+                        u = rec.get("usage") or {}
+                        rec["downstream_cost"] = codex_cost(u)
+                        rec["total_cost"] = rec["downstream_cost"] + rec.get("slm_cost", 0.0)
             save_run(out_dir, variant, run_idx, records)
     if verbose:
         if recovered:
@@ -1980,7 +2179,16 @@ def main() -> None:
              "fix (docs/SESSION_MEMORY_ARCHITECTURE.md). Fresh exec each turn; one "
              "extra cheap gpt-5.4-nano ledger-extraction call per turn.",
     )
+    parser.add_argument(
+        "--verify-always", action="store_true",
+        help="Run the ALLOW-LISTED pytest verify-gate after every editing turn (+ up to "
+             "PROMPTPILOT_VERIFY_RETRIES targeted cold retries on a red run; retry tokens are "
+             "counted into the turn). Scoped to VERIFY_ALWAYS_ARMS (default with_memory) so a warm "
+             "control arm is not given this prpt-only feature. Sets VERIFY_ALWAYS=1.",
+    )
     args = parser.parse_args()
+    if args.verify_always:
+        os.environ["VERIFY_ALWAYS"] = "1"
 
     # Loud-fail guard for the missing-.env trap. We load .env from THIS file's
     # repo root (_REPO_ROOT/.env). Run from a git worktree with no .env, the
