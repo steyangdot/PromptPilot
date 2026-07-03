@@ -3,6 +3,14 @@
 **Date:** 2026-06-19. **Source run:** clean N=5 compaction-regime test (`chain_long`, codex, gpt-5.5).
 **Status:** finding confirmed (forensics + human eyeball); architecture direction proposed, not yet built.
 
+> ⚠️ **Token figures in this document are superseded (2026-07-01).** The `9.69×` / `13.59×` compaction
+> numbers (and the `4.19×` sub-threshold headline) were inflated by the codex thread-cumulative usage
+> double-count — corrected to **~1.71×** (compaction run) and **1.34×** (sub-threshold); the current
+> compaction-regime measurement is **~2.4× (chain_long N=3)**. See
+> [THREAD_CUMULATIVE_USAGE_CORRECTION.md](THREAD_CUMULATIVE_USAGE_CORRECTION.md) and
+> [BENCHMARKS.md](BENCHMARKS.md). The *qualitative* findings here (continuity tax, ledger direction)
+> are unaffected; this record is kept as-written for the architecture rationale.
+
 ---
 
 ## 1. Problem statement

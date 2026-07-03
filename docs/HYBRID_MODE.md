@@ -30,12 +30,14 @@ Two wins, both in tokens (no pricing assumptions):
 
 1. **Cheap control** — ~24k tokens of SLM work direct ~12.66M tokens of agent work.
 2. **Leaner agent runs** — the bounded session stops the agent's own token
-   consumption from ballooning: the same multi-turn work runs on **~7.6× fewer
-   input tokens** than the tool's native `--resume`/`exec resume` session (1.11M
-   vs 8.42M, codex chain1 N=5 — see
-   [Session Memory](https://github.com/steyangdot/PromptPilot/wiki/Session-Memory)).
-   Native session re-feeds a growing transcript (465k→2.36M across 5 turns);
-   PromptPilot stays flat (~44k/turn).
+   consumption from ballooning: **~1.34× fewer total input tokens** than the
+   tool's native `exec resume` session on short codex chains, growing to
+   **~2.4×** on long compaction-regime chains (corrected 2026-07-01; the
+   earlier "~7.6× (1.11M vs 8.42M)" figure here is withdrawn — see
+   [Thread-Cumulative Usage Correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md)
+   and [Benchmarks](BENCHMARKS.md)). The mechanism is unchanged: the native
+   session re-feeds a transcript that grows every turn; PromptPilot's bounded
+   record stays flat per turn, so the win scales with chain length.
 
 ### Translating tokens to money (downstream, assumption-laden)
 
@@ -224,13 +226,15 @@ OpenAI API per-call billing.
 For the leanest codex run specifically, route the SLM to an **OpenAI API key**,
 add a bounded session, and keep the autonomous guard on
 (`PROMPTPILOT_AUTONOMOUS=1`). On the cache-independent headline metric, that
-config measured **~4.2× fewer total tokens than vanilla** (with_session 1,066,833
-vs builtin 4,471,773 total tokens/run; clean interleaved codex `chain_auth` v2 N=5
-run, 0 censored, end-state 5/5 both arms). As a separate metric, full-price
-*uncached* tokens measured **~1.97× fewer** (same-run with_session 201,707 vs
-builtin 396,534; observed cache hit ~81% with_session / ~91% builtin) — this is
-cache-warmth-sensitive (range ~1.5–3.4× cross-run), not a range running up to the
-4.2× total ratio.
+config measures **~1.34× fewer total tokens than vanilla** on short chains
+(clean interleaved codex `chain_auth` v2 N=5 run, end-state 5/5 both arms;
+**corrected 2026-07-01** — the previously-published "~4.2× total / ~1.97×
+uncached" here was inflated by the codex thread-cumulative usage double-count,
+and the uncached figure actually *inverts* on short chains: bounding pays more
+full-price tokens than a warm native thread's cheap cache re-reads; see
+[Thread-Cumulative Usage Correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md)).
+The total-token win grows with chain length — **~2.4× on 13-turn
+compaction-regime chains** (chain_long N=3, [Benchmarks](BENCHMARKS.md)).
 What makes the hybrid the recommended split here is putting the SLM
 on the API key: it avoids the ~20k-tokens/call CLI subprocess overhead of an
 all-on-subscription run and keeps SLM spend metered and predictable. See

@@ -5,6 +5,12 @@
 **Arms:** `with_session` (recency-window bounded session) vs `with_memory` (ProjectState **ledger + refactor-guard**, relevance-not-recency).
 **Related:** [SESSION_MEMORY_ARCHITECTURE.md](SESSION_MEMORY_ARCHITECTURE.md) (the design under test), [COMPACTION_REGIME_TEST.md](COMPACTION_REGIME_TEST.md) (the fixture + harness).
 
+> ⚠️ **Native-baseline token figures referenced here are superseded (2026-07-01):** the archived
+> "9.69×" native run was thread-cumulative-inflated (corrected ~1.71× — see
+> [THREAD_CUMULATIVE_USAGE_CORRECTION.md](THREAD_CUMULATIVE_USAGE_CORRECTION.md)). The A/B's
+> loop-arm-vs-loop-arm comparisons in this postmortem are unaffected (bounded arms were recorded
+> per-invocation, correctly).
+
 ---
 
 ## TL;DR
