@@ -1,5 +1,12 @@
 # Compaction-Regime Test — Design
 
+> ⚠️ **Token figures in this document are superseded (2026-07-01).** Both the motivating `4.19×/1.97×`
+> headline and the result-section `9.69×/13.59×` figures were inflated by the codex thread-cumulative
+> usage double-count (corrected: 1.34×; ~1.71×; current chain_long N=3 measurement ~2.4×). See
+> [THREAD_CUMULATIVE_USAGE_CORRECTION.md](THREAD_CUMULATIVE_USAGE_CORRECTION.md) and
+> [BENCHMARKS.md](BENCHMARKS.md). The design, fixture, and methodology here remain the live harness
+> documentation; this record is kept as-written.
+
 **Status:** Design only (not yet run). **Date:** 2026-06-17.
 **Revision:** v2 — incorporates the third-party review ([COMPACTION_REGIME_TEST_REVIEW.md](COMPACTION_REGIME_TEST_REVIEW.md)). Change log at the bottom.
 **Surface under test:** Codex CLI (`codex exec` / `codex exec resume`), agent model gpt-5.5, SLM slm-openai-v2 (gpt-5.4-nano).

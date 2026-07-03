@@ -107,12 +107,22 @@ pytest, so none of these checks run in CI; enforcement is developer-run.
 
 ## Related
 
-- The **codex prefix-cache probe** (separate finding): cold `codex exec` gets **zero** cross-invocation
-  cache on user-prompt content, and a unique per-invocation `turn_id` UUID is what breaks prefix reuse —
-  relevant when reasoning about *why* uncached never favored the bounded arm.
+- The **codex prefix-cache probes** (separate finding, mechanism corrected 2026-07-03): cold `codex exec`
+  gets **zero** cross-invocation cache on user-prompt content. The original attribution (a per-invocation
+  `turn_id` UUID rendered into the prompt ahead of user content) was **refuted** against the codex source —
+  no id appears in token-rendered context; the breaker is **`prompt_cache_key` partitioning** (codex sets
+  it to the thread id, fresh per invocation, and the provider cache is partitioned by it — verified by a
+  pinned-key probe that recovered a +17.4k cached lift on identical content once the key was held
+  constant via `exec resume`). Relevant when reasoning about *why* uncached never favored the bounded
+  arm: a fresh-per-turn bounded invocation cannot share the cache partition its previous turn warmed,
+  while a resumed native thread always does.
 
-## Still owed
+## Correction shipped
 
-- **Public numbers-correction PR** (roadmap item #2): `README.md`, `docs/BENCHMARKS.md`, and the wiki
-  still carry the refuted **4.19×/1.97×** and **9.69×** figures. This document explains the correction;
-  the published surfaces have **not** yet been updated to match.
+- **Public numbers-correction (roadmap item #2, 2026-07-03):** `README.md`, `docs/BENCHMARKS.md`,
+  `docs/HYBRID_MODE.md`, `docs/SESSION_MEMORY.md`, and `docs/TESTING_STRATEGY.md` now carry the
+  corrected figures with explicit refuted-headline notices; the historical records
+  (`SESSION_MEMORY_ARCHITECTURE.md`, `COMPACTION_REGIME_TEST.md`, `SESSION_MEMORY_AB_POSTMORTEM.md`)
+  carry superseded banners and are otherwise kept as-written. **Still owed: the GitHub wiki mirrors**
+  (Session-Memory, Hybrid-Mode and related pages) — updated separately after this PR merges, per the
+  wiki workflow.

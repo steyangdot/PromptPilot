@@ -91,9 +91,9 @@ SLM work; the frontier agent never summarizes itself.
 
 ### 2. Cost — product comparison
 
-| Comparison (chain_auth, N=5, total + uncached input tokens) | Result |
+| Comparison (chain_auth, N=5, total + uncached input tokens) | Result (corrected 2026-07-01) |
 |---|---|
-| Full PromptPilot vs raw-prompt + native session (**codex**) | **~4.2× fewer total tokens** (cache-independent) · **~1.97× fewer uncached** (observed cache, warmth-sensitive — see [Measurement Methodology](MEASUREMENT_METHODOLOGY.md)); end-state parity |
+| Full PromptPilot vs raw-prompt + native session (**codex**) | **~1.34× fewer total tokens** (cache-independent; grows to **~2.4×** on 13-turn compaction-regime chains — chain_long N=3) · **uncached 0.48× — inverted** (bounding pays more full-price than warm resume's cache re-reads; see [the correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md)); end-state parity |
 | Full PromptPilot vs raw-prompt + native session (**claude**) | bounded session **loses** (1.19× costlier); the win is **rewrite-only** (slm_native): **1.25× fewer**, end-state parity |
 
 > **Honest caveat:** the codex product ratio bundles the SLM rewrite's savings with
@@ -104,10 +104,12 @@ SLM work; the frontier agent never summarizes itself.
 > *uncached* figure rides the provider's cache, which is non-deterministic and varies
 > run-to-run, so it's a warmth-sensitive range, not a fixed point — see
 > [Measurement Methodology](MEASUREMENT_METHODOLOGY.md) and the full journey in
-> [Testing Strategy](TESTING_STRATEGY.md). The headline figures above come from a
-> clean v2 run (N=5, interleaved, 0 censored, end-state 5/5 both arms): **~4.2×
-> fewer total tokens / ~1.97× fewer uncached** at parity. These supersede earlier
-> per-success-$ figures (a prior
+> [Testing Strategy](TESTING_STRATEGY.md). The figures above are the **corrected**
+> readings of the clean v2 run (N=5, interleaved, 0 censored, end-state 5/5 both
+> arms): the originally-published **~4.2× total / ~1.97× uncached** was inflated
+> by the codex thread-cumulative usage double-count — see
+> [Thread-Cumulative Usage Correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md).
+> These also supersede earlier per-success-$ figures (a prior
 > "8.5× / $0.74-vs-$6.31") on a confounded, cache-inclusive basis.
 
 ### 3. Cost is tool-dependent; quality is parity
@@ -118,13 +120,13 @@ replication, **quality (end-state) is parity across configs**:
 | Tool | Bounded session vs native | End-state |
 |---|---|---|
 | **claude** | **costs more** — 1.49× vs native `--resume` (1.19× vs vanilla); use native resume | parity |
-| **codex** | **~4.2× fewer total tokens** · **~1.97× fewer uncached** (observed cache) — bound it | parity |
+| **codex** | **~1.34× fewer total tokens** on short chains, **~2.4×** in the compaction regime (uncached parity-to-inverted — corrected 2026-07-01) — bound it on long/programmatic runs | parity |
 
 The earlier "+60% success on claude-code" figure does **not** reproduce in the
 clean chain_auth replication (end-state is parity across configs); it was a
 confounded / cached-read artifact. The durable, universal claim is tool-dependent:
-**bound the session on codex (large cost win), use native resume on claude** —
-both at equal quality.
+**bound the session on codex (a total-token win that scales with chain length),
+use native resume on claude** — both at equal quality.
 
 ## When it helps most
 

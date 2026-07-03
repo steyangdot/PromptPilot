@@ -10,9 +10,9 @@ How PromptPilot's token-savings numbers are measured, why we report what we do, 
 - We report **two separate metrics**, never blended:
   - **Total tokens fed** — deterministic, cache-independent, fully reproducible → **the headline**.
   - **Uncached (full-price) tokens** — cache-sensitive → reported as a **range**, because the provider's cache is non-deterministic and not ours to control.
-- **Headline (codex, v2 normalizer, clean same-run N=5):** `with_session` feeds **~4.2× fewer total tokens** than vanilla native resume, at **end-state parity**.
-- **Uncached:** **~2× (range ~1.5–3.4×)** depending on provider cache warmth.
-- The single most important lesson: **you cannot measure a reproducible "uncached" number** — so we lead with the metric that *is* reproducible (total) and are explicit that uncached is a range.
+- **Headline (codex, corrected 2026-07-01):** `with_session` feeds **~1.34× fewer total tokens** than vanilla native resume on the short chain_auth chains, **~2.4×** on 13-turn compaction-regime chains — at **end-state parity**. (The originally-published **4.19× / 1.97×** was inflated by the thread-cumulative accounting bug — step 8 below.)
+- **Uncached:** **parity-to-inverted for bounding** — a warm native thread's history re-reads are ~90% cached, and bounding forgoes exactly those cheap reads. Never lead with uncached.
+- The two most important lessons: **you cannot measure a reproducible "uncached" number** (so lead with total), and **you must know your counter's semantics** — codex switched resumed-thread usage to thread-cumulative reporting mid-project and silently double-counted every native arm (step 8).
 
 ---
 
@@ -97,9 +97,10 @@ The honest chronology — each step corrected the last:
 4. **Pivot: lead with total tokens.** Total has no cache term, so it's deterministic. The v1 codex headline became **~3.8× fewer total tokens**, with uncached demoted to a cache-sensitive footnote.
 5. **Split the metrics.** We separated the previously-blended "1.86×–3.8× range" into two clearly-labeled numbers: **total (deterministic)** and **uncached (cache-sensitive)** — never a single fuzzy band.
 6. **The clean v2 total run.** The published 3.8× used the *v1* SLM; the product ships **v2**. To get a defensible v2 number we ran a fresh interleaved `builtin + with_session` run, N=5, on the v2 normalizer. (It hit a detour: the codex *desktop app* silently rewrote `~/.codex/config.toml` with an invalid `service_tier`, which made every `codex exec` fail with zero tokens — a pure environment bug, fixed, and the run repeated cleanly.)
-7. **Final (v2, clean, same-run, N=5, 0 censored, end-state 5/5 both arms):** **4.19× total**, **1.97× uncached** (this run's cache state).
+7. **The v2 run (N=5, 0 censored, end-state 5/5 both arms) published as:** **4.19× total**, **1.97× uncached** (this run's cache state).
+8. **The thread-cumulative correction (2026-07-01) — the largest correction of the journey.** A 7-agent adversarial audit of a newer benchmark found codex CLI builds since ~2026-06-14 report **thread-cumulative** usage on resumed threads (turn *N*'s counter covers turns 1..*N*); summing per-turn readings double-counted every native arm by ≈ ×(N+1)/2. Re-running the naive method *reproduced every published number exactly*, proving they were the artifact. Corrected: **4.19× total → 1.34×; 1.97× uncached → 0.48× (inverted — bounding pays more full-price than warm resume)**. The fix (per-turn deltas of the cumulative counter, chain-wide sticky mode, version-robust fallback) is documented with tests in [Thread-Cumulative Usage Correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md).
 
-Note how the journey *deflated* an over-optimistic estimate: a cross-run stitch of v2 with_session against the v1 builtin had projected ~4.3–5× total, but the clean same-run measurement landed at **4.19×**. That correction is the point of the discipline.
+Note how the journey keeps *deflating* over-optimistic numbers: cross-run stitch → same-run → total-led → and finally the cumulative correction cutting the headline by ~3×. Each deflation came from auditing our own most-cited claim. That correction being the loudest item on this page is the point of the discipline.
 
 ---
 
@@ -123,15 +124,16 @@ The throughline: **the non-determinism lives in the provider, not in our setup.*
 
 | | total tokens | uncached (full-price) | end-state |
 |---|---|---|---|
-| **codex, v1** (toolflip, same-run N=5) | 3.81× | 1.86× (obs cache) | parity |
-| **codex, v2** (clean same-run N=5) | **4.19×** | **1.97×** (range ~1.5–3.4×) | **5/5 both** |
-| **claude** (same-run N=5) | ~1.0× (flat) | **1.25×** (rewrite-only; bounding *loses*) | parity |
+| **codex, v1** (toolflip, same-run N=5, corrected) | 1.28× | 0.47× (inverted) | parity |
+| **codex, v2** (clean same-run N=5, corrected) | **1.34×** | **0.48× (inverted)** | **5/5 both** |
+| **codex, chain_long** (compaction regime, N=3, cumulative-aware) | **2.41×** (12.78M vs 30.76M) | ~0.87–0.95× (parity) | bounded 3/3 green; native 2/3 + 1 catastrophic |
+| **claude** (same-run N=5, never affected) | ~1.0× (flat) | **1.25×** (rewrite-only; bounding *loses*) | parity |
 
 **How to talk about it:**
-- Lead with **total: ~4× fewer tokens fed on codex, at equal quality.** This is the firm, reproducible, fully-ours number.
-- For cost/uncached, give the **range** and the reason: *"full-price savings run ~1.5–3.4× depending on how warm the provider keeps the cache — we can't quote a single figure because the cache is the provider's and changes run-to-run, so we lead with total tokens instead."*
-- If pushed for "the real cost saving": *"somewhere in that range — we report total tokens precisely so you're not trusting a number that moves every time the provider's cache does."*
-- **Claude is different:** native `--resume` already caches history cheaply, so bounding *loses* there; the win is rewrite-only (~1.25× uncached). Bound on codex; keep native resume on claude.
+- Lead with **total: ~1.3× fewer tokens fed on codex on short chains, ~2.4× on long compaction-regime chains, at equal quality.** The multiplier scales with chain length because the native transcript grows every turn.
+- For uncached, say it straight: *"bounding does not save full-price tokens — a warm native thread re-reads its history at ~90% cache rates, and bounding gives those cheap reads up. The win is total volume (and, on long chains, consistency), not uncached."*
+- Cite the correction when quoting anything pre-2026-07: the old 4.19×/1.97×/9.69× figures are refuted — [Thread-Cumulative Usage Correction](THREAD_CUMULATIVE_USAGE_CORRECTION.md).
+- **Claude is different:** native `--resume` already caches history cheaply, so bounding *loses* there; the win is rewrite-only (~1.25× uncached). Bound on codex for long/programmatic runs; keep native resume on claude.
 
 ---
 
