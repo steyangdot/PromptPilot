@@ -1,0 +1,9 @@
+{
+  "green_raw": 6,
+  "green_rewrite": 6,
+  "tpg_raw_allin": 42937.666666666664,
+  "tpg_rewrite_allin": 32750.5,
+  "eps1_allin": 0.23725478018522972,
+  "eps1_codex_only": 0.37411208496036885,
+  "verdict": "CONTINUE (\u03b5\u2081 \u2265 0.15 at green-parity)"
+}
