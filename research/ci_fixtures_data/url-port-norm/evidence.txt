@@ -1,0 +1,108 @@
+://example.com:1234",
+            "http://[::ffff:127.0.0.1]:1234",
+        ],
+    )
+    @pytest.mark.parametrize("new_host", ["[::ffff:192.168.0.1]", "::ffff:192.168.0.1"])
+    def test_ipv6_url_copy_with_host(url_str, new_host):
+        url = httpx.URL(url_str).copy_with(host=new_host)
+    
+        assert url.host == "::ffff:192.168.0.1"
+>       assert url.netloc == b"[::ffff:192.168.0.1]:1234"
+E       AssertionError: assert b'[::ffff:192.168.0.1]' == b'[::ffff:192.168.0.1]:1234'
+E         
+E         Use -v to get more diff
+
+tests\models\test_url.py:862: AssertionError
+_ test_ipv6_url_copy_with_host[[::ffff:192.168.0.1]-http://[::ffff:127.0.0.1]:1234] _
+
+url_str = 'http://[::ffff:127.0.0.1]:1234', new_host = '[::ffff:192.168.0.1]'
+
+    @pytest.mark.parametrize(
+        "url_str",
+        [
+            "http://127.0.0.1:1234",
+            "http://example.com:1234",
+            "http://[::ffff:127.0.0.1]:1234",
+        ],
+    )
+    @pytest.mark.parametrize("new_host", ["[::ffff:192.168.0.1]", "::ffff:192.168.0.1"])
+    def test_ipv6_url_copy_with_host(url_str, new_host):
+        url = httpx.URL(url_str).copy_with(host=new_host)
+    
+        assert url.host == "::ffff:192.168.0.1"
+>       assert url.netloc == b"[::ffff:192.168.0.1]:1234"
+E       AssertionError: assert b'[::ffff:192.168.0.1]' == b'[::ffff:192.168.0.1]:1234'
+E         
+E         Use -v to get more diff
+
+tests\models\test_url.py:862: AssertionError
+___ test_ipv6_url_copy_with_host[::ffff:192.168.0.1-http://127.0.0.1:1234] ____
+
+url_str = 'http://127.0.0.1:1234', new_host = '::ffff:192.168.0.1'
+
+    @pytest.mark.parametrize(
+        "url_str",
+        [
+            "http://127.0.0.1:1234",
+            "http://example.com:1234",
+            "http://[::ffff:127.0.0.1]:1234",
+        ],
+    )
+    @pytest.mark.parametrize("new_host", ["[::ffff:192.168.0.1]", "::ffff:192.168.0.1"])
+    def test_ipv6_url_copy_with_host(url_str, new_host):
+        url = httpx.URL(url_str).copy_with(host=new_host)
+    
+        assert url.host == "::ffff:192.168.0.1"
+>       assert url.netloc == b"[::ffff:192.168.0.1]:1234"
+E       AssertionError: assert b'[::ffff:192.168.0.1]' == b'[::ffff:192.168.0.1]:1234'
+E         
+E         Use -v to get more diff
+
+tests\models\test_url.py:862: AssertionError
+__ test_ipv6_url_copy_with_host[::ffff:192.168.0.1-http://example.com:1234] ___
+
+url_str = 'http://example.com:1234', new_host = '::ffff:192.168.0.1'
+
+    @pytest.mark.parametrize(
+        "url_str",
+        [
+            "http://127.0.0.1:1234",
+            "http://example.com:1234",
+            "http://[::ffff:127.0.0.1]:1234",
+        ],
+    )
+    @pytest.mark.parametrize("new_host", ["[::ffff:192.168.0.1]", "::ffff:192.168.0.1"])
+    def test_ipv6_url_copy_with_host(url_str, new_host):
+        url = httpx.URL(url_str).copy_with(host=new_host)
+    
+        assert url.host == "::ffff:192.168.0.1"
+>       assert url.netloc == b"[::ffff:192.168.0.1]:1234"
+E       AssertionError: assert b'[::ffff:192.168.0.1]' == b'[::ffff:192.168.0.1]:1234'
+E         
+E         Use -v to get more diff
+
+tests\models\test_url.py:862: AssertionError
+_ test_ipv6_url_copy_with_host[::ffff:192.168.0.1-http://[::ffff:127.0.0.1]:1234] _
+
+url_str = 'http://[::ffff:127.0.0.1]:1234', new_host = '::ffff:192.168.0.1'
+
+    @pytest.mark.parametrize(
+        "url_str",
+        [
+            "http://127.0.0.1:1234",
+            "http://example.com:1234",
+            "http://[::ffff:127.0.0.1]:1234",
+        ],
+    )
+    @pytest.mark.parametrize("new_host", ["[::ffff:192.168.0.1]", "::ffff:192.168.0.1"])
+    def test_ipv6_url_copy_with_host(url_str, new_host):
+        url = httpx.URL(url_str).copy_with(host=new_host)
+    
+        assert url.host == "::ffff:192.168.0.1"
+>       assert url.netloc == b"[::ffff:192.168.0.1]:1234"
+E       AssertionError: assert b'[::ffff:192.168.0.1]' == b'[::ffff:192.168.0.1]:1234'
+E         
+E         Use -v to get more diff
+
+tests\models\test_url.py:862: AssertionError
+19 failed, 71 passed in 0.90s
