@@ -131,6 +131,19 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
   selection after at most **one** matcher iteration (an enforcement gate that misses known bugs is
   worse than the slow full suite); else iterate the matcher once and re-judge.
 
+> **OUTCOMES (2026-07-04):**
+> **KG-1 = CONTINUE** — greens 6/6 both arms (0/12 runs touched tests), ε₁ = +0.237 all-in /
+> +0.371 cost-weighted. Finding is BIMODAL: rewrite mildly hurts on already-localized evidence
+> (~0.87×) and wins 1.2–21× on hard-localization tasks → triage-then-rewrite hypothesis (KG-1.5:
+> two complementary cheap pre-run signals separate 6/6 offline — over-fit caveat, corpus-gated).
+> Ship default: always-rewrite. (`research/kg1_rewrite_value.py`, `research/kg1_data/`)
+> **KG-2 = CONTINUE** — final matcher = static ∪ **line-scoped** coverage (the one allowed
+> iteration, spent on precision after file-level coverage hit 0.97× wall): **6/6 catch, 6/6
+> strict, mean wall 0.24×** vs the 124s full suite. Static-only was 5/6 (missed the
+> `_utils.py`→queryparams mapping); file-level coverage 6/6 but ~whole-suite broad; line-scoping
+> gives both. Caveat: hot-path lines stay broad (url-port's changed line → 16 files, 115s).
+> (`research/kg2_test_selection.py`, `research/kg1_data/kg2_result.json`)
+
 **Then the flagship optimization:** the **reasoning_effort sweep** — the biggest known cost lever
 (~23× high-vs-minimal), regime-agnostic, and easiest to exploit in headless batch (no latency
 watcher). Run it on the new CI fixtures; it becomes the pivot's headline benchmark.
