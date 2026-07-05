@@ -1,0 +1,80 @@
+........................................................................ [ 69%]
+.................FF.............                                         [100%]
+================================== FAILURES ===================================
+____________________ test_link_headers[headers0-expected0] ____________________
+
+headers = {'Link': "<https://example.com>; rel='preload'"}
+expected = {'preload': {'rel': 'preload', 'url': 'https://example.com'}}
+
+    @pytest.mark.parametrize(
+        "headers, expected",
+        [
+            (
+                {"Link": "<https://example.com>; rel='preload'"},
+                {"preload": {"rel": "preload", "url": "https://example.com"}},
+            ),
+            (
+                {"Link": '</hub>; rel="hub", </resource>; rel="self"'},
+                {
+                    "hub": {"url": "/hub", "rel": "hub"},
+                    "self": {"url": "/resource", "rel": "self"},
+                },
+            ),
+        ],
+    )
+    def test_link_headers(headers, expected):
+        response = httpx.Response(
+            200,
+            content=None,
+            headers=headers,
+        )
+>       assert response.links == expected
+E       AssertionError: assert {'https://exa...example.com'}} == {'preload': {...example.com'}}
+E         
+E         Left contains 1 more item:
+E         {'https://example.com': {'rel': 'preload', 'url': 'https://example.com'}}
+E         Right contains 1 more item:
+E         {'preload': {'rel': 'preload', 'url': 'https://example.com'}}
+E         Use -v to get more diff
+
+tests\models\test_responses.py:885: AssertionError
+____________________ test_link_headers[headers1-expected1] ____________________
+
+headers = {'Link': '</hub>; rel="hub", </resource>; rel="self"'}
+expected = {'hub': {'rel': 'hub', 'url': '/hub'}, 'self': {'rel': 'self', 'url': '/resource'}}
+
+    @pytest.mark.parametrize(
+        "headers, expected",
+        [
+            (
+                {"Link": "<https://example.com>; rel='preload'"},
+                {"preload": {"rel": "preload", "url": "https://example.com"}},
+            ),
+            (
+                {"Link": '</hub>; rel="hub", </resource>; rel="self"'},
+                {
+                    "hub": {"url": "/hub", "rel": "hub"},
+                    "self": {"url": "/resource", "rel": "self"},
+                },
+            ),
+        ],
+    )
+    def test_link_headers(headers, expected):
+        response = httpx.Response(
+            200,
+            content=None,
+            headers=headers,
+        )
+>       assert response.links == expected
+E       AssertionError: assert {'/hub': {'re... '/resource'}} == {'hub': {'rel... '/resource'}}
+E         
+E         Left contains 2 more items:
+E         {'/hub': {'rel': 'hub', 'url': '/hub'},
+E          '/resource': {'rel': 'self', 'url': '/resource'}}
+E         Right contains 2 more items:
+E         {'hub': {'rel': 'hub', 'url': '/hub'},
+E          'self': {'rel': 'self', 'url': '/resource'}}
+E         Use -v to get more diff
+
+tests\models\test_responses.py:885: AssertionError
+2 failed, 102 passed, 2 deselected in 0.94s

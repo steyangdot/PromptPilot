@@ -1,0 +1,87 @@
+{
+  "generated_utc": "2026-07-05T23:07:27Z",
+  "classifier": {
+    "file": "research/kg1_5_triage.py",
+    "frozen_blob": "ea705204aca99f7a4af27a5bf765c14be5805479",
+    "head_blob": "ea705204aca99f7a4af27a5bf765c14be5805479",
+    "last_commit": "1736266",
+    "working_tree_clean": true
+  },
+  "combined_rule": "module_mismatch OR min_fanout == 0  -> predict WIN (use the rewrite)",
+  "label_rule": "WIN iff raw codex_uncached / max(1, rewrite codex_uncached) > 1.05",
+  "base_commit": "d764bfc",
+  "n_tasks": 10,
+  "rows": [
+    {
+      "task": "models-headers-getlist-split",
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 4,
+      "predict": "WIN"
+    },
+    {
+      "task": "models-response-links",
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 11,
+      "predict": "WIN"
+    },
+    {
+      "task": "models-cookies-domain-filter",
+      "module_mismatch": true,
+      "min_fanout": 5,
+      "n_tokens": 3,
+      "predict": "WIN"
+    },
+    {
+      "task": "urls-username-unquote",
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 18,
+      "predict": "WIN"
+    },
+    {
+      "task": "urls-qp-merge-order",
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 9,
+      "predict": "WIN"
+    },
+    {
+      "task": "client-redirect-authstrip",
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 16,
+      "predict": "WIN"
+    },
+    {
+      "task": "client-redirect-head-method",
+      "module_mismatch": true,
+      "min_fanout": 6,
+      "n_tokens": 4,
+      "predict": "WIN"
+    },
+    {
+      "task": "utils-noproxy-wildcard",
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "n_tokens": 19,
+      "predict": "LOSE"
+    },
+    {
+      "task": "multipart-content-length",
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "n_tokens": 21,
+      "predict": "LOSE"
+    },
+    {
+      "task": "decoders-gzip-wbits",
+      "module_mismatch": false,
+      "min_fanout": 2,
+      "n_tokens": 3,
+      "predict": "LOSE"
+    }
+  ],
+  "note": "Recorded BEFORE any KG-1 v2 run: no outcome existed for these tasks at generation time. Score against labels with the frozen label rule only."
+}

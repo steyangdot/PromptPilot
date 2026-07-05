@@ -1,0 +1,53 @@
+F...                                                                     [100%]
+================================== FAILURES ===================================
+__________________________________ test_gzip __________________________________
+
+self = <httpx._decoders.GZipDecoder object at 0x00000221A21CAD10>
+data = b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\n+I-.Q042\x06\x00\xdf\x0fi\xc2\x08\x00\x00\x00'
+
+    def decode(self, data: bytes) -> bytes:
+        try:
+>           return self.decompressor.decompress(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           zlib.error: Error -3 while decompressing data: incorrect header check
+
+httpx\_decoders.py:97: error
+
+The above exception was the direct cause of the following exception:
+
+    def test_gzip():
+        body = b"test 123"
+        compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
+        compressed_body = compressor.compress(body) + compressor.flush()
+    
+        headers = [(b"Content-Encoding", b"gzip")]
+>       response = httpx.Response(
+            200,
+            headers=headers,
+            content=compressed_body,
+        )
+
+tests\test_decoders.py:57: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+httpx\_models.py:554: in __init__
+    self.read()
+httpx\_models.py:881: in read
+    self._content = b"".join(self.iter_bytes())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+httpx\_models.py:898: in iter_bytes
+    decoded = decoder.decode(raw_bytes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <httpx._decoders.GZipDecoder object at 0x00000221A21CAD10>
+data = b'\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\n+I-.Q042\x06\x00\xdf\x0fi\xc2\x08\x00\x00\x00'
+
+    def decode(self, data: bytes) -> bytes:
+        try:
+            return self.decompressor.decompress(data)
+        except zlib.error as exc:
+>           raise DecodingError(str(exc)) from exc
+E           httpx.DecodingError: Error -3 while decompressing data: incorrect header check
+
+httpx\_decoders.py:99: DecodingError
+1 failed, 3 passed, 36 deselected in 0.51s

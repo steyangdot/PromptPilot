@@ -98,6 +98,123 @@ TASKS = [
         targets=["tests/test_config.py"],
         note="Timeout 3/4-tuple: write takes the read slot's value.",
     ),
+    # ---- corpus v2 (2026-07-05): +10 candidates. Selection criterion = MODULE DIVERSITY
+    # (mostly files the v1 corpus doesn't touch, plus two same-name-module tasks so pointed-
+    # shaped evidence stays represented) -- NEVER how the KG-1.5 triage signals would score
+    # them. Out-of-sample discipline: the classifier was frozen at commit 1736266 BEFORE any
+    # v2 task existed; kg1_5b_predict.py records its predictions before any KG-1 v2 run.
+    dict(
+        id="models-headers-getlist-split",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_models.py",
+        edits=[('            split_values.extend([item.strip() for item in value.split(",")])',
+                '            split_values.extend([item for item in value.split(",")])')],
+        targets=["tests/models/test_headers.py"],
+        note="Headers.get_list(split_commas=True) stops stripping whitespace around commas.",
+    ),
+    dict(
+        id="models-response-links",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_models.py",
+        edits=[('            (link.get("rel") or link.get("url")): link',
+                '            (link.get("url") or link.get("rel")): link')],
+        targets=["tests/models/test_responses.py"],
+        k="not autodetect and not cp_1252",
+        scope_reason="2 charset-autodetect tests red on the clean base in this env (chardet-"
+                     "version drift detects 'iso8859-15'): test_response_decode_text_using_"
+                     "autodetect, test_response_no_charset_with_cp_1252_content -- out of scope",
+        note="Response.links keyed by URL instead of rel (precedence swapped).",
+    ),
+    dict(
+        id="models-cookies-domain-filter",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_models.py",
+        edits=[("                if domain is None or cookie.domain == domain:",
+                "                if domain is None or cookie.domain != domain:")],
+        targets=["tests/models/test_cookies.py"],
+        note="Cookies.get domain filter inverted -> lookups with domain= match the wrong cookies.",
+    ),
+    dict(
+        id="urls-username-unquote",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_urls.py",
+        edits=[('        return unquote(userinfo.partition(":")[0])',
+                '        return userinfo.partition(":")[0]')],
+        targets=["tests/models/test_url.py"],
+        note="URL.username returns the still-percent-encoded form (unquote dropped).",
+    ),
+    dict(
+        id="urls-qp-merge-order",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_urls.py",
+        edits=[("        q._dict = {**self._dict, **q._dict}",
+                "        q._dict = {**q._dict, **self._dict}")],
+        targets=["tests/models/test_queryparams.py", "tests/client/test_queryparams.py"],
+        note="QueryParams.merge precedence swapped -> existing keys win over merged params.",
+    ),
+    dict(
+        id="client-redirect-authstrip",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_client.py",
+        edits=[("        if not _same_origin(url, request.url):",
+                "        if _same_origin(url, request.url):")],
+        targets=["tests/client/test_redirects.py"],
+        note="Auth-strip condition inverted: cross-origin redirects keep Authorization, "
+             "same-origin redirects lose it.",
+    ),
+    dict(
+        id="client-redirect-head-method",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_client.py",
+        edits=[('        if response.status_code == codes.FOUND and method != "HEAD":',
+                '        if response.status_code == codes.FOUND and method == "HEAD":')],
+        targets=["tests/client/test_redirects.py"],
+        note="302 method-rewrite guard inverted: HEAD converts to GET (POST no longer does).",
+    ),
+    dict(
+        id="utils-noproxy-wildcard",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_utils.py",
+        edits=[('                mounts[f"all://*{hostname}"] = None',
+                '                mounts[f"all://*.{hostname}"] = None')],
+        targets=["tests/test_utils.py", "tests/client/test_proxies.py"],
+        note="NO_PROXY bare domain becomes subdomain-only wildcard (bare host no longer bypassed).",
+    ),
+    dict(
+        id="multipart-content-length",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_multipart.py",
+        edits=[('        length += 2 + boundary_length + 4  # b"--{boundary}--\\r\\n"',
+                '        length += 2 + boundary_length + 2  # b"--{boundary}--\\r\\n"')],
+        targets=["tests/test_multipart.py"],
+        k="not text_mode_file",
+        scope_reason="test_multipart_encode_files_raises_exception_with_text_mode_file is red on "
+                     "the clean base on Windows (TemporaryFile(mode='w') isn't io.TextIOBase "
+                     "here, so the expected TypeError never raises) -- platform drift, out of scope",
+        note="Multipart Content-Length off by two (closing boundary's CRLF not counted).",
+    ),
+    dict(
+        id="decoders-gzip-wbits",
+        cls="failing-test",
+        corpus=2,
+        file="httpx/_decoders.py",
+        edits=[("        self.decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)",
+                "        self.decompressor = zlib.decompressobj(zlib.MAX_WBITS)")],
+        targets=["tests/test_decoders.py"],
+        k="gzip",
+        scope_reason="same clean-base env drift as decoder-trailing-cr (charset-autodetect reds "
+                     "from chardet-version drift) -- scoped to the seeded gzip behavior",
+        note="GZipDecoder window bits lose the gzip-header flag (raw zlib) -> gzip decode fails.",
+    ),
 ]
 
 
@@ -144,6 +261,7 @@ def run_targets(task):
 def verify_task(task) -> dict:
     t0 = time.time()
     res = dict(id=task["id"], cls=task["cls"], file=task["file"], targets=task["targets"],
+               corpus=task.get("corpus", 1),
                k=task.get("k"), scope_reason=task.get("scope_reason"),
                pytest_argv=["<python>"] + pytest_argv(task),
                note=task["note"], base_preseeded=task.get("base_preseeded", False))
@@ -191,10 +309,44 @@ def verify_task(task) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", help="verify a single task id")
+    ap.add_argument("--all", action="store_true",
+                    help="re-verify EVERY task (regenerates ALL evidence files, breaking the "
+                         "byte-stability of prior pinned KG inputs -- fresh corpus rebuilds only)")
+    ap.add_argument("--force", action="store_true",
+                    help="allow --task to re-verify an ALREADY-ADMITTED task, deliberately "
+                         "overwriting its pinned evidence.txt (a KG input)")
     args = ap.parse_args()
-    tasks = [t for t in TASKS if not args.task or t["id"] == args.task]
-    if not tasks:
-        sys.exit("no such task id")
+
+    # Incremental by default: previously-admitted entries pass through untouched so their
+    # evidence files stay byte-stable (they are the PINNED inputs of already-run KG gates).
+    prior = None
+    if (OUT / "manifest.json").exists():
+        prior = json.loads((OUT / "manifest.json").read_text(encoding="utf-8"))
+    head = sh(["git", "rev-parse", "--short", "HEAD"], timeout=30)[1].strip()
+    if prior and prior["base_commit"] != head and not args.all:
+        sys.exit("fixture base moved ({0} -> {1}): prior evidence is no longer comparable. "
+                 "Restore the base commit or rebuild the whole corpus with --all.".format(
+                     prior["base_commit"], head))
+
+    if args.task:
+        tasks = [t for t in TASKS if t["id"] == args.task]
+        if not tasks:
+            sys.exit("no such task id")
+        # Review #1: re-verifying an already-admitted task on the SAME base overwrites its
+        # pinned evidence.txt (whose bytes carry run-specific timing) -> silently desyncs the
+        # input from any KG result already computed on it. Refuse unless the operator opts in.
+        prior_admitted = {a["id"] for a in prior["admitted"]} if prior else set()
+        if args.task in prior_admitted and not (args.force or args.all):
+            sys.exit("{0} is already admitted; re-verifying overwrites its pinned evidence.txt "
+                     "(a KG input). Pass --force to refresh it deliberately.".format(args.task))
+    elif args.all or prior is None:
+        tasks = list(TASKS)
+    else:
+        admitted_ids = {a["id"] for a in prior["admitted"]}
+        tasks = [t for t in TASKS if t["id"] not in admitted_ids]
+        if not tasks:
+            sys.exit("nothing new to verify (all defined tasks admitted; use --all to rebuild)")
+
     OUT.mkdir(parents=True, exist_ok=True)
     results = []
     for t in tasks:
@@ -206,13 +358,20 @@ def main():
     rejected = [r for r in results if r["verdict"] != "REPRODUCES"]
     # Review P2: the ADMITTED list is the corpus; rejected results are kept for audit only.
     # Consumers (KG-1 runner, sweeps) MUST iterate manifest["admitted"], never a raw task list.
+    ran = {r["id"] for r in results}
+    admitted = ([a for a in prior["admitted"] if a["id"] not in ran] if prior else []) + ok
+    rejected_all = ([r for r in prior.get("rejected_for_audit", []) if r["id"] not in ran]
+                    if prior else []) + rejected
+    order = {t["id"]: i for i, t in enumerate(TASKS)}
+    admitted.sort(key=lambda a: order.get(a["id"], len(TASKS)))
     manifest = dict(
         generated_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        repo=HTTPX, base_commit=sh(["git", "rev-parse", "--short", "HEAD"], timeout=30)[1].strip(),
-        python=PY, n_defined=len(tasks), n_admitted=len(ok),
-        admitted=ok, rejected_for_audit=rejected)
+        repo=HTTPX, base_commit=head,
+        python=PY, n_defined=len(TASKS), n_admitted=len(admitted),
+        admitted=admitted, rejected_for_audit=rejected_all)
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print("\n{0}/{1} tasks ADMITTED -> manifest at {2}".format(len(ok), len(tasks), OUT / "manifest.json"))
+    print("\nthis run: {0}/{1} ADMITTED; corpus total {2}/{3} -> manifest at {4}".format(
+        len(ok), len(tasks), len(admitted), len(TASKS), OUT / "manifest.json"))
     if len(ok) < len(tasks):
         sys.exit(1)
 

@@ -1,0 +1,33 @@
+............F...F                                                        [100%]
+================================== FAILURES ===================================
+____________________________ test_queryparam_merge ____________________________
+
+    def test_queryparam_merge():
+        q = httpx.QueryParams("a=123")
+        q = q.merge({"b": "456"})
+        assert q == httpx.QueryParams("a=123&b=456")
+        q = q.merge({"a": "000", "c": "789"})
+>       assert q == httpx.QueryParams("a=000&b=456&c=789")
+E       AssertionError: assert QueryParams('...&c=789&b=456') == QueryParams('...&b=456&c=789')
+E         
+E         Use -v to get more diff
+
+tests\models\test_queryparams.py:125: AssertionError
+________________________ test_client_queryparams_echo _________________________
+
+    def test_client_queryparams_echo():
+        url = "http://example.org/echo_queryparams"
+        client_queryparams = "first=str"
+        request_queryparams = {"second": "dict"}
+        client = httpx.Client(
+            transport=httpx.MockTransport(hello_world), params=client_queryparams
+        )
+        response = client.get(url, params=request_queryparams)
+    
+        assert response.status_code == 200
+>       assert response.url == "http://example.org/echo_queryparams?first=str&second=dict"
+E       AssertionError: assert URL('http://example.org/echo_queryparams?second=dict&first=str') == 'http://example.org/echo_queryparams?first=str&second=dict'
+E        +  where URL('http://example.org/echo_queryparams?second=dict&first=str') = <Response [200 OK]>.url
+
+tests\client\test_queryparams.py:35: AssertionError
+2 failed, 15 passed in 1.75s

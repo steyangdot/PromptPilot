@@ -50,6 +50,12 @@ Base state: httpx fixture branch `seeded-auth-bug` @ `d764bfc` (carries the dige
 Verifier cost: $0 (local pytest only). Re-run the verifier whenever the base commit or the
 python env changes — admissibility is per-environment, not assumed.
 
+**Incremental verification (since v2):** by default the verifier runs only tasks not yet in the
+manifest and MERGES the results — previously-admitted entries and their evidence files pass
+through byte-untouched, because they are the pinned inputs of already-run KG gates. `--all`
+rebuilds the whole corpus (regenerating all evidence = a new corpus generation, commit it
+deliberately); the verifier refuses to run incrementally if the base commit has moved.
+
 ## 3. v1 corpus (6 tasks, all `failing-test`)
 
 | id | seeded defect | locking targets |
@@ -63,6 +69,40 @@ python env changes — admissibility is per-environment, not assumed.
 
 Diversity axes covered: hash/crypto logic, header emission, parser normalization, value coercion,
 incremental stream state, constructor unpacking — six distinct modules, no shared files.
+
+## 3.1 v2 corpus (2026-07-05, +10 tasks — the KG-1.5b out-of-sample set)
+
+| id | seeded defect | locking targets |
+|---|---|---|
+| models-headers-getlist-split | Headers.get_list(split_commas) stops stripping whitespace | tests/models/test_headers.py |
+| models-response-links | Response.links keyed by URL instead of rel | tests/models/test_responses.py `-k "not autodetect and not cp_1252"` |
+| models-cookies-domain-filter | Cookies.get domain filter inverted | tests/models/test_cookies.py |
+| urls-username-unquote | URL.username stays percent-encoded | tests/models/test_url.py |
+| urls-qp-merge-order | QueryParams.merge precedence swapped | tests/models/test_queryparams.py, tests/client/test_queryparams.py |
+| client-redirect-authstrip | auth-strip origin condition inverted | tests/client/test_redirects.py |
+| client-redirect-head-method | 302 method-rewrite guard inverted | tests/client/test_redirects.py |
+| utils-noproxy-wildcard | NO_PROXY bare domain gets subdomain-only wildcard | tests/test_utils.py, tests/client/test_proxies.py |
+| multipart-content-length | multipart Content-Length off by two | tests/test_multipart.py `-k "not text_mode_file"` |
+| decoders-gzip-wbits | GZipDecoder loses the gzip-header window-bits flag | tests/test_decoders.py `-k gzip` |
+
+**Selection discipline (out-of-sample honesty for KG-1.5b):** the v2 tasks were chosen for
+**module diversity** — mostly files the v1 corpus doesn't touch (`_models.py`, `_urls.py`,
+`_client.py`, `_multipart.py`), plus two same-name-module tasks (`_decoders.py`, `_multipart.py`)
+so pointed-shaped evidence stays represented — and **never** for how the KG-1.5 triage signals
+would score them. The triage classifier was frozen in commit `1736266` before any v2 task
+existed, and `research/kg1_5b_predict.py` recorded its predictions
+(`research/kg1_data/kg1_5b_predictions.json`) **before any KG-1 v2 run produced outcomes**:
+7 predicted WIN (all via the module-mismatch signal — structural to httpx's aggregate modules,
+whose tests live under differently-named files) and 3 predicted LOSE. Scoring the frozen
+predictions against the eventual KG-1 v2 labels is the classifier's real out-of-sample test.
+Caveat surfaced by that split: min-fanout fired on zero v2 tasks, so v2 chiefly tests the
+module-mismatch signal, not the combined OR rule — noted here so the eventual accuracy number
+isn't over-read.
+
+Two scoping notes (rule §5): `test_responses.py` carries the same chardet-version drift as
+`test_decoders.py` (2 charset-autodetect reds on the clean base), and `test_multipart.py` has one
+Windows-platform red (`TemporaryFile(mode="w")` is not `io.TextIOBase` here). Both tasks scope
+those out with a negative `-k`, recorded on the task with the reason.
 
 ## 4. Scoring (for KG-1 and later sweeps)
 
@@ -88,9 +128,15 @@ incremental stream state, constructor unpacking — six distinct modules, no sha
 - Tasks must stay **file-disjoint** from each other where possible, so per-task baselines stay
   meaningful under the pre-seeded base.
 
-## 6. v1 verification result (2026-07-04)
+## 6. Verification results
 
-**6/6 ADMITTED** on base `d764bfc`, all baselines green (or red-by-seed for the pre-seeded task):
-auth-digest-a1 (3F/5P), content-json-type (7F/60P), url-port-norm (19F/71P), utils-bool-str
-(1F/16P), decoder-trailing-cr (1F/2P scoped), config-timeout-tuple (1F/27P). Manifest + captured
-evidence: `research/ci_fixtures_data/` (tracked).
+**v1 (2026-07-04): 6/6 ADMITTED** on base `d764bfc`, all baselines green (or red-by-seed for the
+pre-seeded task): auth-digest-a1 (3F/5P), content-json-type (7F/60P), url-port-norm (19F/71P),
+utils-bool-str (1F/16P), decoder-trailing-cr (1F/2P scoped), config-timeout-tuple (1F/27P).
+
+**v2 (2026-07-05): 10/10 ADMITTED** (8 first pass; 2 re-admitted after env-drift `-k` scoping,
+see §3.1): headers-getlist (1F/26P), response-links (2F/102P scoped), cookies-domain (1F/6P),
+username-unquote (5F/85P), qp-merge (2F/15P), redirect-authstrip (4F/27P), redirect-head-method
+(1F/30P), noproxy-wildcard (6F/103P), multipart-content-length (11F/26P scoped), gzip-wbits
+(1F/3P scoped). **Corpus total: 16/16.** Manifest + captured evidence:
+`research/ci_fixtures_data/` (tracked); v1 evidence byte-untouched by the v2 run.
