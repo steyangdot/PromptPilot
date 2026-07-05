@@ -149,13 +149,25 @@ def run_codex(prompt: str, out_jsonl: Path, cwd: str,
                "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
     t0 = time.time()
     with open(out_jsonl, "w", encoding="utf-8") as fout:
+        # Popen instead of subprocess.run: on timeout, run() kills only the DIRECT child —
+        # codex's worker grandchildren survive and keep editing the repo through subsequent
+        # scoring/runs (the T2-attempt-2 failure class; KG-1 review A-3). taskkill /T fells
+        # the whole tree of OUR spawned child.
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=fout,
+                                cwd=cwd, text=True, encoding="utf-8")
         try:
-            proc = subprocess.run(
-                cmd, input=prompt, text=True, encoding="utf-8",
-                stdout=fout, cwd=cwd, timeout=CODEX_TIMEOUT_SEC,
-            )
+            proc.communicate(input=prompt, timeout=CODEX_TIMEOUT_SEC)
             rc = proc.returncode
         except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                               capture_output=True)
+            else:
+                proc.kill()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
             rc = 124
     return time.time() - t0, rc
 

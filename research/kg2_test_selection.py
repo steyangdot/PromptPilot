@@ -29,6 +29,7 @@ import argparse
 import ast
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -41,6 +42,7 @@ import ci_fixtures as cf
 HTTPX = Path(cf.HTTPX)
 PY = sys.executable
 OUT = Path(__file__).parent / "kg1_data"          # tracked results dir (shared with KG-1)
+COV_CACHE = Path(__file__).parent / "data" / "kg2_cov_cache"   # gitignored (binary db)
 FULL_SUITE_TIMEOUT = 900
 
 
@@ -73,7 +75,11 @@ def select_static(changed: str) -> set:
         rc, out = sh(["git", "grep", "-l", "--fixed-strings", sym, "--", "tests/"])
         if rc == 0:
             sel.update(x.strip().replace("\\", "/") for x in out.splitlines() if x.strip())
-    return {s for s in sel if s.endswith(".py")}
+    # TEST files only (review C-F2): the symbol grep also hits tests/conftest.py,
+    # tests/common.py etc.; passing conftest.py as a pytest arg ABORTS the run at
+    # collection (rc=2) -- the v1 config-timeout-tuple timed row was that abort.
+    return {s for s in sel
+            if s.endswith(".py") and Path(s).name.startswith("test_")}
 
 
 # ---------------------------------------------------------------------------
@@ -89,19 +95,30 @@ def changed_lines(task, base_commit: str) -> set:
         for m in re.finditer(r"@@ [^+]*\+(\d+)(?:,(\d+))? @@", out):
             start, cnt = int(m.group(1)), int(m.group(2) or "1")
             lines.update(range(start, start + max(cnt, 1)))
-        return lines
+        return {ln for ln in lines if ln >= 1}   # pure-deletion-at-top hunks emit line 0
     src = (HTTPX / task["file"]).read_text(encoding="utf-8")
     lines = set()
     for old, _new in task["edits"]:
-        if old in src:
-            start = src[:src.index(old)].count("\n") + 1
-            lines.update(range(start, start + old.count("\n") + 1))
+        # Mirror apply_edits' admission-time uniqueness contract (review C-F7): a base
+        # drift that makes an anchor non-unique must fail loudly, not mislocate lines.
+        if src.count(old) != 1:
+            raise RuntimeError("anchor not unique ({0}x) for {1}: {2!r}".format(
+                src.count(old), task["id"], old[:60]))
+        start = src[:src.index(old)].count("\n") + 1
+        lines.update(range(start, start + old.count("\n") + 1))
     return lines
 
 
-def build_coverage_map(skip_build=False) -> dict | None:
-    cov_file = HTTPX / ".coverage"
-    if not skip_build or not cov_file.exists():
+def build_coverage_map(base_commit: str, skip_build=False) -> dict | None:
+    # The db is CACHED outside the fixture repo (review C-F3: reset_repo's `git clean
+    # -fdx` deletes an in-repo .coverage before the old existence check ever saw it,
+    # so --skip-cov-build silently rebuilt every time). Cache is keyed by base commit.
+    cache = COV_CACHE / "coverage_{0}.db".format(base_commit)
+    if skip_build and cache.exists():
+        cov_path = cache
+        print("[kg2] using cached coverage map: {0}".format(cache), flush=True)
+    else:
+        cov_file = HTTPX / ".coverage"
         print("[kg2] building coverage map (full suite once, --cov-context=test)...", flush=True)
         cf.reset_repo()
         # bare --cov (NOT --cov=httpx): the repo's own coverage config sets `include`, and
@@ -115,9 +132,12 @@ def build_coverage_map(skip_build=False) -> dict | None:
         if not cov_file.exists():
             print("[kg2] WARNING: no .coverage produced — tier-2 unavailable")
             return None
+        COV_CACHE.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(cov_file, cache)
+        cov_path = cache
     try:
         from coverage import CoverageData
-        d = CoverageData(str(cov_file))
+        d = CoverageData(str(cov_path))
         d.read()
         fmap = defaultdict(set)
         linemap = defaultdict(lambda: defaultdict(set))   # relpath -> lineno -> {test files}
@@ -157,21 +177,34 @@ def timed_pytest(files, timeout=FULL_SUITE_TIMEOUT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--skip-cov-build", action="store_true")
+    ap.add_argument("--corpus", type=int,
+                    help="score only tasks with this corpus tag (1=v1, 2=v2); default all admitted")
     args = ap.parse_args()
 
     manifest = json.loads((cf.OUT / "manifest.json").read_text(encoding="utf-8"))
     admitted = manifest["admitted"]
+    if args.corpus:
+        admitted = [a for a in admitted if a.get("corpus", 1) == args.corpus]
+        if not admitted:
+            sys.exit("no admitted tasks with corpus == {0}".format(args.corpus))
     tasks_by_id = {t["id"]: t for t in cf.TASKS}
+    base_commit = manifest["base_commit"]
+
+    # Base guard (review C-F4): coverage line numbers, anchors and timing all assume the
+    # manifest's base tree; a drifted fixture repo must abort, not silently mis-map.
+    head = sh(["git", "rev-parse", "--short", "HEAD"], timeout=30)[1].strip()
+    if head != base_commit:
+        sys.exit("fixture repo at {0}, manifest base is {1} -- restore the base first".format(
+            head, base_commit))
 
     cf.reset_repo()
-    print("[kg2] timing FULL suite on the clean tree...", flush=True)
+    print("[kg2] timing FULL suite on the clean tree (cold)...", flush=True)
     full_wall, full_sum = timed_pytest(["tests"])
     print("[kg2] full suite: {0:.1f}s  ({1})".format(full_wall, full_sum), flush=True)
 
-    covmap = build_coverage_map(skip_build=args.skip_cov_build)
+    covmap = build_coverage_map(base_commit, skip_build=args.skip_cov_build)
     cf.reset_repo()
 
-    base_commit = manifest["base_commit"]
     rows = []
     for a in admitted:
         task = tasks_by_id[a["id"]]
@@ -199,6 +232,10 @@ def main():
                           ("t2_line", sel_t2l), ("primary", primary)):
             row[tier] = dict(n=len(sel), catch=bool(sel & targets),
                              strict=targets.issubset(sel), sel=sorted(sel))
+        # Cold-cold timing (review C-F5): the full suite paid cold bytecode compilation
+        # after a clean -fdx; without a reset here, selected runs 2..n ride run 1's warm
+        # __pycache__ — a systematic bias in the selector's favor (~0.05 on the ratio).
+        cf.reset_repo()
         wall, summ = timed_pytest(primary)
         row["primary_wall_s"] = round(wall, 1)
         row["primary_summary"] = summ
@@ -210,33 +247,51 @@ def main():
                   row["primary"]["catch"], row["primary"]["strict"], row["primary_wall_s"]),
               flush=True)
 
-    # ---- pre-registered gate (judged on the PRIMARY matcher = static ∪ line-scoped cov) ----
+    # ---- gate (judged on the PRIMARY matcher = static ∪ line-scoped cov) ----
+    # Bands generalized to n = len(rows) (review C-F1: the v1 code hardcoded 6, which on
+    # a 16-task corpus judges "6 catches + 10 escapes" CONTINUE and "16/16" KILL).
+    n = len(rows)
     def agg(tier):
         catches = sum(1 for r in rows if r[tier]["catch"])
         stricts = sum(1 for r in rows if r[tier]["strict"])
-        mean_n = sum(r[tier]["n"] for r in rows) / len(rows)
+        mean_n = sum(r[tier]["n"] for r in rows) / n
         return catches, stricts, mean_n
-    print("\n== KG-2 result (full suite = {0:.1f}s) ==".format(full_wall))
+    print("\n== KG-2 result (n={0} tasks, full suite = {1:.1f}s) ==".format(n, full_wall))
     for tier in ("t1_static", "t2_file", "t2_line", "primary"):
-        c, s, n = agg(tier)
-        print("  {0:10s}: catch {1}/6  strict {2}/6  mean selection {3:.1f} files".format(tier, c, s, n))
-    mean_wall = sum(r["primary_wall_s"] for r in rows) / len(rows)
+        c, s, mn = agg(tier)
+        print("  {0:10s}: catch {1}/{2}  strict {3}/{2}  mean selection {4:.1f} files".format(
+            tier, c, n, s, mn))
+    # Aborted timed runs (pytest rc=2 etc.) must be visible, never averaged in silently.
+    aborted = [r["task"] for r in rows if "passed" not in r["primary_summary"]
+               and "failed" not in r["primary_summary"]]
+    if aborted:
+        print("  WARNING: timed run did not execute for: {0}".format(", ".join(aborted)))
+    mean_wall = sum(r["primary_wall_s"] for r in rows) / n
     ratio = mean_wall / full_wall if full_wall else float("inf")
     cp, sp, _ = agg("primary")
     print("  PRIMARY mean wall: {0:.1f}s = {1:.2f}x full suite".format(mean_wall, ratio))
-    if cp == 6 and ratio <= 0.5:
-        verdict = "CONTINUE (6/6 catch, wall {0:.2f}x <= 0.5x) [matcher iteration used: line-scoping]".format(ratio)
-    elif cp < 6:
-        verdict = "KILL (escape {0}/6 after the one allowed matcher iteration)".format(cp)
+    if aborted:
+        verdict = "INVALID ({0}/{1} timed selections aborted at collection)".format(len(aborted), n)
+    elif cp == n and ratio <= 0.5:
+        verdict = "CONTINUE ({0}/{0} catch, wall {1:.2f}x <= 0.5x) [matcher: static UNION line-scoped]".format(n, ratio)
+    elif cp < n:
+        verdict = "KILL (escape: catch {0}/{1})".format(cp, n)
     else:
-        verdict = "KILL (wall {0:.2f}x > 0.5x after the one allowed matcher iteration)".format(ratio)
+        verdict = "KILL (wall {0:.2f}x > 0.5x)".format(ratio)
     print("  VERDICT:", verdict)
 
-    (OUT / "kg2_result.json").write_text(json.dumps(dict(
+    # New label-suffixed artifact names: the published v1 kg2_result.json is an immutable
+    # record — never rewritten by later runs (same doctrine as the pinned evidence files).
+    label = "c{0}".format(args.corpus) if args.corpus else "all"
+    out_path = OUT / "kg2_result_{0}.json".format(label)
+    out_path.write_text(json.dumps(dict(
+        generated_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        n_tasks=n, corpus=args.corpus, base_commit=base_commit,
+        timing="cold-cold (reset_repo before the full suite and before every timed selection)",
         full_suite_wall_s=round(full_wall, 1), rows=rows, verdict=verdict,
-        matcher="t1_static UNION t2_line_scoped (fallback t2_file)", iteration=2,
+        matcher="t1_static UNION t2_line_scoped (fallback t2_file); test_*.py files only",
         covmap_available=bool(covmap)), indent=2), encoding="utf-8")
-    print("wrote", OUT / "kg2_result.json")
+    print("wrote", out_path)
 
 
 if __name__ == "__main__":
