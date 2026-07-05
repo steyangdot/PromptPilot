@@ -123,6 +123,18 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
   wedge narrows to gates + triage); **REPLICATE otherwise** — one more rep of the full corpus,
   decide on pooled means, borderline again = KILL. Correctness is scored by each task's recorded
   `pytest_argv` (never a re-derived invocation).
+
+  > **METRIC AMENDMENT (2026-07-05 — registered BEFORE any KG-1 v2 outcome existed; the
+  > amending commit is the proof).** For v2 onward the **primary gated ε₁ uses codex-uncached
+  > (LLM) tokens only**. Rationale: the SLM is nano-priced (~0.02× gpt-5.5), so the original
+  > 1:1 all-in definition over-weights its tokens ~50×; the accounting doctrine has always been
+  > "SLM as its own reported line, never folded into the LLM headline." SLM usage is now
+  > MEASURED (in-process tap, classify + rewrite passes) and reported alongside as **all-in
+  > 1:1** and **cost-weighted 0.02×** secondary lines, so an SLM-hungry rewrite cannot hide.
+  > Bands unchanged, applied to the primary metric. The v1 run was gated on the original
+  > all-in definition and its recorded verdict stands as-decided (see OUTCOMES caveats: with
+  > measured SLM accounting, v1's all-in ε₁ ≈ +0.13 would have landed REPLICATE; its
+  > codex-only ε₁ = +0.374).
 - **KG-2 — impacted-test selection.** Does diff → locking-tests selection beat full-suite /
   agent-chooses? *Metrics:* selection recall on seeded defects, suite wall time, escaped-red rate.
   Largely replayable **offline** against the corpus before any live spend.

@@ -33,9 +33,17 @@ PROTOCOL v2 (2026-07-05, post gate-script review — the v1 run predates these):
     Results persist incrementally after every run. Prompts are persisted for audit (A-8b) and
     PROMPTPILOT_USE_TARGET_HINT is recorded in the header (A-8c).
 
-Gate (pre-registered, charter §6): ε₁ = 1 − (B tokens-per-green / A tokens-per-green), all-in.
-  CONTINUE ε₁ ≥ 0.15 AND green(B) ≥ green(A); KILL ε₁ ≤ 0 OR green(B) < green(A); else REPLICATE.
-  (Reported ALL-IN + codex-uncached-only + cost-weighted 0.02× — review D-F5 provenance fix.)
+Gate (charter §6, METRIC AMENDED 2026-07-05 — pre-registered before any v2 outcome existed;
+the amending commit is the proof):
+  PRIMARY ε₁ = 1 − (B codex-uncached tokens-per-green / A codex-uncached tokens-per-green).
+  LLM (codex) tokens only: the SLM is nano-priced (~0.02× gpt-5.5), so charging it 1:1 in the
+  gated metric over-weights it ~50×; doctrine keeps SLM as its own reported line, never folded
+  into the LLM headline. SLM cost is still MEASURED and reported (all-in 1:1 + cost-weighted
+  0.02×) so nothing is hidden — a rewrite arm that burned absurd SLM would show up there.
+  Bands unchanged: CONTINUE ε₁ ≥ 0.15 AND green(B) ≥ green(A); KILL ε₁ ≤ 0 OR
+  green(B) < green(A); else REPLICATE.
+  (The v1 run was gated on the ORIGINAL all-in definition and its record stands as-decided,
+  with the measured-SLM and seed-leak caveats recorded in the charter OUTCOMES.)
 
 Run:  PYTHONPATH=<worktree> python research/kg1_rewrite_value.py [--dry-run] [--task ID]
                                                                  [--corpus N] [--force]
@@ -339,25 +347,29 @@ def main():
     eps_cw = 1 - pB_cw / pAu if pAu not in (0, float("inf")) else float("nan")
 
     print("\n== KG-1 result ==")
-    print("  RAW    : green {0}/{1}  all-in tok/green={2:,.0f}  (codex-only {3:,.0f})".format(
-        gA, len(A), pA, pAu))
-    print("  REWRITE: green {0}/{1}  all-in tok/green={2:,.0f}  (codex-only {3:,.0f})".format(
-        gB, len(B), pB, pBu))
-    print("  ε₁ (all-in) = {0:+.3f}   ε₁ (codex-only) = {1:+.3f}   "
-          "ε₁ (cost-weighted 0.02×) = {2:+.3f}".format(eps, eps_u, eps_cw))
+    print("  RAW    : green {0}/{1}  codex-uncached tok/green={2:,.0f}  (all-in {3:,.0f})".format(
+        gA, len(A), pAu, pA))
+    print("  REWRITE: green {0}/{1}  codex-uncached tok/green={2:,.0f}  (all-in {3:,.0f})".format(
+        gB, len(B), pBu, pB))
+    print("  ε₁ PRIMARY (codex-only) = {0:+.3f}   [all-in 1:1 = {1:+.3f}   "
+          "cost-weighted 0.02× = {2:+.3f}]".format(eps_u, eps, eps_cw))
     if n_censored or n_integrity:
         print("  NOTE: censored={0} integrity-violations={1}".format(n_censored, n_integrity))
+    # Gate on the PRIMARY (codex-only) metric — 2026-07-05 amendment, see module docstring.
     if gB < gA:
         verdict = "KILL (rewrite regressed correctness: green {0} < {1})".format(gB, gA)
-    elif eps >= 0.15 and gB >= gA:
-        verdict = "CONTINUE (ε₁ ≥ 0.15 at green-parity)"
-    elif eps <= 0:
-        verdict = "KILL (ε₁ ≤ 0)"
+    elif eps_u >= 0.15 and gB >= gA:
+        verdict = "CONTINUE (codex-only ε₁ ≥ 0.15 at green-parity)"
+    elif eps_u <= 0:
+        verdict = "KILL (codex-only ε₁ ≤ 0)"
     else:
-        verdict = "REPLICATE (0 < ε₁ < 0.15)"
+        verdict = "REPLICATE (0 < codex-only ε₁ < 0.15)"
     print("  VERDICT:", verdict)
-    summ = dict(green_raw=gA, green_rewrite=gB, tpg_raw_allin=pA, tpg_rewrite_allin=pB,
-                eps1_allin=eps, eps1_codex_only=eps_u, eps1_cost_weighted=eps_cw,
+    summ = dict(green_raw=gA, green_rewrite=gB,
+                tpg_raw_codex=pAu, tpg_rewrite_codex=pBu,
+                tpg_raw_allin=pA, tpg_rewrite_allin=pB,
+                eps1_primary_codex_only=eps_u, eps1_allin=eps, eps1_cost_weighted=eps_cw,
+                gated_metric="codex-uncached only (amended 2026-07-05, pre-v2-outcome)",
                 n_censored=n_censored, n_error=n_error, integrity_violations=n_integrity,
                 slm_measured_rows=sum(1 for r in B if r.get("slm_measured")),
                 verdict=verdict)
