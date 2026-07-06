@@ -216,6 +216,19 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
 > selection → INVALID. Known risk, stated in advance: `_models.py` tasks may balloon the
 > static tier's symbol matches (Response/Headers grep breadth) → wall-fail with clean catch is
 > a live possibility and would redirect Phase 3 to the line-scoped tier.
+>
+> **RESULT (2026-07-06, `kg1_data/kg2_result_all.json`): CONFIRM — 16/16 catch, 16/16 strict,
+> mean primary wall 60.1s = 0.48× of the 124.4s full suite** (passes the pre-registered band by
+> 2pp; zero aborts; frozen matcher, zero iterations). **The selector's recall is now validated
+> out-of-sample** — the one v1-era "6/6" that survived the campaign's deconfounding week.
+> Tier data (Phase-3 design input, not a gate change): **t2 line-scoped ALONE = 16/16 catch,
+> 16/16 strict at 5.2 files mean** — perfect recall with the smallest selections; t1 static =
+> 15/16 catch (the known `_utils`→queryparams call-flow miss) and is what drags the union's
+> wall (pre-declared `_models.py` symbol breadth materialized: 23–24-file selections, walls to
+> 123s ≈ full suite). Phase-3 product decision this licenses: **line-scoped coverage as the
+> primary selector, static tier demoted to a pruned fallback** (for changes outside the
+> coverage map, e.g. new files) — that configuration's implied mean wall is far inside the
+> band. The scheduled full-suite run remains the pipeline backstop, as designed.
 
 **Then the flagship optimization:** the **reasoning_effort sweep** — the biggest known cost lever
 (~23× high-vs-minimal), regime-agnostic, and easiest to exploit in headless batch (no latency
