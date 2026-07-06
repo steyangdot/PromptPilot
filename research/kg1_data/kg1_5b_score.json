@@ -1,0 +1,193 @@
+{
+  "generated_utc": "2026-07-06T01:10:21Z",
+  "run_artifact": "kg1_run_c2.json",
+  "run_base_commit": "d764bfc",
+  "predictions_provenance": {
+    "file": "research/kg1_data/kg1_5b_predictions.json",
+    "frozen_blob": "c0b92157d68338dd8659087a15d1ecdd007f8fde",
+    "freeze_commit": "07ee460",
+    "working_tree_clean": true
+  },
+  "classifier": {
+    "file": "research/kg1_5_triage.py",
+    "frozen_blob": "ea705204aca99f7a4af27a5bf765c14be5805479",
+    "head_blob": "ea705204aca99f7a4af27a5bf765c14be5805479",
+    "last_commit": "1736266",
+    "working_tree_clean": true
+  },
+  "label_rule": "WIN iff raw codex_uncached / max(1, rewrite codex_uncached) > 1.05",
+  "n_scored": 10,
+  "n_unscoreable": 0,
+  "accuracy": 4,
+  "allow_partial": false,
+  "baselines": {
+    "always_win": 5,
+    "always_lose": 5,
+    "mismatch_only": 4,
+    "fanout_only": 5
+  },
+  "rows": [
+    {
+      "task": "models-headers-getlist-split",
+      "predict": "WIN",
+      "label": "WIN",
+      "correct": true,
+      "ratio": 1.4375,
+      "raw_unc": 60174,
+      "rw_unc": 41861,
+      "rw_slm": 10837,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "models-response-links",
+      "predict": "WIN",
+      "label": "LOSE",
+      "correct": false,
+      "ratio": 0.6868,
+      "raw_unc": 34574,
+      "rw_unc": 50339,
+      "rw_slm": 11917,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "models-cookies-domain-filter",
+      "predict": "WIN",
+      "label": "LOSE",
+      "correct": false,
+      "ratio": 0.396,
+      "raw_unc": 25110,
+      "rw_unc": 63416,
+      "rw_slm": 10210,
+      "module_mismatch": true,
+      "min_fanout": 5,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "urls-username-unquote",
+      "predict": "WIN",
+      "label": "WIN",
+      "correct": true,
+      "ratio": 1.4056,
+      "raw_unc": 54767,
+      "rw_unc": 38964,
+      "rw_slm": 13043,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "urls-qp-merge-order",
+      "predict": "WIN",
+      "label": "WIN",
+      "correct": true,
+      "ratio": 1.1499,
+      "raw_unc": 56451,
+      "rw_unc": 49090,
+      "rw_slm": 11452,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "client-redirect-authstrip",
+      "predict": "WIN",
+      "label": "LOSE",
+      "correct": false,
+      "ratio": 0.7224,
+      "raw_unc": 63264,
+      "rw_unc": 87580,
+      "rw_slm": 11166,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "client-redirect-head-method",
+      "predict": "WIN",
+      "label": "LOSE",
+      "correct": false,
+      "ratio": 0.8552,
+      "raw_unc": 40055,
+      "rw_unc": 46839,
+      "rw_slm": 10272,
+      "module_mismatch": true,
+      "min_fanout": 6,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "utils-noproxy-wildcard",
+      "predict": "LOSE",
+      "label": "WIN",
+      "correct": false,
+      "ratio": 1.1866,
+      "raw_unc": 59786,
+      "rw_unc": 50385,
+      "rw_slm": 12275,
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "multipart-content-length",
+      "predict": "LOSE",
+      "label": "LOSE",
+      "correct": true,
+      "ratio": 0.9904,
+      "raw_unc": 71055,
+      "rw_unc": 71742,
+      "rw_slm": 12543,
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "raw_green": true,
+      "rw_green": true
+    },
+    {
+      "task": "decoders-gzip-wbits",
+      "predict": "LOSE",
+      "label": "WIN",
+      "correct": false,
+      "ratio": 1.7246,
+      "raw_unc": 38044,
+      "rw_unc": 22060,
+      "rw_slm": 11816,
+      "module_mismatch": false,
+      "min_fanout": 2,
+      "raw_green": true,
+      "rw_green": true
+    }
+  ],
+  "unscoreable": [],
+  "ev": {
+    "metric": "codex-uncached only (SLM reported separately, never folded in)",
+    "raw": {
+      "total": 503280,
+      "greens": 10,
+      "tok_per_green": 50328.0,
+      "slm_total": 0
+    },
+    "rewrite": {
+      "total": 522276,
+      "greens": 10,
+      "tok_per_green": 52227.6,
+      "slm_total": 115531
+    },
+    "triage": {
+      "total": 546974,
+      "greens": 10,
+      "tok_per_green": 54697.4,
+      "slm_total": 78897
+    }
+  }
+}

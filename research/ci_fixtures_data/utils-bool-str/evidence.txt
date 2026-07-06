@@ -1,0 +1,19 @@
+.....F...........                                                        [100%]
+================================== FAILURES ===================================
+____________________________ test_queryparam_types ____________________________
+
+    def test_queryparam_types():
+        q = httpx.QueryParams(None)
+        assert str(q) == ""
+    
+        q = httpx.QueryParams({"a": True})
+>       assert str(q) == "a=true"
+E       AssertionError: assert 'a=True' == 'a=true'
+E         
+E         - a=true
+E         ?   ^
+E         + a=True
+E         ?   ^
+
+tests\models\test_queryparams.py:58: AssertionError
+1 failed, 16 passed in 1.82s

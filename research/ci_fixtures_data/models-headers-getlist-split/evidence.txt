@@ -1,0 +1,20 @@
+...............F...........                                              [100%]
+================================== FAILURES ===================================
+____________________________ test_multiple_headers ____________________________
+
+    def test_multiple_headers():
+        """
+        `Headers.get_list` should support both split_commas=False and split_commas=True.
+        """
+        h = httpx.Headers([("set-cookie", "a, b"), ("set-cookie", "c")])
+        assert h.get_list("Set-Cookie") == ["a, b", "c"]
+    
+        h = httpx.Headers([("vary", "a, b"), ("vary", "c")])
+>       assert h.get_list("Vary", split_commas=True) == ["a", "b", "c"]
+E       AssertionError: assert ['a', ' b', 'c'] == ['a', 'b', 'c']
+E         
+E         At index 1 diff: ' b' != 'b'
+E         Use -v to get more diff
+
+tests\models\test_headers.py:166: AssertionError
+1 failed, 26 passed in 0.45s

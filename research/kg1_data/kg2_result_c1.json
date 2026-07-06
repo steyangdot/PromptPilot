@@ -1,0 +1,506 @@
+{
+  "generated_utc": "2026-07-05T23:57:09Z",
+  "n_tasks": 6,
+  "corpus": 1,
+  "base_commit": "d764bfc",
+  "timing": "cold-cold (reset_repo before the full suite and before every timed selection)",
+  "full_suite_wall_s": 123.0,
+  "rows": [
+    {
+      "task": "auth-digest-a1",
+      "changed": "httpx/_auth.py",
+      "targets": [
+        "tests/test_auth.py"
+      ],
+      "changed_lines": [
+        263
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 5,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_auth.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_redirects.py",
+          "tests/test_auth.py",
+          "tests/test_main.py"
+        ]
+      },
+      "t2_file": {
+        "n": 19,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/test_api.py",
+          "tests/test_asgi.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "t2_line": {
+        "n": 2,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_auth.py",
+          "tests/test_auth.py"
+        ]
+      },
+      "primary": {
+        "n": 5,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_auth.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_redirects.py",
+          "tests/test_auth.py",
+          "tests/test_main.py"
+        ]
+      },
+      "primary_wall_s": 9.4,
+      "primary_summary": "3 failed, 143 passed, 1 skipped in 7.93s"
+    },
+    {
+      "task": "content-json-type",
+      "changed": "httpx/_content.py",
+      "targets": [
+        "tests/models/test_requests.py",
+        "tests/test_content.py"
+      ],
+      "changed_lines": [
+        181
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 5,
+        "catch": true,
+        "strict": false,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_redirects.py",
+          "tests/test_api.py",
+          "tests/test_content.py"
+        ]
+      },
+      "t2_file": {
+        "n": 25,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_cookies.py",
+          "tests/models/test_headers.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_responses.py",
+          "tests/test_api.py",
+          "tests/test_asgi.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_content.py",
+          "tests/test_decoders.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "t2_line": {
+        "n": 10,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_responses.py",
+          "tests/test_content.py",
+          "tests/test_main.py"
+        ]
+      },
+      "primary": {
+        "n": 11,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_responses.py",
+          "tests/test_api.py",
+          "tests/test_content.py",
+          "tests/test_main.py"
+        ]
+      },
+      "primary_wall_s": 42.6,
+      "primary_summary": "4 failed, 413 passed, 1 skipped in 41.22s"
+    },
+    {
+      "task": "url-port-norm",
+      "changed": "httpx/_urlparse.py",
+      "targets": [
+        "tests/models/test_url.py"
+      ],
+      "changed_lines": [
+        417
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 3,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_auth.py",
+          "tests/models/test_url.py",
+          "tests/models/test_whatwg.py"
+        ]
+      },
+      "t2_file": {
+        "n": 27,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_properties.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_cookies.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_responses.py",
+          "tests/models/test_url.py",
+          "tests/models/test_whatwg.py",
+          "tests/test_api.py",
+          "tests/test_asgi.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_content.py",
+          "tests/test_decoders.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "t2_line": {
+        "n": 16,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_client.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_url.py",
+          "tests/models/test_whatwg.py",
+          "tests/test_api.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "primary": {
+        "n": 17,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_url.py",
+          "tests/models/test_whatwg.py",
+          "tests/test_api.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "primary_wall_s": 115.7,
+      "primary_summary": "5 failed, 1094 passed, 1 skipped in 114.18s (0:01:54)"
+    },
+    {
+      "task": "utils-bool-str",
+      "changed": "httpx/_utils.py",
+      "targets": [
+        "tests/client/test_queryparams.py",
+        "tests/models/test_queryparams.py"
+      ],
+      "changed_lines": [
+        21,
+        22
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 1,
+        "catch": false,
+        "strict": false,
+        "sel": [
+          "tests/test_utils.py"
+        ]
+      },
+      "t2_file": {
+        "n": 24,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_properties.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_headers.py",
+          "tests/models/test_queryparams.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_responses.py",
+          "tests/models/test_url.py",
+          "tests/test_api.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_content.py",
+          "tests/test_decoders.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py"
+        ]
+      },
+      "t2_line": {
+        "n": 6,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_queryparams.py",
+          "tests/models/test_queryparams.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_url.py",
+          "tests/test_content.py",
+          "tests/test_multipart.py"
+        ]
+      },
+      "primary": {
+        "n": 7,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_queryparams.py",
+          "tests/models/test_queryparams.py",
+          "tests/models/test_requests.py",
+          "tests/models/test_url.py",
+          "tests/test_content.py",
+          "tests/test_multipart.py",
+          "tests/test_utils.py"
+        ]
+      },
+      "primary_wall_s": 5.7,
+      "primary_summary": "1 failed, 251 passed in 4.17s"
+    },
+    {
+      "task": "decoder-trailing-cr",
+      "changed": "httpx/_decoders.py",
+      "targets": [
+        "tests/test_decoders.py"
+      ],
+      "changed_lines": [
+        341,
+        342
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 1,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/test_decoders.py"
+        ]
+      },
+      "t2_file": {
+        "n": 24,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/models/test_cookies.py",
+          "tests/models/test_headers.py",
+          "tests/models/test_responses.py",
+          "tests/test_api.py",
+          "tests/test_asgi.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_content.py",
+          "tests/test_decoders.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "t2_line": {
+        "n": 2,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/models/test_responses.py",
+          "tests/test_decoders.py"
+        ]
+      },
+      "primary": {
+        "n": 2,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/models/test_responses.py",
+          "tests/test_decoders.py"
+        ]
+      },
+      "primary_wall_s": 2.8,
+      "primary_summary": "4 failed, 142 passed in 1.29s"
+    },
+    {
+      "task": "config-timeout-tuple",
+      "changed": "httpx/_config.py",
+      "targets": [
+        "tests/test_config.py"
+      ],
+      "changed_lines": [
+        109
+      ],
+      "t2_line_fallback": false,
+      "t1_static": {
+        "n": 5,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_properties.py",
+          "tests/client/test_proxies.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_timeouts.py"
+        ]
+      },
+      "t2_file": {
+        "n": 20,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_async_client.py",
+          "tests/client/test_auth.py",
+          "tests/client/test_client.py",
+          "tests/client/test_cookies.py",
+          "tests/client/test_event_hooks.py",
+          "tests/client/test_headers.py",
+          "tests/client/test_properties.py",
+          "tests/client/test_proxies.py",
+          "tests/client/test_queryparams.py",
+          "tests/client/test_redirects.py",
+          "tests/test_api.py",
+          "tests/test_asgi.py",
+          "tests/test_auth.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_main.py",
+          "tests/test_multipart.py",
+          "tests/test_timeouts.py",
+          "tests/test_utils.py",
+          "tests/test_wsgi.py"
+        ]
+      },
+      "t2_line": {
+        "n": 1,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/test_config.py"
+        ]
+      },
+      "primary": {
+        "n": 5,
+        "catch": true,
+        "strict": true,
+        "sel": [
+          "tests/client/test_properties.py",
+          "tests/client/test_proxies.py",
+          "tests/test_config.py",
+          "tests/test_exceptions.py",
+          "tests/test_timeouts.py"
+        ]
+      },
+      "primary_wall_s": 78.1,
+      "primary_summary": "2 failed, 116 passed in 76.62s (0:01:16)"
+    }
+  ],
+  "verdict": "CONTINUE (6/6 catch, wall 0.34x <= 0.5x) [matcher: static UNION line-scoped]",
+  "matcher": "t1_static UNION t2_line_scoped (fallback t2_file); test_*.py files only",
+  "covmap_available": true
+}

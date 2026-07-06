@@ -1,0 +1,324 @@
+{
+  "generated_utc": "2026-07-06T04:10:06Z",
+  "base_commit": "d764bfc",
+  "n": 16,
+  "overall_match": [
+    14,
+    16
+  ],
+  "gappy_match": [
+    8,
+    9
+  ],
+  "crisp_match": [
+    6,
+    7
+  ],
+  "slm_in": 173109,
+  "slm_out": 6973,
+  "verdict": "PROCEED (gappy-location correctness 8/9 >= 50%) \u2014 pre-register the repeated-measures KG-3 A/B",
+  "rows": [
+    {
+      "task": "auth-digest-a1",
+      "corpus": 1,
+      "fix_file": "httpx/_auth.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_auth.py",
+        "tests/test_auth.py"
+      ],
+      "verified_targets": [
+        "httpx/_auth.py",
+        "tests/test_auth.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "content-json-type",
+      "corpus": 1,
+      "fix_file": "httpx/_content.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_content.py",
+        "httpx/_models.py",
+        "httpx/_client.py",
+        "tests/test_content.py",
+        "tests/models/test_requests.py"
+      ],
+      "verified_targets": [
+        "httpx/_content.py",
+        "httpx/_models.py",
+        "httpx/_client.py",
+        "tests/test_content.py",
+        "tests/models/test_requests.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "url-port-norm",
+      "corpus": 1,
+      "fix_file": "httpx/_urlparse.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_urls.py",
+        "httpx/_urlparse.py",
+        "httpx/_models.py",
+        "tests/models/test_url.py"
+      ],
+      "verified_targets": [
+        "httpx/_urls.py",
+        "httpx/_urlparse.py",
+        "httpx/_models.py",
+        "tests/models/test_url.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "utils-bool-str",
+      "corpus": 1,
+      "fix_file": "httpx/_utils.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_urls.py",
+        "tests/models/test_queryparams.py"
+      ],
+      "verified_targets": [
+        "httpx/_urls.py",
+        "tests/models/test_queryparams.py"
+      ],
+      "loc_match": false,
+      "loc_match_verified": false
+    },
+    {
+      "task": "decoder-trailing-cr",
+      "corpus": 1,
+      "fix_file": "httpx/_decoders.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_decoders.py",
+        "httpx/_content.py",
+        "tests/test_decoders.py"
+      ],
+      "verified_targets": [
+        "httpx/_decoders.py",
+        "httpx/_content.py",
+        "tests/test_decoders.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "config-timeout-tuple",
+      "corpus": 1,
+      "fix_file": "httpx/_config.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_config.py",
+        "tests/test_config.py"
+      ],
+      "verified_targets": [
+        "httpx/_config.py",
+        "tests/test_config.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "models-headers-getlist-split",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_models.py",
+        "tests/models/test_headers.py"
+      ],
+      "verified_targets": [
+        "httpx/_models.py",
+        "tests/models/test_headers.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "models-response-links",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_models.py",
+        "httpx/_content.py",
+        "tests/models/test_responses.py"
+      ],
+      "verified_targets": [
+        "httpx/_models.py",
+        "httpx/_content.py",
+        "tests/models/test_responses.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "models-cookies-domain-filter",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_models.py",
+        "httpx/_exceptions.py",
+        "tests/models/test_cookies.py"
+      ],
+      "verified_targets": [
+        "httpx/_models.py",
+        "httpx/_exceptions.py",
+        "tests/models/test_cookies.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "urls-username-unquote",
+      "corpus": 2,
+      "fix_file": "httpx/_urls.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_models.py",
+        "httpx/_urlparse.py",
+        "httpx/_urls.py",
+        "tests/models/test_url.py"
+      ],
+      "verified_targets": [
+        "httpx/_models.py",
+        "httpx/_urlparse.py",
+        "httpx/_urls.py",
+        "tests/models/test_url.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "urls-qp-merge-order",
+      "corpus": 2,
+      "fix_file": "httpx/_urls.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_models.py",
+        "httpx/_client.py",
+        "httpx/_urls.py",
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py"
+      ],
+      "verified_targets": [
+        "httpx/_models.py",
+        "httpx/_client.py",
+        "httpx/_urls.py",
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "client-redirect-authstrip",
+      "corpus": 2,
+      "fix_file": "httpx/_client.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_client.py",
+        "httpx/_auth.py",
+        "httpx/_models.py",
+        "httpx/_exceptions.py",
+        "tests/client/test_redirects.py"
+      ],
+      "verified_targets": [
+        "httpx/_client.py",
+        "httpx/_auth.py",
+        "httpx/_models.py",
+        "httpx/_exceptions.py",
+        "tests/client/test_redirects.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "client-redirect-head-method",
+      "corpus": 2,
+      "fix_file": "httpx/_client.py",
+      "gappy": true,
+      "slm_targets": [
+        "httpx/_client.py",
+        "tests/client/test_redirects.py"
+      ],
+      "verified_targets": [
+        "httpx/_client.py",
+        "tests/client/test_redirects.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "utils-noproxy-wildcard",
+      "corpus": 2,
+      "fix_file": "httpx/_utils.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_client.py",
+        "httpx/_config.py",
+        "httpx/_transports/default.py",
+        "httpx/_transports/asgi.py",
+        "httpx/_transports/wsgi.py",
+        "tests/client/test_proxies.py"
+      ],
+      "verified_targets": [
+        "httpx/_client.py",
+        "httpx/_config.py",
+        "httpx/_transports/default.py",
+        "httpx/_transports/asgi.py",
+        "httpx/_transports/wsgi.py",
+        "tests/client/test_proxies.py"
+      ],
+      "loc_match": false,
+      "loc_match_verified": false
+    },
+    {
+      "task": "multipart-content-length",
+      "corpus": 2,
+      "fix_file": "httpx/_multipart.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_multipart.py",
+        "httpx/_client.py",
+        "httpx/_content.py",
+        "httpx/_models.py",
+        "tests/test_multipart.py"
+      ],
+      "verified_targets": [
+        "httpx/_multipart.py",
+        "httpx/_client.py",
+        "httpx/_content.py",
+        "httpx/_models.py",
+        "tests/test_multipart.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    },
+    {
+      "task": "decoders-gzip-wbits",
+      "corpus": 2,
+      "fix_file": "httpx/_decoders.py",
+      "gappy": false,
+      "slm_targets": [
+        "httpx/_decoders.py",
+        "tests/test_decoders.py"
+      ],
+      "verified_targets": [
+        "httpx/_decoders.py",
+        "tests/test_decoders.py"
+      ],
+      "loc_match": true,
+      "loc_match_verified": true
+    }
+  ]
+}

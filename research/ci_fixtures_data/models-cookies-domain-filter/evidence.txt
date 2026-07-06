@@ -1,0 +1,18 @@
+.F.....                                                                  [100%]
+================================== FAILURES ===================================
+_____________________________ test_cookies_update _____________________________
+
+    def test_cookies_update():
+        cookies = httpx.Cookies()
+        more_cookies = httpx.Cookies()
+        more_cookies.set("name", "value", domain="example.com")
+    
+        cookies.update(more_cookies)
+        assert dict(cookies) == {"name": "value"}
+>       assert cookies.get("name", domain="example.com") == "value"
+E       AssertionError: assert None == 'value'
+E        +  where None = get('name', domain='example.com')
+E        +    where get = <Cookies[<Cookie name=value for example.com />]>.get
+
+tests\models\test_cookies.py:30: AssertionError
+1 failed, 6 passed in 0.40s

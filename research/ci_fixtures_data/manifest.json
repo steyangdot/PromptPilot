@@ -1,0 +1,437 @@
+{
+  "generated_utc": "2026-07-05T22:57:52Z",
+  "repo": "C:/projects/httpx",
+  "base_commit": "d764bfc",
+  "python": "C:\\Users\\magicQ\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+  "n_defined": 16,
+  "n_admitted": 16,
+  "admitted": [
+    {
+      "id": "auth-digest-a1",
+      "cls": "failing-test",
+      "file": "httpx/_auth.py",
+      "targets": [
+        "tests/test_auth.py"
+      ],
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_auth.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "DigestAuth A1 hash-term order swapped -> RFC digest response wrong.",
+      "base_preseeded": true,
+      "baseline": "red-on-base (pre-seeded)",
+      "pytest_summary": "3 failed, 5 passed in 0.46s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\auth-digest-a1\\evidence.txt",
+      "wall_s": 1.8
+    },
+    {
+      "id": "content-json-type",
+      "cls": "failing-test",
+      "file": "httpx/_content.py",
+      "targets": [
+        "tests/test_content.py",
+        "tests/models/test_requests.py"
+      ],
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_content.py",
+        "tests/models/test_requests.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "encode_json emits wrong Content-Type.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "7 failed, 60 passed in 0.81s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\content-json-type\\evidence.txt",
+      "wall_s": 3.9
+    },
+    {
+      "id": "url-port-norm",
+      "cls": "failing-test",
+      "file": "httpx/_urlparse.py",
+      "targets": [
+        "tests/models/test_url.py"
+      ],
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_url.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Default-port normalization inverted (strips non-default ports, keeps default).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "19 failed, 71 passed in 0.90s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\url-port-norm\\evidence.txt",
+      "wall_s": 4.1
+    },
+    {
+      "id": "utils-bool-str",
+      "cls": "failing-test",
+      "file": "httpx/_utils.py",
+      "targets": [
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py"
+      ],
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Boolean query/data values coerced Python-style ('True') instead of JSON-style.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 16 passed in 1.82s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\utils-bool-str\\evidence.txt",
+      "wall_s": 6.1
+    },
+    {
+      "id": "decoder-trailing-cr",
+      "cls": "failing-test",
+      "file": "httpx/_decoders.py",
+      "targets": [
+        "tests/test_decoders.py"
+      ],
+      "k": "line_decoder",
+      "scope_reason": "2 unrelated charset-autodetect tests are red on the clean base in this env (chardet-version drift) \u2014 out of task scope",
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_decoders.py",
+        "-q",
+        "--no-header",
+        "-k",
+        "line_decoder"
+      ],
+      "note": "LineDecoder drops the carried trailing CR across chunk boundaries.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 2 passed, 37 deselected in 0.48s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\decoder-trailing-cr\\evidence.txt",
+      "wall_s": 3.4
+    },
+    {
+      "id": "config-timeout-tuple",
+      "cls": "failing-test",
+      "file": "httpx/_config.py",
+      "targets": [
+        "tests/test_config.py"
+      ],
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_config.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Timeout 3/4-tuple: write takes the read slot's value.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 27 passed in 5.42s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\config-timeout-tuple\\evidence.txt",
+      "wall_s": 13.3
+    },
+    {
+      "id": "models-headers-getlist-split",
+      "cls": "failing-test",
+      "file": "httpx/_models.py",
+      "targets": [
+        "tests/models/test_headers.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_headers.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Headers.get_list(split_commas=True) stops stripping whitespace around commas.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 26 passed in 0.45s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\models-headers-getlist-split\\evidence.txt",
+      "wall_s": 3.1
+    },
+    {
+      "id": "models-response-links",
+      "cls": "failing-test",
+      "file": "httpx/_models.py",
+      "targets": [
+        "tests/models/test_responses.py"
+      ],
+      "corpus": 2,
+      "k": "not autodetect and not cp_1252",
+      "scope_reason": "2 charset-autodetect tests red on the clean base in this env (chardet-version drift detects 'iso8859-15'): test_response_decode_text_using_autodetect, test_response_no_charset_with_cp_1252_content -- out of scope",
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_responses.py",
+        "-q",
+        "--no-header",
+        "-k",
+        "not autodetect and not cp_1252"
+      ],
+      "note": "Response.links keyed by URL instead of rel (precedence swapped).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "2 failed, 102 passed, 2 deselected in 0.94s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\models-response-links\\evidence.txt",
+      "wall_s": 4.0
+    },
+    {
+      "id": "models-cookies-domain-filter",
+      "cls": "failing-test",
+      "file": "httpx/_models.py",
+      "targets": [
+        "tests/models/test_cookies.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_cookies.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Cookies.get domain filter inverted -> lookups with domain= match the wrong cookies.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 6 passed in 0.40s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\models-cookies-domain-filter\\evidence.txt",
+      "wall_s": 3.0
+    },
+    {
+      "id": "urls-username-unquote",
+      "cls": "failing-test",
+      "file": "httpx/_urls.py",
+      "targets": [
+        "tests/models/test_url.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_url.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "URL.username returns the still-percent-encoded form (unquote dropped).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "5 failed, 85 passed in 0.66s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\urls-username-unquote\\evidence.txt",
+      "wall_s": 3.5
+    },
+    {
+      "id": "urls-qp-merge-order",
+      "cls": "failing-test",
+      "file": "httpx/_urls.py",
+      "targets": [
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/models/test_queryparams.py",
+        "tests/client/test_queryparams.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "QueryParams.merge precedence swapped -> existing keys win over merged params.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "2 failed, 15 passed in 1.75s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\urls-qp-merge-order\\evidence.txt",
+      "wall_s": 5.7
+    },
+    {
+      "id": "client-redirect-authstrip",
+      "cls": "failing-test",
+      "file": "httpx/_client.py",
+      "targets": [
+        "tests/client/test_redirects.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/client/test_redirects.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "Auth-strip condition inverted: cross-origin redirects keep Authorization, same-origin redirects lose it.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "4 failed, 27 passed in 0.53s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\client-redirect-authstrip\\evidence.txt",
+      "wall_s": 3.2
+    },
+    {
+      "id": "client-redirect-head-method",
+      "cls": "failing-test",
+      "file": "httpx/_client.py",
+      "targets": [
+        "tests/client/test_redirects.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/client/test_redirects.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "302 method-rewrite guard inverted: HEAD converts to GET (POST no longer does).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 30 passed in 0.50s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\client-redirect-head-method\\evidence.txt",
+      "wall_s": 3.2
+    },
+    {
+      "id": "utils-noproxy-wildcard",
+      "cls": "failing-test",
+      "file": "httpx/_utils.py",
+      "targets": [
+        "tests/test_utils.py",
+        "tests/client/test_proxies.py"
+      ],
+      "corpus": 2,
+      "k": null,
+      "scope_reason": null,
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_utils.py",
+        "tests/client/test_proxies.py",
+        "-q",
+        "--no-header"
+      ],
+      "note": "NO_PROXY bare domain becomes subdomain-only wildcard (bare host no longer bypassed).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "6 failed, 103 passed in 59.54s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\utils-noproxy-wildcard\\evidence.txt",
+      "wall_s": 120.7
+    },
+    {
+      "id": "multipart-content-length",
+      "cls": "failing-test",
+      "file": "httpx/_multipart.py",
+      "targets": [
+        "tests/test_multipart.py"
+      ],
+      "corpus": 2,
+      "k": "not text_mode_file",
+      "scope_reason": "test_multipart_encode_files_raises_exception_with_text_mode_file is red on the clean base on Windows (TemporaryFile(mode='w') isn't io.TextIOBase here, so the expected TypeError never raises) -- platform drift, out of scope",
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_multipart.py",
+        "-q",
+        "--no-header",
+        "-k",
+        "not text_mode_file"
+      ],
+      "note": "Multipart Content-Length off by two (closing boundary's CRLF not counted).",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "11 failed, 26 passed, 1 deselected in 0.71s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\multipart-content-length\\evidence.txt",
+      "wall_s": 3.6
+    },
+    {
+      "id": "decoders-gzip-wbits",
+      "cls": "failing-test",
+      "file": "httpx/_decoders.py",
+      "targets": [
+        "tests/test_decoders.py"
+      ],
+      "corpus": 2,
+      "k": "gzip",
+      "scope_reason": "same clean-base env drift as decoder-trailing-cr (charset-autodetect reds from chardet-version drift) -- scoped to the seeded gzip behavior",
+      "pytest_argv": [
+        "<python>",
+        "-m",
+        "pytest",
+        "tests/test_decoders.py",
+        "-q",
+        "--no-header",
+        "-k",
+        "gzip"
+      ],
+      "note": "GZipDecoder window bits lose the gzip-header flag (raw zlib) -> gzip decode fails.",
+      "base_preseeded": false,
+      "baseline": "green",
+      "pytest_summary": "1 failed, 3 passed, 36 deselected in 0.51s",
+      "verdict": "REPRODUCES",
+      "evidence_file": "B:\\LLM\\.claude\\worktrees\\intelligent-turing-a12c6b\\research\\ci_fixtures_data\\decoders-gzip-wbits\\evidence.txt",
+      "wall_s": 3.3
+    }
+  ],
+  "rejected_for_audit": []
+}

@@ -1,0 +1,116 @@
+
+            (
+                "https://username%40gmail.com:pa%20ssword@example.com",
+                b"username%40gmail.com:pa%20ssword",
+                "username@gmail.com",
+                "pa ssword",
+            ),
+            (
+                "https://user%20name:p%40ssword@example.com",
+                b"user%20name:p%40ssword",
+                "user name",
+                "p@ssword",
+            ),
+            # username and password in URL without percent escape sequences.
+            (
+                "https://username@gmail.com:pa ssword@example.com",
+                b"username%40gmail.com:pa%20ssword",
+                "username@gmail.com",
+                "pa ssword",
+            ),
+            (
+                "https://user name:p@ssword@example.com",
+                b"user%20name:p%40ssword",
+                "user name",
+                "p@ssword",
+            ),
+        ],
+    )
+    def test_url_username_and_password(url, userinfo, username, password):
+        url = httpx.URL(url)
+        assert url.userinfo == userinfo
+>       assert url.username == username
+E       AssertionError: assert 'username%40gmail.com' == 'username@gmail.com'
+E         
+E         - username@gmail.com
+E         ?         ^
+E         + username%40gmail.com
+E         ?         ^^^
+
+tests\models\test_url.py:210: AssertionError
+_ test_url_username_and_password[https://user name:p@ssword@example.com-user%20name:p%40ssword-user name-p@ssword] _
+
+url = URL('https://user%20name:[secure]@example.com')
+userinfo = b'user%20name:p%40ssword', username = 'user name'
+password = 'p@ssword'
+
+    @pytest.mark.parametrize(
+        "url,userinfo,username,password",
+        [
+            # username and password in URL.
+            (
+                "https://username:password@example.com",
+                b"username:password",
+                "username",
+                "password",
+            ),
+            # username and password in URL with percent escape sequences.
+            (
+                "https://username%40gmail.com:pa%20ssword@example.com",
+                b"username%40gmail.com:pa%20ssword",
+                "username@gmail.com",
+                "pa ssword",
+            ),
+            (
+                "https://user%20name:p%40ssword@example.com",
+                b"user%20name:p%40ssword",
+                "user name",
+                "p@ssword",
+            ),
+            # username and password in URL without percent escape sequences.
+            (
+                "https://username@gmail.com:pa ssword@example.com",
+                b"username%40gmail.com:pa%20ssword",
+                "username@gmail.com",
+                "pa ssword",
+            ),
+            (
+                "https://user name:p@ssword@example.com",
+                b"user%20name:p%40ssword",
+                "user name",
+                "p@ssword",
+            ),
+        ],
+    )
+    def test_url_username_and_password(url, userinfo, username, password):
+        url = httpx.URL(url)
+        assert url.userinfo == userinfo
+>       assert url.username == username
+E       AssertionError: assert 'user%20name' == 'user name'
+E         
+E         - user name
+E         ?     ^
+E         + user%20name
+E         ?     ^^^
+
+tests\models\test_url.py:210: AssertionError
+__________________ test_url_copywith_userinfo_subcomponents ___________________
+
+    def test_url_copywith_userinfo_subcomponents():
+        copy_with_kwargs = {
+            "username": "tom@example.org",
+            "password": "abc123@ %",
+        }
+        url = httpx.URL("https://example.org")
+        new = url.copy_with(**copy_with_kwargs)
+        assert str(new) == "https://tom%40example.org:abc123%40%20%@example.org"
+>       assert new.username == "tom@example.org"
+E       AssertionError: assert 'tom%40example.org' == 'tom@example.org'
+E         
+E         - tom@example.org
+E         ?    ^
+E         + tom%40example.org
+E         ?    ^^^
+
+tests\models\test_url.py:614: AssertionError
+5 failed, 85 passed in 0.66s

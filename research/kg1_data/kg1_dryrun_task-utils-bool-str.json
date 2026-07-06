@@ -1,0 +1,37 @@
+{
+  "generated_utc": "2026-07-05T23:42:46Z",
+  "model": "gpt-5.5",
+  "n_tasks": 1,
+  "corpus": null,
+  "base_commit": "d764bfc",
+  "protocol": "v2: committed-seed / measured-slm / censoring / integrity-guard",
+  "slm_tap": true,
+  "target_hint": "<unset>",
+  "codex_timeout_sec": "1200",
+  "results": [
+    {
+      "task": "utils-bool-str",
+      "arm": "raw",
+      "prompt_chars": 816,
+      "prompt_sha256": "e5395c02ed606a08",
+      "rewrite_changed": false,
+      "slm_in": 0,
+      "slm_out": 0,
+      "slm_measured": false,
+      "slm_calls": 0,
+      "dry_run": true
+    },
+    {
+      "task": "utils-bool-str",
+      "arm": "rewrite",
+      "prompt_chars": 1218,
+      "prompt_sha256": "95554b7a4938f3db",
+      "rewrite_changed": true,
+      "slm_in": 9929,
+      "slm_out": 394,
+      "slm_measured": true,
+      "slm_calls": 2,
+      "dry_run": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "green_raw": 10,
+  "green_rewrite": 10,
+  "tpg_raw_codex": 50328.0,
+  "tpg_rewrite_codex": 52227.6,
+  "tpg_raw_allin": 50328.0,
+  "tpg_rewrite_allin": 63780.7,
+  "eps1_primary_codex_only": -0.03774439675727237,
+  "eps1_allin": -0.26730050866316946,
+  "eps1_cost_weighted": -0.04233551899539023,
+  "gated_metric": "codex-uncached only (amended 2026-07-05, pre-v2-outcome)",
+  "n_censored": 0,
+  "n_error": 0,
+  "integrity_violations": 0,
+  "slm_measured_rows": 10,
+  "verdict": "KILL (codex-only \u03b5\u2081 \u2264 0)"
+}

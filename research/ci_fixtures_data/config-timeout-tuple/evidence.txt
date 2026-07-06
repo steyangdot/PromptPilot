@@ -1,0 +1,13 @@
+...................F........                                             [100%]
+================================== FAILURES ===================================
+_________________________ test_timeout_from_one_value _________________________
+
+    def test_timeout_from_one_value():
+        timeout = httpx.Timeout(None, read=5.0)
+>       assert timeout == httpx.Timeout(timeout=(None, 5.0, None, None))
+E       AssertionError: assert Timeout(connect=None, read=5.0, write=None, pool=None) == Timeout(connect=None, read=5.0, write=5.0, pool=None)
+E        +  where Timeout(connect=None, read=5.0, write=5.0, pool=None) = <class 'httpx.Timeout'>(timeout=(None, 5.0, None, None))
+E        +    where <class 'httpx.Timeout'> = httpx.Timeout
+
+tests\test_config.py:133: AssertionError
+1 failed, 27 passed in 5.42s

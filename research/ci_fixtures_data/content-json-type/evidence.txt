@@ -1,0 +1,103 @@
+.com",
+            "Content-Length": "18",
+            "Content-Type": "application/json",
+        }
+E       AssertionError: assert Headers({'hos... 'text/json'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_content.py:174: AssertionError
+___________________________ test_json_content[trio] ___________________________
+
+    @pytest.mark.anyio
+    async def test_json_content():
+        request = httpx.Request(method, url, json={"Hello": "world!"})
+        assert isinstance(request.stream, typing.Iterable)
+        assert isinstance(request.stream, typing.AsyncIterable)
+    
+        sync_content = b"".join(list(request.stream))
+        async_content = b"".join([part async for part in request.stream])
+    
+>       assert request.headers == {
+            "Host": "www.example.com",
+            "Content-Length": "18",
+            "Content-Type": "application/json",
+        }
+E       AssertionError: assert Headers({'hos... 'text/json'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_content.py:174: AssertionError
+_______________ test_ensure_ascii_false_with_french_characters ________________
+
+    def test_ensure_ascii_false_with_french_characters():
+        data = {"greeting": "Bonjour, \xe7a va ?"}
+        response = httpx.Response(200, json=data)
+        assert "\xe7a va" in response.text, (
+            "ensure_ascii=False should preserve French accented characters"
+        )
+>       assert response.headers["Content-Type"] == "application/json"
+E       AssertionError: assert 'text/json' == 'application/json'
+E         
+E         - application/json
+E         + text/json
+
+tests\test_content.py:495: AssertionError
+______________________ test_separators_for_compact_json _______________________
+
+    def test_separators_for_compact_json():
+        data = {"cl��": "valeur", "liste": [1, 2, 3]}
+        response = httpx.Response(200, json=data)
+        assert response.text == '{"cl��":"valeur","liste":[1,2,3]}', (
+            "separators=(',', ':') should produce a compact representation"
+        )
+>       assert response.headers["Content-Type"] == "application/json"
+E       AssertionError: assert 'text/json' == 'application/json'
+E         
+E         - application/json
+E         + text/json
+
+tests\test_content.py:504: AssertionError
+___________________________ test_json_encoded_data ____________________________
+
+    def test_json_encoded_data():
+        request = httpx.Request("POST", "http://example.org", json={"test": 123})
+        request.read()
+    
+>       assert request.headers["Content-Type"] == "application/json"
+E       AssertionError: assert 'text/json' == 'application/json'
+E         
+E         - application/json
+E         + text/json
+
+tests\models\test_requests.py:64: AssertionError
+________________________________ test_headers _________________________________
+
+    def test_headers():
+        request = httpx.Request("POST", "http://example.org", json={"test": 123})
+    
+>       assert request.headers == {
+            "Host": "example.org",
+            "Content-Type": "application/json",
+            "Content-Length": "12",
+        }
+E       AssertionError: assert Headers({'hos... 'text/json'}) == {'Content-Len...'example.org'}
+E         
+E         Use -v to get more diff
+
+tests\models\test_requests.py:71: AssertionError
+___________________________ test_request_picklable ____________________________
+
+    def test_request_picklable():
+        request = httpx.Request("POST", "http://example.org", json={"test": 123})
+        pickle_request = pickle.loads(pickle.dumps(request))
+        assert pickle_request.method == "POST"
+        assert pickle_request.url.path == "/"
+>       assert pickle_request.headers["Content-Type"] == "application/json"
+E       AssertionError: assert 'text/json' == 'application/json'
+E         
+E         - application/json
+E         + text/json
+
+tests\models\test_requests.py:185: AssertionError
+7 failed, 60 passed in 0.81s

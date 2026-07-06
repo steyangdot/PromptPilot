@@ -1,0 +1,98 @@
+mple.json", "application/json"),
+            ("example.txt", "text/plain"),
+            ("no-extension", "application/octet-stream"),
+        ],
+    )
+    def test_multipart_encode_files_guesses_correct_content_type(
+        file_name: str, expected_content_type: str
+    ) -> None:
+        url = "https://www.example.com/"
+        headers = {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        files = {"file": (file_name, io.BytesIO(b"<file content>"))}
+    
+        request = httpx.Request("POST", url, headers=headers, data={}, files=files)
+        request.read()
+    
+>       assert request.headers == {
+            "Host": "www.example.com",
+            "Content-Type": "multipart/form-data; boundary=BOUNDARY",
+            "Content-Length": str(len(request.content)),
+        }
+E       AssertionError: assert Headers({'hos...ngth': '137'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_multipart.py:310: AssertionError
+_ test_multipart_encode_files_guesses_correct_content_type[no-extension-application/octet-stream] _
+
+file_name = 'no-extension', expected_content_type = 'application/octet-stream'
+
+    @pytest.mark.parametrize(
+        "file_name,expected_content_type",
+        [
+            ("example.json", "application/json"),
+            ("example.txt", "text/plain"),
+            ("no-extension", "application/octet-stream"),
+        ],
+    )
+    def test_multipart_encode_files_guesses_correct_content_type(
+        file_name: str, expected_content_type: str
+    ) -> None:
+        url = "https://www.example.com/"
+        headers = {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        files = {"file": (file_name, io.BytesIO(b"<file content>"))}
+    
+        request = httpx.Request("POST", url, headers=headers, data={}, files=files)
+        request.read()
+    
+>       assert request.headers == {
+            "Host": "www.example.com",
+            "Content-Type": "multipart/form-data; boundary=BOUNDARY",
+            "Content-Length": str(len(request.content)),
+        }
+E       AssertionError: assert Headers({'hos...ngth': '152'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_multipart.py:310: AssertionError
+______________ test_multipart_encode_files_allows_bytes_content _______________
+
+    def test_multipart_encode_files_allows_bytes_content() -> None:
+        url = "https://www.example.com/"
+        headers = {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        files = {"file": ("test.txt", b"<bytes content>", "text/plain")}
+    
+        request = httpx.Request("POST", url, headers=headers, data={}, files=files)
+        request.read()
+    
+>       assert request.headers == {
+            "Host": "www.example.com",
+            "Content-Type": "multipart/form-data; boundary=BOUNDARY",
+            "Content-Length": str(len(request.content)),
+        }
+E       AssertionError: assert Headers({'hos...ngth': '135'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_multipart.py:331: AssertionError
+_______________ test_multipart_encode_files_allows_str_content ________________
+
+    def test_multipart_encode_files_allows_str_content() -> None:
+        url = "https://www.example.com/"
+        headers = {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
+        files = {"file": ("test.txt", "<str content>", "text/plain")}
+    
+        request = httpx.Request("POST", url, headers=headers, data={}, files=files)
+        request.read()
+    
+>       assert request.headers == {
+            "Host": "www.example.com",
+            "Content-Type": "multipart/form-data; boundary=BOUNDARY",
+            "Content-Length": str(len(request.content)),
+        }
+E       AssertionError: assert Headers({'hos...ngth': '133'}) == {'Content-Len....example.com'}
+E         
+E         Use -v to get more diff
+
+tests\test_multipart.py:353: AssertionError
+11 failed, 26 passed, 1 deselected in 0.71s

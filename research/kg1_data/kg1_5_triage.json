@@ -1,0 +1,65 @@
+{
+  "rows": [
+    {
+      "task": "auth-digest-a1",
+      "label": "LOSE",
+      "raw_unc": 27668,
+      "raw_calls": 8,
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "n_tokens": 21
+    },
+    {
+      "task": "config-timeout-tuple",
+      "label": "LOSE",
+      "raw_unc": 28911,
+      "raw_calls": 24,
+      "module_mismatch": false,
+      "min_fanout": 2,
+      "n_tokens": 1
+    },
+    {
+      "task": "content-json-type",
+      "label": "LOSE",
+      "raw_unc": 26475,
+      "raw_calls": 27,
+      "module_mismatch": false,
+      "min_fanout": 1,
+      "n_tokens": 20
+    },
+    {
+      "task": "decoder-trailing-cr",
+      "label": "WIN",
+      "raw_unc": 42269,
+      "raw_calls": 55,
+      "module_mismatch": false,
+      "min_fanout": 0,
+      "n_tokens": 2
+    },
+    {
+      "task": "url-port-norm",
+      "label": "WIN",
+      "raw_unc": 69321,
+      "raw_calls": 59,
+      "module_mismatch": true,
+      "min_fanout": 1,
+      "n_tokens": 8
+    },
+    {
+      "task": "utils-bool-str",
+      "label": "WIN",
+      "raw_unc": 62982,
+      "raw_calls": 28,
+      "module_mismatch": true,
+      "min_fanout": 0,
+      "n_tokens": 2
+    }
+  ],
+  "ev": {
+    "always_raw": 257626,
+    "always_rewrite": 196503,
+    "module_mismatch": 167314,
+    "perfect": 167314
+  },
+  "greens": 6
+}

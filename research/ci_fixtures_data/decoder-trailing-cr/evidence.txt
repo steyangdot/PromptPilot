@@ -1,0 +1,24 @@
+.F.                                                                      [100%]
+================================== FAILURES ===================================
+____________________________ test_line_decoder_cr _____________________________
+
+    def test_line_decoder_cr():
+        response = httpx.Response(200, content=[b"", b"a\r\rb\rc"])
+        assert list(response.iter_lines()) == ["a", "", "b", "c"]
+    
+        response = httpx.Response(200, content=[b"", b"a\r\rb\rc\r"])
+        assert list(response.iter_lines()) == ["a", "", "b", "c"]
+    
+        # Issue #1033
+        response = httpx.Response(
+            200, content=[b"", b"12345\r", b"foo ", b"bar ", b"baz\r"]
+        )
+>       assert list(response.iter_lines()) == ["12345", "foo bar baz"]
+E       AssertionError: assert ['12345foo bar baz'] == ['12345', 'foo bar baz']
+E         
+E         At index 0 diff: '12345foo bar baz' != '12345'
+E         Right contains one more item: 'foo bar baz'
+E         Use -v to get more diff
+
+tests\test_decoders.py:328: AssertionError
+1 failed, 2 passed, 37 deselected in 0.48s

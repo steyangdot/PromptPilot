@@ -144,18 +144,38 @@ def run_codex(prompt: str, out_jsonl: Path, cwd: str,
         # codex CLI default, unchanged behavior.
         _cm = os.environ.get("CODEX_MODEL")
         model_flags = ["-m", _cm] if _cm else []
-        cmd = [codex, "exec", *model_flags,
+        # Optional config override: the Codex DESKTOP app re-injects an invalid
+        # service_tier="priority" into ~/.codex/config.toml that makes `codex exec` return
+        # rc=1 / 0 tokens (CLI accepts only fast/flex). CODEX_SERVICE_TIER=fast emits
+        # `-c service_tier=fast`, overriding the file at invocation — immune to the re-clobber,
+        # token-neutral (a scheduling knob, not a model change), keeps normal latency. Fresh
+        # exec only (resume rejects extra flags). Default unset = no override.
+        _tier = os.environ.get("CODEX_SERVICE_TIER")
+        tier_flags = ["-c", "service_tier={0}".format(_tier)] if _tier else []
+        cmd = [codex, "exec", *model_flags, *tier_flags,
                "--dangerously-bypass-approvals-and-sandbox",
                "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
     t0 = time.time()
     with open(out_jsonl, "w", encoding="utf-8") as fout:
+        # Popen instead of subprocess.run: on timeout, run() kills only the DIRECT child —
+        # codex's worker grandchildren survive and keep editing the repo through subsequent
+        # scoring/runs (the T2-attempt-2 failure class; KG-1 review A-3). taskkill /T fells
+        # the whole tree of OUR spawned child.
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=fout,
+                                cwd=cwd, text=True, encoding="utf-8")
         try:
-            proc = subprocess.run(
-                cmd, input=prompt, text=True, encoding="utf-8",
-                stdout=fout, cwd=cwd, timeout=CODEX_TIMEOUT_SEC,
-            )
+            proc.communicate(input=prompt, timeout=CODEX_TIMEOUT_SEC)
             rc = proc.returncode
         except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                               capture_output=True)
+            else:
+                proc.kill()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
             rc = 124
     return time.time() - t0, rc
 

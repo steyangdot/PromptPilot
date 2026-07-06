@@ -1,0 +1,51 @@
+...................FFFF........                                          [100%]
+================================== FAILURES ===================================
+_________________ test_cross_domain_redirect_with_auth_header _________________
+
+    def test_cross_domain_redirect_with_auth_header():
+        client = httpx.Client(transport=httpx.MockTransport(redirects))
+        url = "https://example.com/cross_domain"
+        headers = {"Authorization": "abc"}
+        response = client.get(url, headers=headers, follow_redirects=True)
+        assert response.url == "https://example.org/cross_domain_target"
+>       assert "authorization" not in response.json()["headers"]
+E       AssertionError: assert 'authorization' not in {'accept': '*/*', 'accept-encoding': 'gzip, deflate, br, zstd', 'authorization': 'abc', 'connection': 'keep-alive', ...}
+
+tests\client\test_redirects.py:272: AssertionError
+______________ test_cross_domain_https_redirect_with_auth_header ______________
+
+    def test_cross_domain_https_redirect_with_auth_header():
+        client = httpx.Client(transport=httpx.MockTransport(redirects))
+        url = "http://example.com/cross_domain"
+        headers = {"Authorization": "abc"}
+        response = client.get(url, headers=headers, follow_redirects=True)
+        assert response.url == "https://example.org/cross_domain_target"
+>       assert "authorization" not in response.json()["headers"]
+E       AssertionError: assert 'authorization' not in {'accept': '*/*', 'accept-encoding': 'gzip, deflate, br, zstd', 'authorization': 'abc', 'connection': 'keep-alive', ...}
+
+tests\client\test_redirects.py:281: AssertionError
+____________________ test_cross_domain_redirect_with_auth _____________________
+
+    def test_cross_domain_redirect_with_auth():
+        client = httpx.Client(transport=httpx.MockTransport(redirects))
+        url = "https://example.com/cross_domain"
+        response = client.get(url, auth=("user", "pass"), follow_redirects=True)
+        assert response.url == "https://example.org/cross_domain_target"
+>       assert "authorization" not in response.json()["headers"]
+E       AssertionError: assert 'authorization' not in {'accept': '*/*', 'accept-encoding': 'gzip, deflate, br, zstd', 'authorization': 'Basic dXNlcjpwYXNz', 'connection': 'keep-alive', ...}
+
+tests\client\test_redirects.py:289: AssertionError
+__________________________ test_same_domain_redirect __________________________
+
+    def test_same_domain_redirect():
+        client = httpx.Client(transport=httpx.MockTransport(redirects))
+        url = "https://example.org/cross_domain"
+        headers = {"Authorization": "abc"}
+        response = client.get(url, headers=headers, follow_redirects=True)
+        assert response.url == "https://example.org/cross_domain_target"
+>       assert response.json()["headers"]["authorization"] == "abc"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'authorization'
+
+tests\client\test_redirects.py:298: KeyError
+4 failed, 27 passed in 0.53s
