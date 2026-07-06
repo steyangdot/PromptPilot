@@ -155,6 +155,33 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
 > `_utils.py`→queryparams mapping); file-level coverage 6/6 but ~whole-suite broad; line-scoping
 > gives both. Caveat: hot-path lines stay broad (url-port's changed line → 16 files, 115s).
 > (`research/kg2_test_selection.py`, `research/kg1_data/kg2_result.json`)
+>
+> **CORRECTIONS & CAVEATS (2026-07-05, from the gate-script audit — both verdicts SURVIVE):**
+> **KG-2 wall corrected 0.24× → 0.34×.** The published mean contained a fake sample: the
+> config-timeout-tuple timed run ABORTED at collection (selection included `tests/conftest.py`
+> via the symbol grep → pytest rc=2, 1.9s, zero tests executed). Honest re-run with the fixed
+> selector (test_*.py only) + cold-cold timing: **6/6 catch, 6/6 strict, mean wall 42.4s =
+> 0.34×** of the 123.0s full suite (config row real wall 78.1s — the `Proxy` symbol legitimately
+> pulls the slow proxies suite) → CONTINUE. Artifact: `kg1_data/kg2_result_c1.json`
+> (`kg2_result.json` = the superseded v1 record, kept immutable). t2_line alone: 6/6 strict at
+> 6.2 files — the wall cost lives in the static tier's broad symbol matches (Phase-3 lead).
+> *Iteration honesty:* the artifact records `iteration: 2`; "one allowed matcher iteration"
+> holds only under the reading that the designed two-tier static∪coverage was matcher-0 (no
+> committed pre-registration discriminates, single-commit history). The 16-task v2 re-score
+> with the NOW-frozen matcher is the clean confirmation.
+> **KG-1 caveats:** (a) *Seed-leak confound* — v1 applied seeds as uncommitted edits, so arm
+> B's SLM repo-context saw the seed diff + file name via `git status`/`git diff` (an oracle
+> absent in real CI, where the failing state is committed); magnitude and the bimodal narrative
+> are confounded; protocol v2 commits seeds. (b) *SLM tokens were estimated, not measured* —
+> the tap now measures ~2× the estimate (10,323 vs ~5.2k on the dry-run task); with measured
+> accounting v1's all-in ε₁ ≈ +0.13 = REPLICATE-grade; codex-only ε₁ = +0.374 is unaffected by
+> accounting (still leak-confounded). Under the pre-registered REPLICATE rule, the KG-1 v2 run
+> (clean protocol, codex-only primary metric per the §6 amendment) is the deciding replicate.
+> (c) *"0/12 touched tests"* had no runner check behind it; re-verified 2026-07-05 by a full
+> transcript scan of both write channels (patch envelope + shell writes) — the claim stands;
+> the v2 runner enforces and persists it per run. (d) The +0.371 cost-weighted variant is now
+> computed in code (was session arithmetic); the "0.97× file-level wall" figure came from an
+> unrecorded intermediate run — treat as approximate.
 
 **Then the flagship optimization:** the **reasoning_effort sweep** — the biggest known cost lever
 (~23× high-vs-minimal), regime-agnostic, and easiest to exploit in headless batch (no latency
