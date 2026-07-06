@@ -248,9 +248,13 @@ sufficient (location was never the failure mode).
   the same LLM-only metric amended for KG-1 v2. SLM measured and reported (all-in + 0.02×),
   never folded into the gate.
 - *Pre-registered bands:* **CONTINUE ε₁ ≥ 0.10** with green(B) ≥ green(A); **KILL ε₁ ≤ 0 OR
-  green(B) < green(A)**; **REPLICATE** otherwise (borderline again = KILL). Secondary, reported
-  not gated: per-task paired B-vs-A win-rate across reps, and the gappy-evidence subgroup
-  (frozen module-mismatch) — the hypothesis predicts the note earns on gappy, not crisp, tasks.
+  green(B) < green(A)**; **REPLICATE** otherwise (borderline again = KILL). **Validity floor
+  (pre-registered):** ≥ 90% of scored arm-B runs must carry a note — below that, arm B has
+  collapsed to arm A (diagnostician failure) and the run is **INVALID**, not a KILL (a pooled
+  ε₁≈0 from empty notes measures nothing). Also INVALID if either arm scores zero greens.
+  Secondary, reported not gated: per-task paired B-vs-A win-rate across reps; all-in and
+  cost-weighted 0.02× ε₁; and the gappy-evidence subgroup ε₁ (frozen module-mismatch) — the
+  hypothesis predicts the note earns on gappy, not crisp, tasks.
 - *Note-construction rules frozen here* (`research/kg3_note.py`, no post-hoc tuning): a single
   `gpt-5.4-nano` diagnostician call (input = evidence + the httpx source-file list ONLY — no
   diff) returns strict JSON `{mechanism: ≤1 sentence root cause in the source, not a test-name
@@ -259,10 +263,15 @@ sufficient (location was never the failure mode).
   one); empty note (→ B degrades to A) on call/parse failure or empty mechanism. *Desk-gate
   note:* step-0b cleared on the `slm-openai-v2` target_files (8/9 gappy); the shipping note
   switched to the dedicated diagnostician after the dry-run showed the rewrite's first sentence
-  was boilerplate — its file guess re-checks at **12/16** (still ≫ the 50% threshold) and its
-  mechanism is a correct diagnosis even on most file-misses. Wrong-file lines are low-risk in
-  the append form: evidence is intact, so codex verifies against the real traceback (the
-  pack/journal "agents skip ignorable injected content" result).
+  was boilerplate. The shipping diagnostician re-checks (`research/kg3_note_accuracy.py` →
+  `kg1_data/kg3_note_accuracy.json`, committed reproducible artifact) at **file-hit 11/16**
+  (≫ the 50% threshold; the nano is not temperature-pinned so it varies run-to-run — an earlier
+  spot-check read 12/16) and — the load-bearing number — **a real mechanism on 16/16 tasks**,
+  correct even on most file-misses. Wrong-file lines are low-risk in the append form: evidence
+  is intact, so codex verifies against the real traceback (the pack/journal "agents skip
+  ignorable injected content" result). Honest scope of the desk gate: step-0b's 8/9 was the
+  *rewrite* path (a different code path than ships); the shipping diagnostician's evidence is
+  the committed 11/16 artifact + the dry-run note-quality inspection.
 - *Validity guards inherited:* protocol-v2 committed-seed / measured-SLM / censoring /
   integrity guard / arm-size assertion → INVALID; append-only artifacts.
 - *Scope:* a CONTINUE adds at most an opt-in `--distill` flag to `prpt ci`; it does NOT change

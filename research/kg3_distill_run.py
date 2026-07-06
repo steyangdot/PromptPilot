@@ -154,22 +154,31 @@ def main():
         print("[kg3] WARNING: SLM usage tap unavailable", flush=True)
 
     def seed_and_commit(task, tid):
+        """Return (seed_sha, err). seed_sha is the commit BOTH arms must reset to per rep
+        (== base for the pre-seeded task, which has no throwaway commit). Resets on every
+        error path so a partial seed never leaks to the next rep."""
         reset_to_base()
         err = cf.apply_edits(task)
         if err:
-            return "seed: " + err
+            reset_to_base()
+            return None, "seed: " + err
         if task["edits"]:
             rc_c, out_c = g("-c", "user.name=kg3", "-c", "user.email=kg3@local",
                             "commit", "-am", "seed: {0} (throwaway)".format(tid))
             if rc_c != 0:
-                return "seed-commit: " + out_c[:160]
+                reset_to_base()
+                return None, "seed-commit: " + out_c[:160]
         _, porc = g("status", "--porcelain")
         if porc:
-            return "tree dirty after seed commit: " + porc[:160]
-        return None
+            reset_to_base()
+            return None, "tree dirty after seed commit: " + porc[:160]
+        _, seed_sha = g("rev-parse", "HEAD")
+        return seed_sha, None
 
-    def run_arm(a, task, arm, rep, note):
-        # tree is already seeded+committed by the caller (shared per rep across both arms)
+    def run_arm(a, task, arm, rep, note, seed_sha):
+        # CRITICAL (review #1): reset to the per-rep SEED COMMIT before EACH arm so arm B does
+        # not inherit arm A's fix. Not base — that would un-seed non-preseeded tasks.
+        g("reset", "--hard", seed_sha); g("clean", "-fdx", "--quiet")
         evidence = (cf.OUT / a["id"] / "evidence.txt").read_text(encoding="utf-8", errors="replace")
         prompt = build_A(evidence, task, cf)
         if arm == "B" and note:
@@ -214,11 +223,35 @@ def main():
         run_path.write_text(json.dumps(dict(header, note_meta=notes, results=results), indent=2),
                             encoding="utf-8")
 
+    # Live smoke (review #3): one real codex round-trip + token parse before the 96-run batch,
+    # so a broken auth/model/service_tier aborts for ONE run's cost, not the whole spend. The
+    # smoke run is a throwaway (not scored into the experiment).
+    if not args.dry_run:
+        s0 = admitted[0]; stask = tasks_by_id[s0["id"]]
+        print("[kg3] SMOKE: one live codex run on {0} before the batch...".format(s0["id"]), flush=True)
+        s_sha, s_err = seed_and_commit(stask, s0["id"])
+        if s_err:
+            sys.exit("ABORT smoke: seed failed: " + s_err)
+        g("reset", "--hard", s_sha); g("clean", "-fdx", "--quiet")
+        _sevi = (cf.OUT / s0["id"] / "evidence.txt").read_text(encoding="utf-8", errors="replace")
+        TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
+        sw, src = _run_one(build_A(_sevi, stask, cf), TRANSCRIPT_DIR / "_smoke.jsonl",
+                           cf.HTTPX, "codex", session_id=None)
+        su = _parse_one(TRANSCRIPT_DIR / "_smoke.jsonl", "codex")
+        reset_to_base()
+        s_in = su.get("input_tokens", 0)
+        if src == 124 or s_in == 0:
+            sys.exit("ABORT smoke: codex rc={0}, input_tokens={1} — broken auth/model/service_tier. "
+                     "0 tokens is the service_tier=priority gotcha: set CODEX_SERVICE_TIER=fast (or "
+                     "comment out service_tier in ~/.codex/config.toml) and retry.".format(src, s_in))
+        print("[kg3] SMOKE OK: rc={0}, uncached={1:,}, wall={2:.0f}s — starting batch.".format(
+            src, su.get("uncached_tokens", s_in - su.get("cached_tokens", 0)), sw), flush=True)
+
     for a in admitted:
         tid = a["id"]
         task = tasks_by_id[tid]
         for rep in range(args.reps):
-            err = seed_and_commit(task, tid)
+            seed_sha, err = seed_and_commit(task, tid)
             if err:
                 results.append(dict(task=tid, rep=rep, error=err)); persist(); continue
             # Build the note ONCE per rep on the seeded tree (arm B input); measure its SLM.
@@ -232,7 +265,7 @@ def main():
             for arm in ("A", "B"):
                 print("[kg3] {0} rep{1} / {2}{3} ...".format(
                     tid, rep, arm, "(note)" if arm == "B" and nb["note"] else ""), flush=True)
-                r = run_arm(a, task, arm, rep, nb["note"])
+                r = run_arm(a, task, arm, rep, nb["note"], seed_sha)
                 if arm == "B":
                     r["slm_in"], r["slm_out"] = slm_in, slm_out
                 if not args.dry_run:
@@ -259,13 +292,26 @@ def main():
     n_error = sum(1 for r in results if "error" in r)
     n_integrity = sum(1 for r in results if r.get("touched_tests"))
     expected = len(admitted) * args.reps
+
+    def invalid(msg, extra=None):
+        v = "INVALID (" + msg + ")"
+        print("\n== KG-3 result ==\n  VERDICT:", v)
+        verdict_path.write_text(json.dumps(dict(dict(verdict=v, n_censored=n_censored,
+            n_error=n_error, integrity_violations=n_integrity), **(extra or {})), indent=2),
+            encoding="utf-8")
+
     if len(A) != expected or len(B) != expected:
-        verdict = ("INVALID (incomplete arms: A {0}/{2}, B {1}/{2}; censored={3}, errors={4})".format(
+        return invalid("incomplete arms: A {0}/{2}, B {1}/{2}; censored={3}, errors={4}".format(
             len(A), len(B), expected, n_censored, n_error))
-        print("\n== KG-3 result ==\n  VERDICT:", verdict)
-        verdict_path.write_text(json.dumps(dict(verdict=verdict, n_censored=n_censored,
-                                                n_error=n_error), indent=2), encoding="utf-8")
-        return
+
+    # Empty-note floor (review #2): if arm B largely collapsed to arm A (SLM/diagnostician
+    # failure) the pooled ε₁≈0 would masquerade as a real KILL. Pre-registered floor: >=90%
+    # of scored B-runs must carry a note, else the run measures nothing -> INVALID.
+    note_cov = sum(1 for r in B if r.get("note_present")) / len(B)
+    if note_cov < 0.90:
+        return invalid("note coverage {0:.0%} < 90% — arm B collapsed to arm A "
+                       "(diagnostician failure), nothing measured".format(note_cov),
+                       dict(note_coverage=round(note_cov, 3)))
 
     def tpg(rows):
         green = sum(1 for r in rows if r["green"])
@@ -273,7 +319,17 @@ def main():
         return green, tok, (tok / green if green else float("inf"))
     gA, tA, pA = tpg(A)
     gB, tB, pB = tpg(B)
-    eps = 1 - pB / pA if pA not in (0, float("inf")) else float("nan")
+    if gA == 0 or gB == 0:                    # ratio undefined; degenerate, not "borderline"
+        return invalid("an arm scored zero greens (A={0}, B={1}); ε₁ undefined".format(gA, gB))
+    slm_tot = sum(r.get("slm_in", 0) + r.get("slm_out", 0) for r in B)
+
+    def eps_of(pa, pb):
+        return (1 - pb / pa) if pa not in (0, float("inf")) else float("nan")
+    eps = eps_of(pA, pB)                      # PRIMARY: codex-uncached only
+    # Secondary (reported, not gated): all-in 1:1 and cost-weighted 0.02x SLM.
+    eps_allin = eps_of(pA, (tB + slm_tot) / gB if gB else float("inf"))
+    eps_cw = eps_of(pA, (tB + 0.02 * slm_tot) / gB if gB else float("inf"))
+
     # per-task paired win-rate (mean B-uncached vs mean A-uncached within task)
     tasks = sorted({r["task"] for r in A})
     paired = []
@@ -284,13 +340,30 @@ def main():
         paired.append(dict(task=t, mean_A=round(ma), mean_B=round(mb),
                            ratio=round(ma / max(1, mb), 3), B_wins=(mb < ma)))
     b_win_tasks = sum(1 for p in paired if p["B_wins"])
-    slm_tot = sum(r.get("slm_in", 0) + r.get("slm_out", 0) for r in B)
 
-    print("\n== KG-3 result (reps={0}, {1} tasks) ==".format(args.reps, len(admitted)))
+    # Gappy-evidence subgroup (review #10 / charter): the hypothesis predicts the note earns on
+    # hard-localize (gappy) tasks, not crisp ones. Label via the FROZEN module-mismatch signal.
+    import kg1_5_triage as frozen
+    gappy_ids = {a["id"] for a in admitted if frozen.sig_module_mismatch(tasks_by_id[a["id"]])}
+
+    def subgroup(ids):
+        Ar = [r for r in A if r["task"] in ids]
+        Br = [r for r in B if r["task"] in ids]
+        _, _, pa = tpg(Ar)
+        _, _, pb = tpg(Br)
+        return dict(n=len(ids), eps1=eps_of(pa, pb))
+    sg_gappy = subgroup(gappy_ids)
+    sg_crisp = subgroup(set(tasks) - gappy_ids)
+
+    print("\n== KG-3 result (reps={0}, {1} tasks, note-cov {2:.0%}) ==".format(
+        args.reps, len(admitted), note_cov))
     print("  A (raw+pin): green {0}/{1}  codex-uncached tok/green={2:,.0f}".format(gA, len(A), pA))
     print("  B (+note)  : green {0}/{1}  codex-uncached tok/green={2:,.0f}  (+{3:,} SLM tok)".format(
         gB, len(B), pB, slm_tot))
-    print("  ε₁ PRIMARY (codex-only) = {0:+.3f}   per-task B-wins {1}/{2}".format(eps, b_win_tasks, len(tasks)))
+    print("  ε₁ PRIMARY (codex-only) = {0:+.3f}   [all-in {1:+.3f} | cost-weighted {2:+.3f}]".format(
+        eps, eps_allin, eps_cw))
+    print("  subgroup ε₁: gappy(n={0}) {1:+.3f} | crisp(n={2}) {3:+.3f}   per-task B-wins {4}/{5}".format(
+        sg_gappy["n"], sg_gappy["eps1"], sg_crisp["n"], sg_crisp["eps1"], b_win_tasks, len(tasks)))
     if gB < gA:
         verdict = "KILL (note regressed correctness: green {0} < {1})".format(gB, gA)
     elif eps >= 0.10 and gB >= gA:
@@ -301,8 +374,11 @@ def main():
         verdict = "REPLICATE (0 < codex-only ε₁ < 0.10)"
     print("  VERDICT:", verdict)
     verdict_path.write_text(json.dumps(dict(
-        reps=args.reps, green_A=gA, green_B=gB, tpg_A=pA, tpg_B=pB, eps1_primary_codex_only=eps,
+        reps=args.reps, green_A=gA, green_B=gB, tpg_A=pA, tpg_B=pB,
+        eps1_primary_codex_only=eps, eps1_allin=eps_allin, eps1_cost_weighted=eps_cw,
+        subgroup_gappy=sg_gappy, subgroup_crisp=sg_crisp,
         per_task_B_wins=b_win_tasks, n_tasks=len(tasks), paired=paired, slm_total=slm_tot,
+        note_coverage=round(note_cov, 3),
         n_censored=n_censored, n_error=n_error, integrity_violations=n_integrity,
         gated_metric="codex-uncached only, pooled over rep-runs", verdict=verdict), indent=2),
         encoding="utf-8")

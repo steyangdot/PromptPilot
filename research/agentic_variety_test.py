@@ -144,7 +144,15 @@ def run_codex(prompt: str, out_jsonl: Path, cwd: str,
         # codex CLI default, unchanged behavior.
         _cm = os.environ.get("CODEX_MODEL")
         model_flags = ["-m", _cm] if _cm else []
-        cmd = [codex, "exec", *model_flags,
+        # Optional config override: the Codex DESKTOP app re-injects an invalid
+        # service_tier="priority" into ~/.codex/config.toml that makes `codex exec` return
+        # rc=1 / 0 tokens (CLI accepts only fast/flex). CODEX_SERVICE_TIER=fast emits
+        # `-c service_tier=fast`, overriding the file at invocation — immune to the re-clobber,
+        # token-neutral (a scheduling knob, not a model change), keeps normal latency. Fresh
+        # exec only (resume rejects extra flags). Default unset = no override.
+        _tier = os.environ.get("CODEX_SERVICE_TIER")
+        tier_flags = ["-c", "service_tier={0}".format(_tier)] if _tier else []
+        cmd = [codex, "exec", *model_flags, *tier_flags,
                "--dangerously-bypass-approvals-and-sandbox",
                "--skip-git-repo-check", "--cd", cwd, "--json", "-"]
     t0 = time.time()

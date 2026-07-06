@@ -68,6 +68,9 @@ def build_note(evidence: str, cwd: str, verify_fn, model: str | None = None) -> 
         raw = resp.choices[0].message.content or ""
         result["raw"] = raw
         obj = json.loads(raw)
+        if not isinstance(obj, dict):        # json_object mode should guarantee a dict; fail-open
+            result["raw"] += " | non-dict json"
+            return result
     except Exception as e:
         result["raw"] = (result["raw"] or "") + " | call/parse-failed: {0}".format(e)
         return result
@@ -76,9 +79,13 @@ def build_note(evidence: str, cwd: str, verify_fn, model: str | None = None) -> 
     fpath = str(obj.get("file", "")).replace("\\", "/").strip()
     result.update(mechanism=mech, ok=True)
 
+    # File line ONLY when there is a real mechanism (never a bare pointer with no diagnosis) AND
+    # the path is an httpx/ non-test source file existing at HEAD (grep-verify; reject `..`
+    # traversal in our own check, not just via git's tree-spec rejection).
     top = None
     name = fpath.rsplit("/", 1)[-1]
-    if fpath.startswith("httpx/") and name.endswith(".py") and "test" not in name and verify_fn(fpath):
+    if (mech and fpath.startswith("httpx/") and ".." not in fpath and name.endswith(".py")
+            and "test" not in name and verify_fn(fpath)):
         top = fpath
     result["file"] = top
 
@@ -87,5 +94,6 @@ def build_note(evidence: str, cwd: str, verify_fn, model: str | None = None) -> 
         lines.append("- Suspected mechanism: " + mech)
     if top:
         lines.append("- Suspected source file: " + top + " (one candidate; not authoritative)")
+    # note requires a mechanism (top implies mech), so len>1 == "has a diagnosis".
     result["note"] = "\n".join(lines) if len(lines) > 1 else ""
     return result

@@ -1,0 +1,174 @@
+{
+  "generated_utc": "2026-07-06T04:37:21Z",
+  "base_commit": "d764bfc",
+  "note_builder": "kg3_note.build_note (gpt-5.4-nano diagnostician)",
+  "n": 16,
+  "file_hits": 11,
+  "gappy_file_hits": [
+    5,
+    9
+  ],
+  "has_mechanism": 16,
+  "rows": [
+    {
+      "task": "auth-digest-a1",
+      "corpus": 1,
+      "fix_file": "httpx/_auth.py",
+      "gappy": false,
+      "note_file": "httpx/_auth.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "DigestAuth computes the RFC7616 response hash incorrectly for SHA-256 (wrong HA2/response composition), resulting in a missing/incorrect Digest 'response' parameter in httpx._auth.DigestAuth._build_au"
+    },
+    {
+      "task": "content-json-type",
+      "corpus": 1,
+      "fix_file": "httpx/_content.py",
+      "gappy": false,
+      "note_file": "httpx/_content.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "JSON responses/requests are setting the wrong Content-Type value as 'text/json' instead of 'application/json' in the JSON encoding/content building path (likely httpx/_content.py where json content ty"
+    },
+    {
+      "task": "url-port-norm",
+      "corpus": 1,
+      "fix_file": "httpx/_urlparse.py",
+      "gappy": true,
+      "note_file": "httpx/_urls.py",
+      "file_hit": false,
+      "has_mechanism": true,
+      "mechanism": "URL.copy_with(host=...) updates the host but fails to include the port when recomputing netloc for IPv6 literal hosts, dropping \":<port>\" in URL.netloc computation."
+    },
+    {
+      "task": "utils-bool-str",
+      "corpus": 1,
+      "fix_file": "httpx/_utils.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": false,
+      "has_mechanism": true,
+      "mechanism": "QueryParams stringification is not normalizing boolean values to lowercase 'true'/'false', resulting in 'True'/'False' output in QueryParams __str__ / encoding logic."
+    },
+    {
+      "task": "decoder-trailing-cr",
+      "corpus": 1,
+      "fix_file": "httpx/_decoders.py",
+      "gappy": false,
+      "note_file": "httpx/_decoders.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Line decoding in `httpx._decoders.LineDecoder` fails to split lines correctly across chunk boundaries when a `\\r` terminator occurs at the end of one chunk and subsequent data continues in the next, c"
+    },
+    {
+      "task": "config-timeout-tuple",
+      "corpus": 1,
+      "fix_file": "httpx/_config.py",
+      "gappy": false,
+      "note_file": "httpx/_config.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Timeout construction from a positional tuple misinterprets the provided values, setting `write` equal to the provided `read` value when it should set only `read` (in `httpx.Timeout` parsing/normalizat"
+    },
+    {
+      "task": "models-headers-getlist-split",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Headers.get_list split_commas=True is splitting on commas without trimming whitespace, returning ' b' instead of 'b' for the second Vary value (httpx/_models.py)."
+    },
+    {
+      "task": "models-response-links",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Response.links parsing stores link entries keyed by the URL (e.g., response.links uses the parsed target href as dict key) instead of the link relation value rel from the Link header, likely in Respon"
+    },
+    {
+      "task": "models-cookies-domain-filter",
+      "corpus": 2,
+      "fix_file": "httpx/_models.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Cookies.get fails to match cookies by domain after Cookies.update; domain scoping is not applied (or is lost) in httpx/_models.py within Cookies.get / Cookies.update cookie lookup."
+    },
+    {
+      "task": "urls-username-unquote",
+      "corpus": 2,
+      "fix_file": "httpx/_urls.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": false,
+      "has_mechanism": true,
+      "mechanism": "URL.username is returning the percent-encoded form instead of the decoded username (and similarly for copy_with), likely in httpx/_models.py within the URL parsing/encoding properties handling userinf"
+    },
+    {
+      "task": "urls-qp-merge-order",
+      "corpus": 2,
+      "fix_file": "httpx/_urls.py",
+      "gappy": true,
+      "note_file": "httpx/_models.py",
+      "file_hit": false,
+      "has_mechanism": true,
+      "mechanism": "Query parameter merge preserves insertion order incorrectly (swapped ordering of existing vs merged/combined params) in QueryParams.merge, leading to '&b=456&c=789' vs '&c=789&b=456' and reversed URL "
+    },
+    {
+      "task": "client-redirect-authstrip",
+      "corpus": 2,
+      "fix_file": "httpx/_client.py",
+      "gappy": true,
+      "note_file": "httpx/_client.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Redirect handling is incorrectly carrying over or stripping the Authorization header across domains in httpx.Client when follow_redirects=True, likely in _client.py redirect logic (e.g., request rebui"
+    },
+    {
+      "task": "client-redirect-head-method",
+      "corpus": 2,
+      "fix_file": "httpx/_client.py",
+      "gappy": true,
+      "note_file": "httpx/_client.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "When following a redirect for HEAD requests, the client incorrectly switches the method to GET instead of preserving HEAD; this likely occurs in the redirect-following logic in httpx/_client.py when c"
+    },
+    {
+      "task": "utils-noproxy-wildcard",
+      "corpus": 2,
+      "fix_file": "httpx/_utils.py",
+      "gappy": false,
+      "note_file": "httpx/_client.py",
+      "file_hit": false,
+      "has_mechanism": true,
+      "mechanism": "Proxy bypass decision for NO_PROXY domain matching is incorrect (treating prefix/substring as suffix) when selecting transport in Client._transport_for_url, causing requests to be proxied when they sh"
+    },
+    {
+      "task": "multipart-content-length",
+      "corpus": 2,
+      "fix_file": "httpx/_multipart.py",
+      "gappy": false,
+      "note_file": "httpx/_multipart.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "Multipart Request header handling is setting Content-Length (and possibly Host/headers) incorrectly after encoding in the multipart encoder (httpx/_multipart.py), leading to mismatched request.headers"
+    },
+    {
+      "task": "decoders-gzip-wbits",
+      "corpus": 2,
+      "fix_file": "httpx/_decoders.py",
+      "gappy": false,
+      "note_file": "httpx/_decoders.py",
+      "file_hit": true,
+      "has_mechanism": true,
+      "mechanism": "GZipDecoder initializes/uses its zlib decompressor with the wrong window bits (header expectations), causing valid gzip payloads to fail with 'incorrect header check' in httpx/_decoders.py:GZipDecoder"
+    }
+  ]
+}
