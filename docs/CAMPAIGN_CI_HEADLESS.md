@@ -230,6 +230,45 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
 > coverage map, e.g. new files) — that configuration's implied mean wall is far inside the
 > band. The scheduled full-suite run remains the pipeline backstop, as designed.
 
+### KG-3 — additive verified-diagnosis note (PRE-REGISTRATION, 2026-07-06, before any run)
+
+The KG-1 v2 rewrite KILLed because *replacing* evidence destroyed the verification anchor
+(`docs/FINDING_REWRITE_TOKEN_ECONOMICS.md`). KG-3 tests the loss-flooring redesign: keep the
+verbatim traceback + the same verification pin in BOTH arms, and in arm B APPEND a tightened,
+grep-verified triage note (`research/kg3_note.py`: 1-line mechanism + ≤1 verified source file,
+hedged). *Desk gate cleared:* step-0b (`kg1_data/kg3_step0b.json`) found the SLM's location
+diagnosis correct 8/9 on the gappy-evidence subset — necessary (rules out garbage notes), not
+sufficient (location was never the failure mode).
+
+- *Design:* `research/kg3_distill_run.py`. Arm A = instruction + verbatim evidence + pin;
+  arm B = A + the note. 16 admitted tasks × 2 arms × **N=3 reps** (repeated measures — the
+  non-negotiable fix for the N=1 variance that ate two KG-1 v2 RCA mechanisms), committed-seed
+  clean tree (no diff leak), cold `codex exec`, scored by recorded `pytest_argv`.
+- *Primary metric:* pooled **codex-uncached** tok/green over ALL rep-runs, ε₁ = 1 − (B/A) —
+  the same LLM-only metric amended for KG-1 v2. SLM measured and reported (all-in + 0.02×),
+  never folded into the gate.
+- *Pre-registered bands:* **CONTINUE ε₁ ≥ 0.10** with green(B) ≥ green(A); **KILL ε₁ ≤ 0 OR
+  green(B) < green(A)**; **REPLICATE** otherwise (borderline again = KILL). Secondary, reported
+  not gated: per-task paired B-vs-A win-rate across reps, and the gappy-evidence subgroup
+  (frozen module-mismatch) — the hypothesis predicts the note earns on gappy, not crisp, tasks.
+- *Note-construction rules frozen here* (`research/kg3_note.py`, no post-hoc tuning): a single
+  `gpt-5.4-nano` diagnostician call (input = evidence + the httpx source-file list ONLY — no
+  diff) returns strict JSON `{mechanism: ≤1 sentence root cause in the source, not a test-name
+  restatement; file: one path or ""}`. The note = hedged header + the mechanism line + the file
+  line ONLY when `file` is a non-test `httpx/` path existing at HEAD (grep-verified, at most
+  one); empty note (→ B degrades to A) on call/parse failure or empty mechanism. *Desk-gate
+  note:* step-0b cleared on the `slm-openai-v2` target_files (8/9 gappy); the shipping note
+  switched to the dedicated diagnostician after the dry-run showed the rewrite's first sentence
+  was boilerplate — its file guess re-checks at **12/16** (still ≫ the 50% threshold) and its
+  mechanism is a correct diagnosis even on most file-misses. Wrong-file lines are low-risk in
+  the append form: evidence is intact, so codex verifies against the real traceback (the
+  pack/journal "agents skip ignorable injected content" result).
+- *Validity guards inherited:* protocol-v2 committed-seed / measured-SLM / censoring /
+  integrity guard / arm-size assertion → INVALID; append-only artifacts.
+- *Scope:* a CONTINUE adds at most an opt-in `--distill` flag to `prpt ci`; it does NOT change
+  the raw-prompt default, which ships regardless. A KILL retires the SLM from the pre-agent
+  path entirely.
+
 **Then the flagship optimization:** the **reasoning_effort sweep** — the biggest known cost lever
 (~23× high-vs-minimal), regime-agnostic, and easiest to exploit in headless batch (no latency
 watcher). Run it on the new CI fixtures; it becomes the pivot's headline benchmark.
