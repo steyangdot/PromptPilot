@@ -182,6 +182,40 @@ multi-turn chains, not the pointed single-shot tasks CI actually produces.
 > the v2 runner enforces and persists it per run. (d) The +0.371 cost-weighted variant is now
 > computed in code (was session arithmetic); the "0.97× file-level wall" figure came from an
 > unrecorded intermediate run — treat as approximate.
+>
+> **OUTCOMES v2 (2026-07-06 — the deciding replicate, protocol v2, 10 new tasks × 2 arms):**
+> **KG-1 v2 = KILL** (pre-registered codex-only band, ε₁ = −0.038 ≤ 0). Raw 50,328 vs rewrite
+> 52,228 codex-uncached tok/green at 10/10 green parity BOTH arms; all-in 1:1 = −0.267;
+> cost-weighted 0.02× = −0.042. Validity: 0 censored, 0 errors, 0 integrity violations, SLM
+> measured on 10/10 rewrite rows (~11.5k tok/task). Deconfounded per-task ratios: wins
+> 1.15–1.72×, losses 0.40–0.99× — **v1's 5–21× magnitudes were the git-diff leak**, and the
+> honest rewrite nets ≈ zero on codex tokens while paying its own SLM. The rewrite and the
+> always-rewrite ship default are RETIRED for pointed CI tasks. (Interactive/vague-prompt
+> rewrite evidence is a different regime, untouched here.)
+> **KG-1.5b out-of-sample = classifier DEAD.** Frozen predictions (7W/3L, commit 07ee460)
+> scored **4/10** against the frozen label rule — below every trivial baseline (always-WIN
+> 5/10, always-LOSE 5/10, fanout-only 5/10); triage-policy EV (54,697 tok/green) is WORSE than
+> both always-raw (50,328) and always-rewrite (52,228) — it skipped the two biggest clean wins
+> (gzip 1.72×, noproxy 1.19×). The v1 "6/6 separation" is confirmed over-fit; the SLM triage
+> gatekeeper leaves the roadmap absent a new pre-registered result.
+> **RCA retractions (pre-committed checks, prompt audit of all 10 rewrites):** the mid-run
+> "anchor-loss" and "spec-inflation" mechanisms FAILED as predictors (3 of 4 anchor-dropping
+> rewrites won; obligation count anti-correlated with losing) and are retracted. At clean
+> effect sizes, per-task N=1 ratios are variance-dominated (the task-level analogue of the
+> N=3-chain-noise rule). Surviving hypothesis (post-hoc, UNPROVEN): the SLM pays as an
+> **evidence DISTILLER on long/noisy CI output** (3 of 5 wins had ≥2× compression of ≥2.3k-char
+> evidence) — any KG-3 test of it requires a repeated-measures design (N≥2–3/task).
+>
+> **PRE-REGISTRATION — KG-2 16-task out-of-sample re-score (2026-07-06, registered before the
+> run):** matcher FROZEN as committed at 12045dd (t1 static test-file-only ∪ t2 line-scoped
+> coverage; zero changes permitted for this re-score). Bands, judged on all 16 admitted tasks
+> with cold-cold timing: **CONFIRM = catch 16/16 AND mean primary wall ≤ 0.5×** the full
+> suite; any escape or wall-fail = the honest out-of-sample answer and feeds Phase-3 matcher
+> design (line-scoped-only or pruned-static) — no matcher iteration is permitted on this
+> corpus generation. The v2 subset (10 tasks) is reported separately; any aborted timed
+> selection → INVALID. Known risk, stated in advance: `_models.py` tasks may balloon the
+> static tier's symbol matches (Response/Headers grep breadth) → wall-fail with clean catch is
+> a live possibility and would redirect Phase 3 to the line-scoped tier.
 
 **Then the flagship optimization:** the **reasoning_effort sweep** — the biggest known cost lever
 (~23× high-vs-minimal), regime-agnostic, and easiest to exploit in headless batch (no latency
