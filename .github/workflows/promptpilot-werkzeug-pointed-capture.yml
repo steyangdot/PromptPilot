@@ -1,0 +1,54 @@
+name: Capture pointed Werkzeug failure
+
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - ".github/workflows/promptpilot-werkzeug-pointed-capture.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      CI: "1"
+      NO_COLOR: "1"
+      TOX_ENV: py3.14
+      UV_NO_PROGRESS: "1"
+    steps:
+      - name: Check out immutable Werkzeug source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: pallets/werkzeug
+          ref: 9ed37b2893bba8e2a8e946abd8244ecb48b1803e
+          path: werkzeug
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          prune-cache: false
+          version: 0.12.5
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Verify immutable source
+        working-directory: werkzeug
+        shell: pwsh
+        run: |
+          $actual = git rev-parse HEAD
+          if ($actual -ne "9ed37b2893bba8e2a8e946abd8244ecb48b1803e") {
+            throw "unexpected source revision: $actual"
+          }
+          if (git status --porcelain --untracked-files=no) {
+            throw "tracked source is not clean"
+          }
+      - name: Run one pointed failing test
+        working-directory: werkzeug
+        shell: pwsh
+        run: uv run --locked --no-default-groups --group dev tox run -- tests/test_formparser.py::TestFormParser::test_limiting
